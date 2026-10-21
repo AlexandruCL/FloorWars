@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Button, StyleSheet, Text, View } from 'react-native';
 import { FloorSensorsDebug } from '../native/FloorSensorsDebug';
 
 function Placeholder({ title }: { title: string }) {
@@ -9,10 +9,18 @@ function Placeholder({ title }: { title: string }) {
   );
 }
 
-export function SignInScreen() {
+// onDevSkipSignIn opens the Main stack in dev builds until the auth stub (T7) exists.
+export function SignInScreen({
+  onDevSkipSignIn,
+}: {
+  onDevSkipSignIn?: () => void;
+}) {
   return (
     <>
       <Placeholder title="Sign in" />
+      {__DEV__ && onDevSkipSignIn && (
+        <Button title="Skip sign-in (dev)" onPress={onDevSkipSignIn} />
+      )}
       {__DEV__ && <FloorSensorsDebug />}
     </>
   );
