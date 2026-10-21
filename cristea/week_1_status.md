@@ -20,7 +20,7 @@ All week 1 tasks are implemented in code (T1 to T7), and the test build for a fr
 | Contract `openapi.yaml` | Approved by both | #8 | Inferred fields marked in the file |
 | T8 Release test build | Done, device test not run | #7 | `DEV_SKIP_SIGN_IN` flag, release APK built, static checks only |
 
-No PR is merged yet except #1 to #4. The PRs are open for review and merge in this order: #8, #7, #5, #6, #9.
+Only PRs #1 to #4 are merged. The rest are open. Merge order: #8, #7, #5, #6, #9.
 
 ## Verification
 
@@ -44,30 +44,84 @@ No PR is merged yet except #1 to #4. The PRs are open for review and merge in th
 - **TypeScript override:** `openapi-typescript` 7.13.0 uses a scoped override for TypeScript 6. Remove when a release accepts TypeScript 6. Alternative: pin 6.7.6 and change the client types.
 - **Contract version:** `info.version` still reads `0.1.0-draft`.
 
-## Test build for a friend's phone
+## Friend test workflow
 
-Status: the release APK is built (T8). Not yet run on a device, and not sent to anyone.
+Status: the release APK is built (T8), but has not run on a device and has not been sent.
 
-Route: a release APK with the skip-sign-in button, so the friend can reach the sensor logger without Metro or a debug build.
+### 1. Build the APK (owner)
 
-1. Build: `cd app/android` then `./gradlew assembleRelease`. Output: `app/android/app/build/outputs/apk/release/app-release.apk`. Signed with the debug key, for this test only.
-2. Send the APK directly (Drive link, Quick Share, or a chat app as a document). Don't commit it or put it on GitHub.
-3. Friend: allow installs from that source, install, open the app, tap **Skip sign-in (dev)**, then **Sensor logger** on Home.
-4. Friend: grant permissions, pick a label and placement, tap **Start**, wait about 30 s, tap **Stop and save**, then **Share CSV** and send the file to the owner.
-5. Owner: check the CSV header (`# device_model`, `# has_barometer`, `# label`, `# placement`) and that pressure rows exist. Step rows only appear if the phone has a step detector.
-6. Record the phone in `docs/devices.md` as a borrowed device, with the exact model string from the CSV header.
+```
+cd app/android
+./gradlew assembleRelease
+```
 
-Limits:
+Output: `app/android/app/build/outputs/apk/release/app-release.apk`. It's signed with the debug key, which is fine for testing only. Don't commit the APK or put it on GitHub.
 
-- A release build can't be pulled with `adb`, so the share sheet is the only way to get the file.
-- The friend's phone may kill background services. Set the app to Unrestricted in battery settings before recording.
+### 2. Send the APK
+
+Use a Drive link (share with the friend's account or "anyone with the link"), Quick Share if you're in the same room, or a chat app sent as a **document**, not a photo. Gmail caps attachments at 25 MB and the APK is about 66 MB.
+
+### 3. Install on the friend's phone
+
+1. Allow installs from the app they opened the file with (Chrome or Files) when Android asks.
+2. Tap the APK, then **Install**. If Play Protect says "unknown developer", tap **Install anyway**.
+3. No laptop, Metro or server is needed.
+
+### 4. Record a trace (friend)
+
+1. Open FloorWars and tap **Skip sign-in (dev)**.
+2. On Home, tap **Sensor logger**.
+3. Pick a label (`stairs_up`, `stairs_down`, `elevator_up`, `walk_flat`, `shake`, `blow`) and a placement (`pocket`, `hand`, `bag`).
+4. Tap **Start**. Grant the activity and notification permissions when asked. Start refuses without the activity permission.
+5. Do the movement for about 30 seconds. The timer counts up and a notification says "Logging sensors / Label: …".
+6. Tap **Stop and save**. The screen shows "Saved <file>".
+7. Tap **Share CSV** and send the file to the owner.
+
+### 5. What the owner does with the CSV
+
+1. Open the file and check the header: `# device_model`, `# has_barometer`, `# label`, `# placement`, `# start_utc`, `# stop_utc`, then `sensor,timestamp_ns,elapsed_s,value`.
+2. Run the checker on it:
+   ```
+   python tools/validate_traces/validate.py <file.csv>
+   ```
+   Expect `PASS REAL` or a `FAIL` line with the check numbers. Failures are data to review, not something to delete.
+3. Record the phone's exact model string in `docs/devices.md`, as a borrowed device.
+4. Keep the file in a local folder with its label and placement. Don't commit real traces to `main` until the consent and privacy notes are settled.
+5. Log the result in the validation log, `docs/trace_format.md` section 7: date, device, what was checked, what was measured, any change.
+
+The app doesn't upload anything yet. The CSV only leaves the phone when the friend shares it.
+
+### 6. What to test on each phone
+
+Run these in order and note the result for each phone.
+
+| # | Check | Pass when |
+|---|---|---|
+| 1 | Install the release APK with no Metro running | App opens to the Sign in screen |
+| 2 | Skip sign-in, open Sensor logger | Logger screen shows the label and placement pickers |
+| 3 | Start without permissions | Start refuses with an error |
+| 4 | Grant permissions, Start | Timer runs, notification shows "Logging sensors" |
+| 5 | Lock the screen for 60 s during a recording | Recording continues (check the timer or the file after stop) |
+| 6 | Stop and save | "Saved" message, Share CSV opens the share sheet |
+| 7 | Open the CSV | Header metadata matches the phone and the chosen label and placement |
+| 8 | Pressure rows | Present if `has_barometer` is true, about 50 per second, with timestamps |
+| 9 | Step rows | Present only if the phone has a step detector, during walking or stairs |
+| 10 | Battery setting | FloorWars set to Unrestricted before recording |
+| 11 | Checker | `PASS REAL` for a walk or stairs trace |
+| 12 | Model string | Recorded exactly in `docs/devices.md` |
+
+Phone-specific behaviour (for example, a battery saver that stops background sensing) goes in `docs/devices.md` under "Manufacturer-specific behaviour".
+
+## Test build limits
+
+- The release build can't be pulled with `adb`, so the share sheet is the only way to get the file.
 - Traces from this route don't count as T5's two-device set until the owner has both phones.
 - Consent: the friend agrees to the recording. The CSV holds no name or location.
 
 ## Next steps
 
 1. Merge the open PRs in order: #8, #7, #5, #6, #9.
-2. Device test of the release APK (T8), on the emulator once memory allows, or the friend's phone.
+2. Device test of the release APK (T8), on the emulator once memory allows, or on the friend's phone.
 3. Get two Android phones. Run the T3 and T4 phone checks, then the T5 recordings and T6 device details.
 4. Validate the synthetic traces against real data and update `docs/trace_format.md`.
 5. Later week: remove the dev skip button when the real auth lands.
