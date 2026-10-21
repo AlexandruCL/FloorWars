@@ -12,13 +12,25 @@ const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const MainStack = createNativeStackNavigator<MainStackParamList>();
 
-type Props = { isSignedIn: boolean; onDevSkipSignIn?: () => void };
+type Props = {
+  isSignedIn: boolean;
+  onStubSignIn?: () => Promise<void>;
+  onDevSkipSignIn?: () => void;
+};
 
-function AuthNavigator({ onDevSkipSignIn }: Pick<Props, 'onDevSkipSignIn'>) {
+function AuthNavigator({
+  onStubSignIn,
+  onDevSkipSignIn,
+}: Pick<Props, 'onStubSignIn' | 'onDevSkipSignIn'>) {
   return (
     <AuthStack.Navigator>
       <AuthStack.Screen name="SignIn" options={{ title: 'Sign in' }}>
-        {() => <SignInScreen onDevSkipSignIn={onDevSkipSignIn} />}
+        {() => (
+          <SignInScreen
+            onStubSignIn={onStubSignIn}
+            onDevSkipSignIn={onDevSkipSignIn}
+          />
+        )}
       </AuthStack.Screen>
     </AuthStack.Navigator>
   );
@@ -38,7 +50,11 @@ function MainNavigator() {
 }
 
 // Session state arrives with the auth stub (T7); until then the caller decides.
-export function RootNavigator({ isSignedIn, onDevSkipSignIn }: Props) {
+export function RootNavigator({
+  isSignedIn,
+  onStubSignIn,
+  onDevSkipSignIn,
+}: Props) {
   return (
     <NavigationContainer>
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
@@ -46,7 +62,12 @@ export function RootNavigator({ isSignedIn, onDevSkipSignIn }: Props) {
           <RootStack.Screen name="Main" component={MainNavigator} />
         ) : (
           <RootStack.Screen name="Auth">
-            {() => <AuthNavigator onDevSkipSignIn={onDevSkipSignIn} />}
+            {() => (
+              <AuthNavigator
+                onStubSignIn={onStubSignIn}
+                onDevSkipSignIn={onDevSkipSignIn}
+              />
+            )}
           </RootStack.Screen>
         )}
       </RootStack.Navigator>
