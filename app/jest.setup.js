@@ -9,6 +9,14 @@ jest.mock('./src/native/NativeFloorSensors', () => ({
   default: {
     startLogging: jest.fn(),
     stopLogging: jest.fn(),
+    getStatus: jest.fn(() =>
+      Promise.resolve({
+        logging: false,
+        label: '',
+        has_barometer: true,
+        buffered: 0,
+      }),
+    ),
     onStatusChange: jest.fn(() => ({ remove: jest.fn() })),
   },
 }));

@@ -21,3 +21,14 @@ test('onStatusChange events update the status line', async () => {
   await act(() => handler({ logging: true, label: 'test' }));
   expect(screen.getByText('FloorSensors: logging "test"')).toBeTruthy();
 });
+
+test('getStatus() button shows the native status', async () => {
+  await render(<FloorSensorsDebug />);
+  await fireEvent.press(screen.getByText('getStatus()'));
+  expect(native.getStatus).toHaveBeenCalled();
+  expect(
+    await screen.findByText(
+      '{"logging":false,"label":"","has_barometer":true,"buffered":0}',
+    ),
+  ).toBeTruthy();
+});
