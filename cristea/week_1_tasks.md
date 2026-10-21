@@ -119,7 +119,7 @@ Open for later, not blocking week 1 on synthetic data: validate the synthetic tr
 **Scope**
 - Record at least 20 labelled traces in a faculty building on 2 devices. Cover at least `stairs_up`, `stairs_down`, `elevator_up`, `walk_flat`, `shake`, `blow`.
 - Put the files in `/traces`.
-- Write `/traces/labels.csv` with one row per file: file name, label, placement, device, floor range, notes.
+- Write `/traces/labels.csv` with one row per file: file name, label, placement, device, storeys (optional estimate, see docs/trace_format.md), notes.
 
 **Done when**
 - At least 20 files in `/traces` with a matching row in `labels.csv`.

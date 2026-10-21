@@ -36,13 +36,13 @@ Rules:
 |---|---|---|---|
 | Pressure, sea-level-ish | 950–1050 hPa | Weather range at typical elevations | Fixed |
 | Pressure per metre of height | ~0.12 hPa/m near sea level | Standard atmosphere (about 12 Pa/m) | Fixed |
-| Floor height | ~3–3.5 m | Building norm | TO VALIDATE in the faculty building |
-| Pressure change per floor | ~0.36–0.42 hPa | Floor height × 0.12 hPa/m | Follows from the two rows above |
+| Storey height | ~3–3.5 m | Building norm. Used only for the floor-equivalent display estimate (20 steps = 1 floor), never for scoring | TO VALIDATE from real stair climbs |
+| Pressure change per storey | ~0.36–0.42 hPa | Storey height × 0.12 hPa/m | Follows from the two rows above |
 | Pressure sampling rate | ~50 Hz at SENSOR_DELAY_GAME | T3 emulator: 285 events in 5.7 s | TO VALIDATE on phones; devices may deliver slower or faster |
 | Step rate while walking | ~1.4–2.1 Hz | Typical adult gait | TO VALIDATE per person |
 | Recording length | ~30 s | T4 spec | Fixed |
 | Sensor noise (`hand`, `pocket`, `bag`) | ~0.01–0.02 hPa std | Assumption from the synthetic model | TO VALIDATE; likely varies by phone |
-| Elevator ramp | 3–6 floors at about 1.0–2.0 m/s, so roughly 9–21 s | Typical lift speed. Earlier 4–6 s figure was too fast (1.75–5 m/s) | TO VALIDATE in the faculty building |
+| Elevator ramp | 3–6 storeys at about 1.0–2.0 m/s, so roughly 9–21 s | Typical lift speed. Earlier 4–6 s figure was too fast (1.75–5 m/s) | TO VALIDATE in the faculty building |
 
 ## 3. What each label should look like
 
@@ -50,7 +50,7 @@ Net change is `last pressure − first pressure`, using the first and last secon
 
 | Label | Pressure | Steps | Notes |
 |---|---|---|---|
-| `stairs_up` | Falls, about 1 hPa per 2–3 floors covered. Several small steps down in pressure, one per flight | Yes, at walking cadence | Landings show as short flat sections |
+| `stairs_up` | Falls, about 1 hPa per 2–3 storeys covered. Several small steps down in pressure, one per flight | Yes, at walking cadence | Landings show as short flat sections |
 | `stairs_down` | Rises by the same amount | Yes | Mirror of `stairs_up` |
 | `elevator_up` | One smooth ramp down, no step pattern | No, unless the person walks in | Lift start and stop are sharp |
 | `walk_flat` | Flat, net change under ±0.1 hPa | Yes | Little drift |
@@ -71,6 +71,11 @@ A trace is usable when all of these pass:
 6. For `stairs_up` and `stairs_down`: net pressure change of the expected sign and between 0.5 and 3 hPa.
 7. For `elevator_up`: net change of the expected sign and between 1 and 4 hPa.
 8. `has_barometer` agrees with the pressure rows: `true` if there are pressure rows, `false` if there are none.
+9. Pressure-steps match (plan section 3.3, the scoring rule). For `stairs_up` and `stairs_down`: steps per metre of net ascent between 4 and 8. For `elevator_up`: below 1 step per metre. For `walk_flat` and `shake`: net ascent under 2.0 m, so no points. Points are awarded only when the rule matches. Thresholds are TO VALIDATE from real climbs.
+
+Check 9 is the anti-cheat rule. A trace that fails it is not a climb, even if the steps and pressure look plausible on their own.
+
+The optional `storeys` column in `labels.csv` is an estimate (metres of ascent divided by 3.3 m). It is for display checks only. No building floor data is needed.
 
 Phones without a barometer are out of scope for T5. The plan (section 9.3) requires two phones with a barometer. A trace from a phone with `has_barometer` false can be kept as a record, but it fails checks 2, 3, 6 and 7 by design and doesn't count toward T5.
 

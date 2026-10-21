@@ -42,13 +42,29 @@ Only PRs #1 to #4 are merged. The rest are open. Merge order: #8, #7, #5, #6, #9
 
 - **Runs on any Android phone with a barometer.** The app checks the phone's capabilities (barometer, sampling rate, step detector) and adapts. Phones without a barometer use the landing-scan fallback. Nothing depends on a phone model name.
 - **Thresholds are tuned from measured results** across the phones we test. The phone model is not a parameter in the app, the config, or the docs.
-- **No building data is required.** Ascent is measured in metres from pressure, which needs no floor heights. Floor counts are an open decision (see "Open (decisions)"), not a requirement of the app.
+- **No building data is required.** Ascent is measured in metres from pressure, which needs no floor heights. No building floor counts, heights or per-floor claims exist anywhere in the product.
+- **Territory is per building.** A building is the claimed object. Points are verified stair steps, and a segment scores only if its steps match its pressure change (plan section 3.3). Elevator rides, flat walking and shaking score nothing.
+- **Floors are a display estimate.** 20 verified steps = 1 floor-equivalent (plan section 2). It's shown as "floors (estimate)" and never stored as a storey number.
 - **Aim: accurate on every phone.** Not claimed until measured. Accuracy is reported from the measured results, not from a model list.
 
 ## Open (decisions)
 
-- **Floor counting (decided: option 2).** The game counts stair steps directly, with no conversion to building floors. Ascent in metres is measured from pressure and shown alongside. Reason: elevators produce no steps, so riding a lift scores nothing. Phones without a step detector can't count stairs, so they get metres only. Needs a plan change (sections 6 and 9).
-- **Open risk:** step counting can be gamed by walking or shaking on flat ground. The classifier must require a matching pressure change, so flat walking and shaking don't score as climbs.
+- **Phones without a step detector** can't count stairs, so they get metres only.
+- **Open risk:** step counting can be gamed by walking or shaking on flat ground. The classifier must require a matching pressure change, so flat walking and shaking don't score as climbs. Thresholds for this come from real climbs (see "Open (data)").
+
+## Open (data)
+
+- **Real stair climbs** in at least two buildings, with a mix of phones, to set the step-per-metre range, the vertical speed limits and the window lengths.
+- **Negative cases** (`elevator_up`, `walk_flat`, `shake`, `blow`) on real phones, to check that the rule rejects them.
+- **Measured stride and stair geometry** to check the 20-steps-per-floor display estimate.
+- The user provides the CSVs. They go in `fixtures/real_data` (or as decided), and the checker runs on them.
+
+## Branches and PRs (territory change)
+
+- `docs/plan-building-territory`: the plan changes (sections 2, 3, 5, 6). Commits `e3559de`, `3b017a3`.
+- `feat/building-territory-code`: Kotlin scoring rule and floor-equivalent helper, cut from `main`.
+- `feat/building-territory-contract`: contract changes (building standings, `steps_scored`, `building_flipped`) and regenerated client, stacked on T7. Needs Ionut's review because the contract is approved.
+- The PRs open after Worker reports and the checks pass.
 
 - **Dev skip sign-in:** `DEV_SKIP_SIGN_IN` stays on for the friend test build. Remove or set to false when the real auth replaces the stub (later week).
 - **TypeScript override:** `openapi-typescript` 7.13.0 uses a scoped override for TypeScript 6. Remove when a release accepts TypeScript 6. Alternative: pin 6.7.6 and change the client types.
