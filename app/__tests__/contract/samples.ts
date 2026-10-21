@@ -60,12 +60,13 @@ export const checkinResponse: paths['/checkins']['post']['responses'][201]['cont
     valid_until: '2026-11-02T11:30:00Z',
   };
 
-// POST /segments (the plan's example body, section 6)
+// POST /segments (the plan's example body, section 6, plus steps_scored)
 export const segment: Schemas['Segment'] = {
   id: '00000000-0000-4000-8000-000000000002',
   checkin_id: '00000000-0000-4000-8000-000000000001',
   started_at: '2026-11-02T10:14:03Z',
-  floors_gained: 3,
+  building_id: 4,
+  steps_scored: 58,
   ascent_m: 9.7,
   duration_s: 22,
   vert_speed_mps: 0.44,
@@ -85,8 +86,7 @@ export const batchResult: paths['/segments']['post']['responses'][200]['content'
     rejected: [{ id: '00000000-0000-4000-8000-000000000003', reason: 'speed' }],
     flips: [
       {
-        building_id: 1,
-        floor_no: 7,
+        building_id: 4,
         from_team: null,
         to_team: 'AC',
         at: '2026-11-02T10:14:30Z',
@@ -98,6 +98,46 @@ export const rawStream: Schemas['Segment'] = {
   // @ts-expect-error raw sensor streams never appear in a request
   pressure: [1013.2, 1012.8],
 };
+export const floorsGained: Schemas['Segment'] = {
+  ...segment,
+  // @ts-expect-error segments score steps, not floors
+  floors_gained: 3,
+};
+
+// GET /buildings/{id}/standings
+export const standing: paths['/buildings/{id}/standings']['get']['responses'][200]['content']['application/json'] =
+  {
+    building_id: 4,
+    season_id: 1,
+    owner_team: 'AC',
+    teams: [
+      { team: 'AC', points: 1240 },
+      { team: 'ETC', points: 980 },
+    ],
+  };
+export const unclaimed: Schemas['BuildingStanding'] = {
+  building_id: 5,
+  season_id: 1,
+  owner_team: null,
+  teams: [],
+};
+
+// WebSocket events
+export const flipped: Schemas['WsEvent'] = {
+  type: 'building_flipped',
+  building_id: 4,
+  from_team: 'ETC',
+  to_team: 'AC',
+  at: '2026-11-02T10:14:30Z',
+};
+export const floorFlipped: Schemas['WsEvent'] = {
+  // @ts-expect-error floor_flipped is gone; buildings flip
+  type: 'floor_flipped',
+  building_id: 4,
+  from_team: 'ETC',
+  to_team: 'AC',
+  at: '2026-11-02T10:14:30Z',
+};
 
 // Typed client calls: these only need to compile; the runtime test below exercises one.
 export async function typedCalls() {
@@ -108,10 +148,10 @@ export async function typedCalls() {
     header: segmentHeaders,
     body: batch,
   });
-  const floors: Schemas['BuildingFloors'] = await api(
+  const standings: Schemas['BuildingStanding'] = await api(
     'get',
-    '/buildings/{id}/floors',
-    { path: { id: 1 } },
+    '/buildings/{id}/standings',
+    { path: { id: 4 } },
   );
-  return { tokens, result, floors };
+  return { tokens, result, standings };
 }

@@ -106,7 +106,9 @@ Calling the API from a screen:
 ```ts
 import { api, ApiError } from '../api/client';
 
-const floors = await api('get', '/buildings/{id}/floors', { path: { id: 1 } });
+const standings = await api('get', '/buildings/{id}/standings', {
+  path: { id: 1 },
+});
 const result = await api('post', '/segments', {
   header: { 'Idempotency-Key': batchId },
   body: { segments },
