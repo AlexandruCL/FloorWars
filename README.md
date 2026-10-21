@@ -12,7 +12,7 @@ The full project reference and six-week plan is [`IMPLEMENTATION_PLAN.md`](IMPLE
 |---|---|
 | Week 1, code | Done: app shell, Kotlin sensor module, foreground service, sensor logger, API client and auth stub, contract, release test build |
 | Week 1, synthetic data | Done: 24 labelled synthetic traces, generator, checker, trace spec |
-| Week 1, real phones | Open: phone checks, real recordings, device details (see `cristea/week_1_status.md`) |
+| Week 1, real phones | Open: phone checks, real recordings, device details (see `cristea/phone_tests.md`) |
 | Building territory | Plan, scoring rule, floor-equivalent helper and contract revision merged |
 | Backend | Not started (week 2 onwards) |
 
@@ -35,7 +35,7 @@ Dates are when the decision was made. The rule that is in force is in the plan a
 | 2026-10-21 | API contract approved by both members. Every later change is a reviewed PR. | `contracts/openapi.yaml` |
 | 2026-10-21 | Week 1 can be completed on synthetic data. Synthetic traces are labelled and never counted as real. | `docs/trace_format.md`, `fixtures/synthetic/` |
 | 2026-10-21 | Friend test builds use a release APK with a dev-only skip sign-in flag. The flag is removed when the real auth replaces the stub. | `app/src/config/devFlags.ts` |
-| 2026-10-22 | Requirement: runs on any Android phone with a barometer. Capabilities are checked at run time. No dependency on phone model names. | `cristea/week_1_status.md` |
+| 2026-10-22 | Requirement: runs on any Android phone with a barometer. Capabilities are checked at run time. No dependency on phone model names. | `cristea/phone_tests.md` |
 | 2026-10-22 | No building floor data. Ascent is measured in metres. Floors removed as a game unit. | Plan sections 2, 3, 5, 6 |
 | 2026-10-22 | Territory per building. Points per verified stair step, with a pressure-steps match (the scoring rule). | Plan section 3.3 |
 | 2026-10-22 | Floor-equivalent for display only: 20 steps = 1 floor, labelled "floors (estimate)". | Plan section 2, `app/src/scoring/floorEquivalent.ts` |
@@ -72,7 +72,7 @@ Starting values are ours and tunable from real data: 1 point per verified step, 
 
 ## Open work
 
-- Real-phone tests and real recordings: see `cristea/week_1_status.md`.
+- Real-phone tests and real recordings: see `cristea/phone_tests.md`.
 - Backend and database (weeks 2 to 5): see the plan.
 - Auth: replace the stub and remove the dev skip flag (T7 follow-up).
 - CI: none yet. The contract test runs under `npm test` locally.

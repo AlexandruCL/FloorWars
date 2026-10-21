@@ -1,6 +1,6 @@
-# Week 1 status (Cristea)
+# Phone tests (Cristea)
 
-Last updated: 2026-10-22. Source of truth for the task list: `cristea/week_1_tasks.md`. This file says where things stand and what the real-phone work is.
+Last updated: 2026-10-22. Source of truth for the task list: `cristea/week_1_tasks.md`. This file lists the tests that need real phones, how to run them, and what is still open. Week 1 implementation is explained in `cristea/week_1_implementation.md`.
 
 ## Summary
 
