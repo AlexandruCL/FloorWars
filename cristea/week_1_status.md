@@ -47,7 +47,7 @@ Only PRs #1 to #4 are merged. The rest are open. Merge order: #8, #7, #5, #6, #9
 
 ## Open (decisions)
 
-- **Floor counting without building data:** either (1) one global default floor height, so floor counts are approximate, or (2) count metres of ascent instead of floors, which needs no building data but changes the floor-claim game. Recommendation: option 2, with floor counts shown as an estimate. Needs your decision and a plan change (sections 6 and 9).
+- **Floor counting (decided: option 2).** Floors come from stairs climbed, not from building data. Ascent in metres is measured from pressure. Open detail: how steps convert to floors. Either a single global steps-per-floor constant calibrated from our traces, or the game counts steps directly. Also: elevators produce no steps, and phones without a step detector can't count stairs, so those cases get metres only. Needs a plan change (sections 6 and 9).
 
 - **Dev skip sign-in:** `DEV_SKIP_SIGN_IN` stays on for the friend test build. Remove or set to false when the real auth replaces the stub (later week).
 - **TypeScript override:** `openapi-typescript` 7.13.0 uses a scoped override for TypeScript 6. Remove when a release accepts TypeScript 6. Alternative: pin 6.7.6 and change the client types.
