@@ -38,6 +38,12 @@ Only PRs #1 to #4 are merged. The rest are open. Merge order: #8, #7, #5, #6, #9
 - **T6 phone details:** exact manufacturer, model, Android version, barometer, battery settings for both phones.
 - **Exit check:** the app installs on both phones, and there are 20 real traces. Synthetic traces do not count.
 
+## Requirement (decided)
+
+- **Runs on any Android phone with a barometer.** The app checks what the phone reports (barometer, sampling rate, step detector) and adapts. Phones without a barometer use the landing-scan fallback.
+- **Accuracy is stated per tested model.** Untested models are listed as unverified, not supported.
+- **Aim: accurate on every phone.** Reached by refining the app and thresholds from tested results, one model at a time. Not claimed until measured.
+
 ## Open (decisions)
 
 - **Dev skip sign-in:** `DEV_SKIP_SIGN_IN` stays on for the friend test build. Remove or set to false when the real auth replaces the stub (later week).
