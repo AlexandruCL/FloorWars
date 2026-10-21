@@ -1,0 +1,974 @@
+openapi: 3.1.0
+info:
+  title: FloorWars API
+  version: 0.1.0-draft
+  description: |
+    DRAFT, not frozen. Both members (Cristea and Ionut) must approve this file before T7
+    generates the TypeScript client from it, and every later change is a PR reviewed by the other member.
+
+    Source: IMPLEMENTATION_PLAN.md section 6 (endpoints, WebSocket events, segment body),
+    section 3 (climb-to-claim flow, check-ins, anti-cheat) and section 5 (data model and constraints).
+    Anything the plan does not define is marked "Inferred:" in its description so it can be reviewed.
+
+    Errors use RFC 9457 problem details (application/problem+json). Clients never retry 4xx; they retry
+    5xx and network errors with exponential backoff and jitter (connect timeout 10 s, read timeout 20 s).
+    Raw pressure or step streams never appear in any request.
+servers:
+  - url: https://api.example.invalid/v1
+    description: Placeholder host. The real host is set when the server is deployed.
+security:
+  - bearerAuth: []
+tags:
+  - name: auth
+  - name: teams
+  - name: checkins
+  - name: segments
+  - name: buildings
+  - name: leaderboards
+  - name: me
+  - name: devices
+  - name: config
+  - name: realtime
+
+paths:
+  /auth/otp:
+    post:
+      tags: [auth]
+      operationId: requestOtp
+      summary: Send a 6-digit code to a university e-mail address
+      description: Only addresses on the domain allow-list get a code. Rate limited.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpRequest' }
+      responses:
+        '202':
+          description: 'Inferred: the code was sent (or would be, for an allowed address). No body.'
+        '403':
+          description: 'Inferred: the e-mail domain is not on the allow-list.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/verify:
+    post:
+      tags: [auth]
+      operationId: verifyOtp
+      summary: Exchange e-mail and code for tokens
+      description: At most 5 attempts per code. Codes expire after 10 minutes (plan section 10, Week 2).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpVerifyRequest' }
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401':
+          description: Wrong or expired code.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429':
+          description: Too many attempts for this code (more than 5).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshTokens
+      summary: Rotate the refresh token
+      description: Returns a new token pair. Reusing an already-rotated refresh token revokes its whole family.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: New token pair.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401':
+          description: Unknown, expired or reused refresh token. On reuse the family is revoked.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /teams:
+    get:
+      tags: [teams]
+      operationId: listTeams
+      summary: List teams (faculties)
+      security: []
+      responses:
+        '200':
+          description: All teams.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Team' }
+
+  /seasons/{id}/join:
+    post:
+      tags: [teams]
+      operationId: joinSeason
+      summary: Pick a team for the season
+      description: One team per user per season.
+      parameters:
+        - $ref: '#/components/parameters/SeasonId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JoinRequest' }
+      responses:
+        '201':
+          description: Joined.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamMembership' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The user already has a team for this season.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /checkins:
+    post:
+      tags: [checkins]
+      operationId: createCheckin
+      summary: Check in by signed QR token or geofence
+      description: |
+        Sets the building context for climbs. For QR the server verifies the token's HMAC and time window.
+        A check-in is valid for 90 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckinRequest' }
+      responses:
+        '201':
+          description: Checked in.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Checkin' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 'Inferred: QR token invalid or outside its time window, or the position is not inside any building footprint.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /segments:
+    post:
+      tags: [segments]
+      operationId: uploadSegments
+      summary: Upload a batch of climb segments
+      description: |
+        Idempotent. Segments are inserted ON CONFLICT DO NOTHING on (device, id), so a re-sent segment
+        counts as accepted. Server plausibility checks repeat the on-device rules.
+        Rate limits (plan 3.4): 60 uploads per hour and 40 floors per 10 minutes per user.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Unique per batch. A retry of the same batch reuses the same key.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SegmentBatch' }
+      responses:
+        '200':
+          description: Batch processed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SegmentBatchResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /buildings:
+    get:
+      tags: [buildings]
+      operationId: listBuildings
+      summary: List buildings
+      responses:
+        '200':
+          description: All buildings.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Building' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /buildings/{id}/floors:
+    get:
+      tags: [buildings]
+      operationId: getBuildingFloors
+      summary: Floors with their current owner for the active season
+      parameters:
+        - $ref: '#/components/parameters/BuildingId'
+      responses:
+        '200':
+          description: Floors of the building, lowest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BuildingFloors' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /leaderboards:
+    get:
+      tags: [leaderboards]
+      operationId: getLeaderboard
+      summary: Individual, team or building leaderboard
+      description: Served from Valkey sorted sets.
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          description: 'Inferred: the plan names the three boards but not how a client picks one.'
+          schema:
+            type: string
+            enum: [individual, team, building]
+        - name: season_id
+          in: query
+          required: false
+          description: 'Inferred: defaults to the active season.'
+          schema: { type: integer, minimum: 1 }
+        - name: building_id
+          in: query
+          required: false
+          description: 'Inferred: required when scope is building.'
+          schema: { type: integer, minimum: 1 }
+        - name: limit
+          in: query
+          required: false
+          description: 'Inferred.'
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: The board, best first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Leaderboard' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /me/season-stats:
+    get:
+      tags: [me]
+      operationId: getSeasonStats
+      summary: Personal stats, landmarks progress and share-card data
+      parameters:
+        - name: season_id
+          in: query
+          required: false
+          description: 'Inferred: defaults to the active season.'
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Stats for the season.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeasonStats' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/segments:
+    get:
+      tags: [me]
+      operationId: listMySegments
+      summary: Personal climb history
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: 'Inferred: opaque cursor from next_cursor of the previous page.'
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          description: 'Inferred.'
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: One page of segments, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SegmentPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /devices/push-token:
+    post:
+      tags: [devices]
+      operationId: registerPushToken
+      summary: Register the device push token
+      description: Stored per device. Tokens that FCM rejects are deleted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PushTokenRequest' }
+      responses:
+        '204':
+          description: Stored.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /landing-scans:
+    post:
+      tags: [checkins]
+      operationId: createLandingScan
+      summary: Barometer-less fallback scan on a stair landing
+      description: For phones without a barometer. Strict rate limit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LandingScanRequest' }
+      responses:
+        '201':
+          description: Scan recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LandingScan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 'Inferred: landing QR token invalid or outside its time window.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /config:
+    get:
+      tags: [config]
+      operationId: getClassifierConfig
+      summary: Classifier thresholds (versioned)
+      description: Lets the team revert thresholds in seconds without a deploy.
+      responses:
+        '200':
+          description: The current thresholds.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClassifierConfig' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/export:
+    get:
+      tags: [me]
+      operationId: exportMyData
+      summary: GDPR export of the user's data
+      responses:
+        '200':
+          description: 'Inferred: one JSON document with everything stored about the user. Shape to be agreed.'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me:
+    delete:
+      tags: [me]
+      operationId: deleteMe
+      summary: GDPR account deletion
+      description: Deletes the user. Foreign keys cascade, so this removes all user-owned rows.
+      responses:
+        '204':
+          description: Deleted.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /ws:
+    get:
+      tags: [realtime]
+      operationId: openWebSocket
+      summary: Live events over WebSocket (WS /v1/ws)
+      description: |
+        OpenAPI cannot describe WebSocket messages, so this documents the upgrade request only.
+        The connection is authenticated on connect. Server-to-client messages are WsEvent
+        (floor_flipped, season_state); see x-websocket-events.
+      parameters:
+        - name: access_token
+          in: query
+          required: false
+          description: 'Inferred: access token for clients that cannot set an Authorization header on the upgrade request. Either this or the bearer header.'
+          schema: { type: string }
+      responses:
+        '101':
+          description: Switching Protocols. Messages follow as JSON text frames.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+      x-websocket-events:
+        server-to-client:
+          $ref: '#/components/schemas/WsEvent'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    SeasonId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+    BuildingId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+
+  responses:
+    Unauthorized:
+      description: Missing, invalid or expired access token.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: No such resource.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ValidationError:
+      description: 'Inferred: the body or parameters fail schema validation (422, the FastAPI default).'
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Rate limit hit.
+      headers:
+        Retry-After:
+          description: 'Inferred: seconds until the client may try again.'
+          schema: { type: integer, minimum: 0 }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details. Extension members are allowed.
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          default: about:blank
+        title: { type: string }
+        status: { type: integer, minimum: 100, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }
+      additionalProperties: true
+
+    OtpRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          description: University e-mail address. The domain must be on the allow-list.
+      additionalProperties: false
+
+    OtpVerifyRequest:
+      type: object
+      required: [email, code]
+      properties:
+        email: { type: string, format: email }
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: The 6-digit code from the e-mail.
+      additionalProperties: false
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+      additionalProperties: false
+
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+          description: JWT access token.
+        refresh_token:
+          type: string
+          description: Rotating refresh token. Store it in the Android Keystore (react-native-keychain).
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          minimum: 1
+          description: 'Inferred: access token lifetime in seconds.'
+        refresh_expires_in:
+          type: integer
+          minimum: 1
+          description: 'Inferred: refresh token lifetime in seconds. The plan does not set one.'
+
+    Team:
+      type: object
+      required: [id, code, color_hex]
+      properties:
+        id: { type: integer, minimum: 1 }
+        code:
+          type: string
+          description: Faculty code, for example AC, ETC, MEC.
+        color_hex:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+          description: 'Team colour. Inferred: the "#RRGGBB" format.'
+
+    JoinRequest:
+      type: object
+      required: [team_id]
+      properties:
+        team_id: { type: integer, minimum: 1 }
+      additionalProperties: false
+
+    TeamMembership:
+      type: object
+      description: 'Inferred: the response shape for a join.'
+      required: [season_id, team_id]
+      properties:
+        season_id: { type: integer, minimum: 1 }
+        team_id: { type: integer, minimum: 1 }
+
+    CheckinRequest:
+      description: QR or geofence check-in, chosen by method.
+      oneOf:
+        - $ref: '#/components/schemas/QrCheckinRequest'
+        - $ref: '#/components/schemas/GeofenceCheckinRequest'
+      discriminator:
+        propertyName: method
+        mapping:
+          qr: '#/components/schemas/QrCheckinRequest'
+          geofence: '#/components/schemas/GeofenceCheckinRequest'
+
+    QrCheckinRequest:
+      type: object
+      required: [method, qr_token]
+      properties:
+        method: { type: string, const: qr }
+        qr_token:
+          type: string
+          description: 'Inferred field name: the signed, expiring token read from the entrance QR code. The server checks its HMAC and time window.'
+      additionalProperties: false
+
+    GeofenceCheckinRequest:
+      type: object
+      required: [method, latitude, longitude]
+      properties:
+        method: { type: string, const: geofence }
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+          description: 'Inferred: one-shot location fix (WGS 84). The server matches it to a building footprint within 30 m.'
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+          description: 'Inferred: one-shot location fix (WGS 84).'
+        accuracy_m:
+          type: number
+          minimum: 0
+          description: 'Inferred: reported accuracy of the fix, in metres.'
+      additionalProperties: false
+
+    Checkin:
+      type: object
+      required: [id, building_id, method, valid_from, valid_until]
+      properties:
+        id: { type: string, format: uuid }
+        building_id: { type: integer, minimum: 1 }
+        method: { type: string, enum: [qr, geofence] }
+        valid_from:
+          type: string
+          format: date-time
+          description: 'Inferred: start of the 90-minute validity range (valid_during in the data model).'
+        valid_until:
+          type: string
+          format: date-time
+          description: 'Inferred: end of the 90-minute validity range.'
+
+    Segment:
+      description: One detected climb, as produced by the on-device segmenter. No raw sensor data.
+      allOf:
+        - $ref: '#/components/schemas/SegmentFields'
+      unevaluatedProperties: false
+
+    SegmentFields:
+      type: object
+      description: Fields shared by an uploaded segment and a stored one.
+      required:
+        - id
+        - checkin_id
+        - started_at
+        - floors_gained
+        - ascent_m
+        - duration_s
+        - vert_speed_mps
+        - steps
+        - stair_prob
+        - classifier_version
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Client-generated UUID. Unique per device; a repeat is treated as success.
+        checkin_id: { type: string, format: uuid }
+        started_at: { type: string, format: date-time }
+        floors_gained:
+          type: integer
+          minimum: 1
+          maximum: 30
+        ascent_m:
+          type: number
+          minimum: 2.0
+          maximum: 120.0
+        duration_s:
+          type: number
+          exclusiveMinimum: 0
+          description: 'Inferred: number (the plan example is 22) and the positive bound.'
+        vert_speed_mps:
+          type: number
+          minimum: 0
+          description: 'Inferred: the non-negative bound.'
+        steps:
+          type: integer
+          minimum: 0
+          maximum: 32767
+          description: 'Inferred: bounds (smallint in the data model).'
+        stair_prob:
+          type: number
+          minimum: 0
+          maximum: 1
+        classifier_version:
+          type: string
+          description: For example rules-1.
+
+    SegmentBatch:
+      type: object
+      required: [segments]
+      properties:
+        segments:
+          type: array
+          minItems: 1
+          maxItems: 100
+          description: 'Inferred: the 100-item batch limit.'
+          items: { $ref: '#/components/schemas/Segment' }
+      additionalProperties: false
+
+    SegmentBatchResult:
+      type: object
+      required: [accepted, rejected, flips]
+      properties:
+        accepted:
+          type: array
+          description: 'Inferred: ids of accepted segments, including repeats of already stored ones.'
+          items: { type: string, format: uuid }
+        rejected:
+          type: array
+          description: 'Inferred: rejected segments with the failed rule.'
+          items: { $ref: '#/components/schemas/RejectedSegment' }
+        flips:
+          type: array
+          description: Floors that changed owner because of this batch.
+          items: { $ref: '#/components/schemas/FloorFlip' }
+
+    RejectedSegment:
+      type: object
+      description: 'Inferred: the shape of a rejected item.'
+      required: [id, reason]
+      properties:
+        id: { type: string, format: uuid }
+        reason:
+          type: string
+          description: 'Inferred: the plausibility rule that failed, for example speed, cadence, steps_per_m, floors_range, rate_limit.'
+
+    Building:
+      type: object
+      required: [id, name, floor_count]
+      properties:
+        id: { type: integer, minimum: 1 }
+        name: { type: string }
+        floor_count:
+          type: integer
+          minimum: 1
+          description: 'Inferred: exposed to clients (it is a column in the data model).'
+
+    BuildingFloors:
+      type: object
+      required: [building_id, season_id, floors]
+      properties:
+        building_id: { type: integer, minimum: 1 }
+        season_id:
+          type: integer
+          minimum: 1
+          description: 'Inferred: the active season the owners refer to.'
+        floors:
+          type: array
+          items: { $ref: '#/components/schemas/FloorOwnership' }
+
+    FloorOwnership:
+      type: object
+      required: [floor_id, floor_no, owner_team_id, claimed_at]
+      properties:
+        floor_id: { type: integer, minimum: 1 }
+        floor_no: { type: integer }
+        height_m:
+          type: number
+          description: 'Floor height in metres. Inferred: exposed to clients.'
+        owner_team_id:
+          type: [integer, 'null']
+          minimum: 1
+          description: Current owner this season, or null if nobody has claimed the floor.
+        claimed_at:
+          type: [string, 'null']
+          format: date-time
+
+    FloorFlip:
+      type: object
+      description: A floor changing owner. Same fields as the floor_flipped WebSocket event.
+      required: [building_id, floor_no, from_team, to_team, at]
+      properties:
+        building_id: { type: integer, minimum: 1 }
+        floor_no: { type: integer }
+        from_team:
+          type: [string, 'null']
+          description: 'Inferred: team code (for example AC), null when the floor had no owner. The plan does not say code or id.'
+        to_team:
+          type: string
+          description: 'Inferred: team code (for example AC).'
+        at: { type: string, format: date-time }
+
+    Leaderboard:
+      type: object
+      required: [scope, season_id, entries]
+      properties:
+        scope: { type: string, enum: [individual, team, building] }
+        season_id: { type: integer, minimum: 1 }
+        building_id:
+          type: [integer, 'null']
+          description: 'Inferred: set when scope is building.'
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/LeaderboardEntry' }
+
+    LeaderboardEntry:
+      type: object
+      description: 'Inferred: the entry shape.'
+      required: [rank, id, name, points]
+      properties:
+        rank: { type: integer, minimum: 1 }
+        id:
+          type: string
+          description: 'Inferred: user id for individual boards, team code for team and building boards.'
+        name:
+          type: string
+          description: 'Inferred: display name or team code.'
+        points: { type: integer, minimum: 0 }
+
+    SeasonStats:
+      type: object
+      description: Personal stats for one season. Also the data for the share card, which the app renders locally.
+      required: [season_id, team_id, floors_climbed, points, landmarks]
+      properties:
+        season_id: { type: integer, minimum: 1 }
+        team_id:
+          type: [integer, 'null']
+          description: 'Inferred: null if the user has not joined a team this season.'
+        floors_climbed:
+          type: integer
+          minimum: 0
+          description: 'Inferred.'
+        ascent_m:
+          type: number
+          minimum: 0
+          description: 'Inferred.'
+        points:
+          type: integer
+          minimum: 0
+          description: 'Inferred.'
+        rank:
+          type: [integer, 'null']
+          minimum: 1
+          description: 'Inferred: individual rank this season.'
+        floors_owned_by_team:
+          type: integer
+          minimum: 0
+          description: 'Inferred: share-card figure.'
+        landmarks:
+          type: array
+          description: 'Inferred: landmarks progress (for example a tower height reached by total ascent).'
+          items: { $ref: '#/components/schemas/LandmarkProgress' }
+
+    LandmarkProgress:
+      type: object
+      description: 'Inferred: the whole shape.'
+      required: [name, height_m, reached]
+      properties:
+        name: { type: string }
+        height_m: { type: number, minimum: 0 }
+        reached: { type: boolean }
+
+    SegmentRecord:
+      description: A stored segment with its server-side status.
+      allOf:
+        - $ref: '#/components/schemas/SegmentFields'
+        - type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [pending, verified, rejected]
+      unevaluatedProperties: false
+
+    SegmentPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SegmentRecord' }
+        next_cursor:
+          type: [string, 'null']
+          description: 'Inferred: cursor pagination; null on the last page.'
+
+    PushTokenRequest:
+      type: object
+      required: [device_id, token]
+      properties:
+        device_id:
+          type: string
+          format: uuid
+          description: 'Inferred: how the server knows which device the token belongs to.'
+        token:
+          type: string
+          description: FCM registration token.
+        platform:
+          type: string
+          enum: [android]
+          default: android
+          description: 'Inferred: Android only for now.'
+      additionalProperties: false
+
+    LandingScanRequest:
+      type: object
+      required: [qr_token]
+      properties:
+        qr_token:
+          type: string
+          description: 'Inferred field name: the signed token from the landing sticker. It encodes the building and floor.'
+        scanned_at:
+          type: string
+          format: date-time
+          description: 'Inferred: device time of the scan.'
+      additionalProperties: false
+
+    LandingScan:
+      type: object
+      description: 'Inferred: the response shape.'
+      required: [id, building_id, floor_no]
+      properties:
+        id: { type: string, format: uuid }
+        building_id: { type: integer, minimum: 1 }
+        floor_no: { type: integer }
+        flips:
+          type: array
+          items: { $ref: '#/components/schemas/FloorFlip' }
+
+    ClassifierConfig:
+      type: object
+      description: Versioned thresholds for the rules classifier. Starting values are in plan section 3.3.
+      required: [version, thresholds]
+      properties:
+        version:
+          type: string
+          description: Matches classifier_version on uploaded segments, for example rules-1.
+        thresholds:
+          type: object
+          description: 'Inferred field names. The values come from the plan 3.3 table; all are tuned on pilot data.'
+          required:
+            - stairs_vert_speed_min_mps
+            - stairs_vert_speed_max_mps
+            - elevator_vert_speed_min_mps
+            - stairs_steps_per_m_min
+            - stairs_steps_per_m_max
+            - elevator_steps_per_m_max
+            - stairs_window_min_s
+            - stairs_window_max_s
+          properties:
+            stairs_vert_speed_min_mps: { type: number, examples: [0.1] }
+            stairs_vert_speed_max_mps: { type: number, examples: [0.9] }
+            elevator_vert_speed_min_mps: { type: number, examples: [1.0] }
+            stairs_steps_per_m_min: { type: number, examples: [4] }
+            stairs_steps_per_m_max: { type: number, examples: [8] }
+            elevator_steps_per_m_max: { type: number, examples: [1] }
+            stairs_window_min_s: { type: number, examples: [5] }
+            stairs_window_max_s: { type: number, examples: [180] }
+          additionalProperties: true
+
+    FloorFlippedEvent:
+      description: 'WebSocket event. Inferred: the flat envelope with a type field.'
+      allOf:
+        - type: object
+          required: [type]
+          properties:
+            type: { type: string, const: floor_flipped }
+        - $ref: '#/components/schemas/FloorFlip'
+
+    SeasonStateEvent:
+      type: object
+      description: 'WebSocket event. Inferred: the flat envelope with a type field.'
+      required: [type, paused, ends_at]
+      properties:
+        type: { type: string, const: season_state }
+        paused: { type: boolean }
+        ends_at: { type: string, format: date-time }
+
+    WsEvent:
+      description: Any server-to-client WebSocket message.
+      oneOf:
+        - $ref: '#/components/schemas/FloorFlippedEvent'
+        - $ref: '#/components/schemas/SeasonStateEvent'
+      discriminator:
+        propertyName: type
+        mapping:
+          floor_flipped: '#/components/schemas/FloorFlippedEvent'
+          season_state: '#/components/schemas/SeasonStateEvent'
