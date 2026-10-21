@@ -14,7 +14,7 @@ Rules for every task:
 
 Updated after each Worker report. A box is ticked only when the report shows the done criteria passed.
 
-- [ ] T1. Init React Native app (partial: commit eb284b3 on `feat/t1-rn-app-init`; lint, test, tsc pass; debug APK not built or installed; not pushed; no PR)
+- [x] T1. Init React Native app (merged to `main` via PR #1, merge commit 71c08e7; lint, test, tsc pass; debug APK built and installed on emulator)
 - [ ] T2. Kotlin `FloorSensors` module skeleton
 - [ ] T3. Foreground service with sensor registration
 - [ ] T4. Sensor logger screen
