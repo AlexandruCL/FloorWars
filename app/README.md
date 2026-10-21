@@ -78,7 +78,9 @@ The APK lands in `android/app/build/outputs/apk/release/app-release.apk`. Instal
 npm run generate:api
 ```
 
-Commit the regenerated file together with the contract change. `src/api/client.ts` is a small typed `fetch` wrapper over those types; it sends the stored access token as a bearer header. The base URL is the contract's placeholder (`API_BASE_URL` in `client.ts`) until the server is deployed.
+Commit the regenerated file together with the contract change.
+
+`package.json` has an `overrides` entry for openapi-typescript. openapi-typescript 7.13.0 (every 7.x release so far) declares a peer dependency on `typescript ^5.x`, and this app pins TypeScript 6.0.3, so `npm install` fails with ERESOLVE without it. The override points openapi-typescript at the app's own TypeScript instead of installing a second one; the generated output was checked under TypeScript 6 (`tsc --strict` and the contract test). Remove the override once an openapi-typescript release lists TypeScript 6 in its peer range, and upgrade to that release. Do not use `--force` or `--legacy-peer-deps` instead. `src/api/client.ts` is a small typed `fetch` wrapper over those types; it sends the stored access token as a bearer header. The base URL is the contract's placeholder (`API_BASE_URL` in `client.ts`) until the server is deployed.
 
 The contract test is `__tests__/apiContract.typecheck.test.js`. It runs the TypeScript compiler over typed request and response samples in `__tests__/contract/samples.ts`, so `npm test` fails if the generated types and the samples drift apart. There is no CI yet, so it only runs locally.
 
