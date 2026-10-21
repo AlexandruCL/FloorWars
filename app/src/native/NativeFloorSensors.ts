@@ -18,6 +18,8 @@ export interface Spec extends TurboModule {
   startLogging(label: string): void;
   stopLogging(): void;
   getStatus(): Promise<FloorSensorsStatus>;
+  // Writes the last stopped session to files/traces as CSV; resolves to the file path.
+  saveTrace(placement: string): Promise<string>;
   readonly onStatusChange: CodegenTypes.EventEmitter<LoggingStatus>;
 }
 

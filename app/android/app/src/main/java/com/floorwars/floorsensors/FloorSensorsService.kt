@@ -11,6 +11,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
@@ -57,6 +58,8 @@ class FloorSensorsService :
                 .apply { acquire() }
         }
 
+        session =
+            TraceSession(newLabel, System.currentTimeMillis(), SystemClock.elapsedRealtimeNanos())
         label = newLabel
         statusListener?.invoke()
         return START_NOT_STICKY
@@ -67,6 +70,7 @@ class FloorSensorsService :
         wakeLock?.release()
         wakeLock = null
         Log.i(TAG, "stopped label=$label buffered=${buffer.size()} byType=${buffer.countByType()}")
+        session = session?.copy(stoppedAtMillis = System.currentTimeMillis())
         label = null
         statusListener?.invoke()
         super.onDestroy()
@@ -114,6 +118,11 @@ class FloorSensorsService :
         // Non-null while the service is in the foreground and sensors are registered.
         @Volatile
         var label: String? = null
+            private set
+
+        // The latest session; stoppedAtMillis is set once it has stopped.
+        @Volatile
+        var session: TraceSession? = null
             private set
 
         @Volatile

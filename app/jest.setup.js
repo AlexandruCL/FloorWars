@@ -17,6 +17,9 @@ jest.mock('./src/native/NativeFloorSensors', () => ({
         buffered: 0,
       }),
     ),
+    saveTrace: jest.fn(() =>
+      Promise.resolve('/data/files/traces/stairs_up_pocket.csv'),
+    ),
     onStatusChange: jest.fn(() => ({ remove: jest.fn() })),
   },
 }));
