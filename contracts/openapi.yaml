@@ -3,8 +3,7 @@ info:
   title: FloorWars API
   version: 0.1.0-draft
   description: |
-    DRAFT, not frozen. Both members (Cristea and Ionut) must approve this file before T7
-    generates the TypeScript client from it, and every later change is a PR reviewed by the other member.
+    Approved by both members on 2026-10-21. Every later change is a PR reviewed by the other member.
 
     Source: IMPLEMENTATION_PLAN.md section 6 (endpoints, WebSocket events, segment body),
     section 3 (climb-to-claim flow, check-ins, anti-cheat) and section 5 (data model and constraints).
