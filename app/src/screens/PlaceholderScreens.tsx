@@ -12,15 +12,27 @@ function Placeholder({ title }: { title: string }) {
   );
 }
 
-// onDevSkipSignIn opens the Main stack while DEV_SKIP_SIGN_IN is on, until the auth stub (T7) exists.
+// onStubSignIn is the auth stub (T7). onDevSkipSignIn opens Main without a token while DEV_SKIP_SIGN_IN is on.
 export function SignInScreen({
+  onStubSignIn,
   onDevSkipSignIn,
 }: {
+  onStubSignIn?: () => Promise<void>;
   onDevSkipSignIn?: () => void;
 }) {
   return (
     <>
       <Placeholder title="Sign in" />
+      {onStubSignIn && (
+        <Button
+          title="Sign in (stub)"
+          onPress={() =>
+            onStubSignIn().catch(e =>
+              console.warn('[auth] stub sign-in failed', e),
+            )
+          }
+        />
+      )}
       {DEV_SKIP_SIGN_IN && onDevSkipSignIn && (
         <Button title="Skip sign-in (dev)" onPress={onDevSkipSignIn} />
       )}
