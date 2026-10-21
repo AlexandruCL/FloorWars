@@ -42,9 +42,12 @@ Only PRs #1 to #4 are merged. The rest are open. Merge order: #8, #7, #5, #6, #9
 
 - **Runs on any Android phone with a barometer.** The app checks the phone's capabilities (barometer, sampling rate, step detector) and adapts. Phones without a barometer use the landing-scan fallback. Nothing depends on a phone model name.
 - **Thresholds are tuned from measured results** across the phones we test. The phone model is not a parameter in the app, the config, or the docs.
+- **No building data is required.** Ascent is measured in metres from pressure, which needs no floor heights. Floor counts are an open decision (see "Open (decisions)"), not a requirement of the app.
 - **Aim: accurate on every phone.** Not claimed until measured. Accuracy is reported from the measured results, not from a model list.
 
 ## Open (decisions)
+
+- **Floor counting without building data:** either (1) one global default floor height, so floor counts are approximate, or (2) count metres of ascent instead of floors, which needs no building data but changes the floor-claim game. Recommendation: option 2, with floor counts shown as an estimate. Needs your decision and a plan change (sections 6 and 9).
 
 - **Dev skip sign-in:** `DEV_SKIP_SIGN_IN` stays on for the friend test build. Remove or set to false when the real auth replaces the stub (later week).
 - **TypeScript override:** `openapi-typescript` 7.13.0 uses a scoped override for TypeScript 6. Remove when a release accepts TypeScript 6. Alternative: pin 6.7.6 and change the client types.
