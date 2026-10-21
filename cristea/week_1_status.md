@@ -1,10 +1,10 @@
 # Week 1 status (Cristea)
 
-Last updated: 2026-10-21. Source of truth for the task list: `cristea/week_1_tasks.md`. This file says where things stand.
+Last updated: 2026-10-22. Source of truth for the task list: `cristea/week_1_tasks.md`. This file says where things stand and what the real-phone work is.
 
 ## Summary
 
-All week 1 tasks are implemented in code (T1 to T7), and the test build for a friend's phone is ready. Week 1 is complete on code and synthetic data. Phone validation and real recordings are deferred to later weeks, by decision.
+All week 1 tasks are implemented in code (T1 to T7), and the test build for a friend's phone is ready. Week 1 is complete on code and synthetic data, as agreed. Real-phone validation and real recordings are the next work, described below.
 
 ## Tasks
 
@@ -12,145 +12,141 @@ All week 1 tasks are implemented in code (T1 to T7), and the test build for a fr
 |---|---|---|---|
 | T1 Init RN app | Done, merged | #1 (`71c08e7`) | Lint, test, tsc pass. Debug APK installed on emulator |
 | T2 Kotlin `FloorSensors` skeleton | Done, merged | #2 (`ad6e8a3`) | ktlint, JUnit, start and stop verified on emulator |
-| T3 Foreground service | Done, merged | #3 (`bdeff89`) | Phone checks pending (see below) |
+| T3 Foreground service | Done, merged | #3 (`bdeff89`) | Phone checks pending (section "Real-phone work") |
 | T4 Sensor logger screen | Done, merged | #4 (`1b83082`) | CSV export and share sheet verified on emulator. Step rows and phone checks pending |
-| T5 Labelled traces | Done on synthetic data | #7 | 24 synthetic traces, generator, checker, trace spec. Real recordings deferred |
+| T5 Labelled traces | Done on synthetic data | #7 | 24 synthetic traces, generator, checker (checks 1 to 9), trace spec. Real recordings pending |
 | T6 Test devices doc | Done, phone entries pending | #8 | `docs/devices.md` with emulator entry and pending phones |
-| T7 TS API client and auth stub | Done | #9 (stacked on #5 and #6) | Ionut ran the shell and confirmed it starts. Contract test runs under `npm test` (no CI yet) |
+| T7 TS API client and auth stub | Done. Ionut confirmed the shell starts | #9 | Stacked on the contract (#5) and T8 (#6). Contract test runs under `npm test` (no CI yet) |
 | Contract `openapi.yaml` | Approved by both | #5 | Inferred fields marked in the file |
 | T8 Release test build | Done, device test not run | #6 | `DEV_SKIP_SIGN_IN` flag, release APK built, static checks only |
 
-Only PRs #1 to #4 are merged. The rest are open. Merge order: #5 (contract), #6 (T8), #7 (T5), #8 (T6), #9 (T7).
+Merge order: #5 (contract), #6 (T8), #7 (T5), #8 (T6), #9 (T7).
+
+## Building territory (after week 1)
+
+Decided 2026-10-22, reviewed by Ionut. Source of truth: `IMPLEMENTATION_PLAN.md` sections 2, 3.3, 5, 6.
+
+| Branch | Base | PR | Content |
+|---|---|---|---|
+| `docs/plan-building-territory` | main | new | Plan changes (territory, stair steps, floor-equivalent, week plan) |
+| `feat/building-territory-code` | main | new | Step scoring rule (`StepScoring.kt`) and floor-equivalent helper |
+| `feat/building-territory-contract` | `feat/t7-api-client-auth-stub` | new | Contract changes (standings, `steps_scored`, `building_flipped`), regenerated client |
+
+- A building is the claimed object. Points are verified stair steps, and a segment scores only if its steps match its pressure change (stairs 4 to 8 steps per metre of ascent; elevator, flat walking and shaking score nothing).
+- Floors are a display estimate: 20 verified steps = 1 floor-equivalent, always shown as "floors (estimate)".
+- No building floor data is used anywhere.
 
 ## Verification
 
-- All checks pass on the emulator or in Jest, as listed in each PR.
+- Checks passed on the emulator or in Jest, as listed in each PR.
 - The release APK (T8) has not run on a device. Emulator was skipped for memory.
 - The T7 keychain flow is covered by Jest with a mock only.
+- Trace checker: 24/24 synthetic traces pass (checks 1 to 9).
 
-## Open (needs real phones, later)
+## Real-phone work (not done)
 
-- **T3 phone checks:** notification on a real device; `has_barometer` correct on both test phones; service survives 60 s with the screen off.
-- **T3 decision:** keep or drop the partial wake lock and the base `FOREGROUND_SERVICE` permission, after testing on real phones.
-- **T4 phone checks:** step rows (the emulator has no step detector); CSV opened in a spreadsheet; share sheet on a device.
-- **T5 real recordings:** at least 20 labelled traces in `/traces`, all six labels, two devices, in a faculty building, with a `labels.csv` row per file. No personal data.
-- **Validate the synthetic traces** against real phones: `docs/trace_format.md` section 6 (TO VALIDATE rows and the validation log).
-- **T6 phone details:** exact manufacturer, model, Android version, barometer, battery settings for both phones.
-- **Exit check:** the app installs on both phones, and there are 20 real traces. Synthetic traces do not count.
+Everything below needs real Android phones with a barometer. Two phones are the target for week 1 exit.
 
-## Requirement (decided)
+### 1. Install the app on each phone
 
-- **Runs on any Android phone with a barometer.** The app checks the phone's capabilities (barometer, sampling rate, step detector) and adapts. Phones without a barometer use the landing-scan fallback. Nothing depends on a phone model name.
-- **Thresholds are tuned from measured results** across the phones we test. The phone model is not a parameter in the app, the config, or the docs.
-- **No building data is required.** Ascent is measured in metres from pressure, which needs no floor heights. No building floor counts, heights or per-floor claims exist anywhere in the product.
-- **Territory is per building.** A building is the claimed object. Points are verified stair steps, and a segment scores only if its steps match its pressure change (plan section 3.3). Elevator rides, flat walking and shaking score nothing.
-- **Floors are a display estimate.** 20 verified steps = 1 floor-equivalent (plan section 2). It's shown as "floors (estimate)" and never stored as a storey number.
-- **Aim: accurate on every phone.** Not claimed until measured. Accuracy is reported from the measured results, not from a model list.
+1. Build the release APK on the owner's machine: `cd app/android` then `./gradlew assembleRelease`. Output: `app/android/app/build/outputs/apk/release/app-release.apk`. Rebuild after the T8 PR is merged, so the APK matches `main`.
+2. Send the APK directly (Drive link, Quick Share, or a chat app as a document). Don't commit it or put it on GitHub.
+3. On the phone: allow installs from that source, install, and tap **Install anyway** if Play Protect warns. No Metro, laptop or server is needed.
+4. Set FloorWars to **Unrestricted** in the battery settings before any recording.
 
-## Open (decisions)
+### 2. Run the phone checks (per phone)
 
-- **Phones without a step detector** can't count stairs, so they get metres only.
-- **Open risk:** step counting can be gamed by walking or shaking on flat ground. The classifier must require a matching pressure change, so flat walking and shaking don't score as climbs. Thresholds for this come from real climbs (see "Open (data)").
-
-## Open (data)
-
-- **Real stair climbs** in at least two buildings, with a mix of phones, to set the step-per-metre range, the vertical speed limits and the window lengths.
-- **Negative cases** (`elevator_up`, `walk_flat`, `shake`, `blow`) on real phones, to check that the rule rejects them.
-- **Measured stride and stair geometry** to check the 20-steps-per-floor display estimate.
-- The user provides the CSVs. They go in `fixtures/real_data` (or as decided), and the checker runs on them.
-
-## Branches and PRs (territory change)
-
-- `docs/plan-building-territory`: the plan changes (sections 2, 3, 5, 6). Commits `e3559de`, `3b017a3`.
-- `feat/building-territory-code`: Kotlin scoring rule and floor-equivalent helper, cut from `main`.
-- `feat/building-territory-contract`: contract changes (building standings, `steps_scored`, `building_flipped`) and regenerated client, stacked on T7. Needs Ionut's review because the contract is approved.
-- The PRs open after Worker reports and the checks pass.
-
-- **Dev skip sign-in:** `DEV_SKIP_SIGN_IN` stays on for the friend test build. Remove or set to false when the real auth replaces the stub (later week).
-- **TypeScript override:** `openapi-typescript` 7.13.0 uses a scoped override for TypeScript 6. Remove when a release accepts TypeScript 6. Alternative: pin 6.7.6 and change the client types.
-- **Contract version:** `info.version` still reads `0.1.0-draft`.
-
-## Friend test workflow
-
-Status: the release APK is built (T8), but has not run on a device and has not been sent.
-
-### 1. Build the APK (owner)
-
-```
-cd app/android
-./gradlew assembleRelease
-```
-
-Output: `app/android/app/build/outputs/apk/release/app-release.apk`. It's signed with the debug key, which is fine for testing only. Don't commit the APK or put it on GitHub.
-
-### 2. Send the APK
-
-Use a Drive link (share with the friend's account or "anyone with the link"), Quick Share if you're in the same room, or a chat app sent as a **document**, not a photo. Gmail caps attachments at 25 MB and the APK is about 66 MB.
-
-### 3. Install on the friend's phone
-
-1. Allow installs from the app they opened the file with (Chrome or Files) when Android asks.
-2. Tap the APK, then **Install**. If Play Protect says "unknown developer", tap **Install anyway**.
-3. No laptop, Metro or server is needed.
-
-### 4. Record a trace (friend)
-
-1. Open FloorWars and tap **Skip sign-in (dev)**.
-2. On Home, tap **Sensor logger**.
-3. Pick a label (`stairs_up`, `stairs_down`, `elevator_up`, `walk_flat`, `shake`, `blow`) and a placement (`pocket`, `hand`, `bag`).
-4. Tap **Start**. Grant the activity and notification permissions when asked. Start refuses without the activity permission.
-5. Do the movement for about 30 seconds. The timer counts up and a notification says "Logging sensors / Label: …".
-6. Tap **Stop and save**. The screen shows "Saved <file>".
-7. Tap **Share CSV** and send the file to the owner.
-
-### 5. What the owner does with the CSV
-
-1. Open the file and check the header: `# device_model`, `# has_barometer`, `# label`, `# placement`, `# start_utc`, `# stop_utc`, then `sensor,timestamp_ns,elapsed_s,value`.
-2. Run the checker on it:
-   ```
-   python tools/validate_traces/validate.py <file.csv>
-   ```
-   Expect `PASS REAL` or a `FAIL` line with the check numbers. Failures are data to review, not something to delete.
-3. Record the phone's exact model string in `docs/devices.md`, as a borrowed device.
-4. Keep the file in a local folder with its label and placement. Don't commit real traces to `main` until the consent and privacy notes are settled.
-5. Log the result in the validation log, `docs/trace_format.md` section 7: date, device, what was checked, what was measured, any change.
-
-The app doesn't upload anything yet. The CSV only leaves the phone when the friend shares it.
-
-### 6. What to test on each phone
-
-Run these in order and note the result for each phone.
+Record the results per phone in `docs/devices.md`.
 
 | # | Check | Pass when |
 |---|---|---|
-| 1 | Install the release APK with no Metro running | App opens to the Sign in screen |
-| 2 | Skip sign-in, open Sensor logger | Logger screen shows the label and placement pickers |
-| 3 | Start without permissions | Start refuses with an error |
-| 4 | Grant permissions, Start | Timer runs, notification shows "Logging sensors" |
-| 5 | Lock the screen for 60 s during a recording | Recording continues (check the timer or the file after stop) |
-| 6 | Stop and save | "Saved" message, Share CSV opens the share sheet |
-| 7 | Open the CSV | Header metadata matches the phone and the chosen label and placement |
-| 8 | Pressure rows | Present if `has_barometer` is true, about 50 per second, with timestamps |
-| 9 | Step rows | Present only if the phone has a step detector, during walking or stairs |
-| 10 | Battery setting | FloorWars set to Unrestricted before recording |
-| 11 | Checker | `PASS REAL` for a walk or stairs trace |
-| 12 | Model string | Recorded exactly in `docs/devices.md` |
+| 1 | Install with no Metro running | App opens to Sign in |
+| 2 | Tap **Skip sign-in (dev)**, then **Sensor logger** | Logger shows label and placement pickers |
+| 3 | Tap **Start** without permissions | Refuses with an error |
+| 4 | Grant permissions, tap **Start** | Timer runs, notification says "Logging sensors" |
+| 5 | Lock the screen for 60 s during a recording | Recording continues (the file has rows for the whole time) |
+| 6 | Tap **Stop and save** | "Saved" message |
+| 7 | Tap **Share CSV** | Share sheet opens with the file |
+| 8 | Open the CSV in a spreadsheet app | Opens; header matches the phone, label and placement |
+| 9 | Pressure rows | Present if `has_barometer` is true, about 50 per second, with timestamps |
+| 10 | Step rows | Present if the phone has a step detector, during walking or stairs |
+| 11 | Record the phone | Exact `device_model` string, Android version, `has_barometer`, step detector yes/no, battery setting, anything phone-specific |
 
-Phone-specific behaviour (for example, a battery saver that stops background sensing) goes in `docs/devices.md` under "Manufacturer-specific behaviour".
+Also record T3's open decision on the partial wake lock and the base `FOREGROUND_SERVICE` permission: check 5 tells us whether the wake lock is needed on this phone.
 
-## Test build limits
+### 3. Record real traces
 
-- The release build can't be pulled with `adb`, so the share sheet is the only way to get the file.
-- Traces from this route don't count as T5's two-device set until the owner has both phones.
+Per phone, at least these labels. Stairs in at least two buildings in total, across the phones.
+
+- `stairs_up` and `stairs_down`: real stair climbs, with the phone in pocket, hand and bag.
+- `elevator_up`: rides, to check that the rule rejects them.
+- `walk_flat`, `shake`, `blow`: to check the negative cases.
+
+Save each recording as the app exports it. Don't edit the CSV.
+
+### 4. Collect and validate the data
+
+1. Put the CSVs in `fixtures/real_data/` (folder decision below). Don't commit them until the consent and privacy decision below is made.
+2. Read each file's header before anything else. Check there are no names or locations.
+3. Run the checker:
+   ```
+   python tools/validate_traces/validate.py fixtures/real_data
+   ```
+   Expect `PASS REAL` or `FAIL` with check numbers. A failure is data to review, not something to delete.
+4. For each FAIL, classify the cause: app bug (sampling, metadata), generator (synthetic model), or spec (the expected value in `docs/trace_format.md`). Fix in that order, and report to the owner before changing app code.
+5. Measure the TO VALIDATE rows in `docs/trace_format.md` section 2 (sampling rate, storey height, step rate, noise, lift speed, steps per metre on real stairs). Log each in the validation log (section 7).
+6. Check 9 margins on real stairs against 4 to 8 steps per metre. Tune thresholds only with logged evidence, and only in the constants block of the checker and the scoring rule.
+7. Update `docs/devices.md` with the exact model strings, and mark the phones as tested.
+8. Compare the synthetic generator with the real numbers. Change the generator only if the real numbers differ, and rerun the checker on both sets.
+
+### 5. Week 1 exit (real data)
+
+- The app installs on both phones.
+- At least 20 real labelled traces, all six labels, two phones, with a `labels.csv` row per file. Synthetic traces don't count.
+- Checks 9 and the T3 and T4 phone checks pass, or the failure is logged and understood.
+
+## Open (needs real phones, later)
+
+- **T3 phone checks:** notification on a real device; `has_barometer` correct on both phones; service survives 60 s with the screen off.
+- **T3 decision:** keep or drop the partial wake lock and the base `FOREGROUND_SERVICE` permission, after the phone checks.
+- **T4 phone checks:** step rows; CSV opened in a spreadsheet; share sheet on a device.
+- **T5 real recordings:** the data collection in section 3 above.
+- **Validate the synthetic traces** against real data: `docs/trace_format.md` section 6.
+- **T6 phone details:** exact manufacturer, model, Android version, barometer and battery settings for both phones.
+- **T8 device test:** install, skip, logger, 30 s recording, share, CSV contents on a device.
+- **Exit check:** the app installs on both phones, and there are 20 real traces.
+
+## Open (decisions)
+
+- **Real data folder:** `fixtures/real_data` (as the user proposed) versus `/traces` (the T5 spec). Decide, then update the spec.
+- **Committing real CSVs:** they contain device details and timings. Keep them outside the repo, or commit them? Read each header before committing either way.
+- **Dev skip sign-in:** `DEV_SKIP_SIGN_IN` stays on for the friend test build. Remove or set to false when the real auth replaces the stub (later week).
+- **TypeScript override:** `openapi-typescript` 7.13.0 uses a scoped override for TypeScript 6. Remove when a release accepts TypeScript 6. Alternative: pin 6.7.6 and change the client types.
+- **Contract version:** `info.version` still reads `0.1.0-draft`. The approved status line stays until Ionut's review of the territory revision is marked done.
+- **Synthetic stairs margin:** `stairs_up` synthetic files reach 4.47 steps per metre, close to the 4.0 bound, because the generator counts steps over the whole 30 s including the walk-in. Change the generator to count steps over the flights only? Changes the synthetic fixtures.
+
+## Friend test workflow
+
+Status: the release APK is built (T8), but has not run on a device and has not been sent. Use the steps in "Real-phone work, 1. Install the app" and the check table above.
+
+On the friend's phone, the test flow is:
+1. Open FloorWars, tap **Skip sign-in (dev)**, then **Sensor logger** on Home.
+2. Pick a label and placement, tap **Start**, grant the permissions, wait about 30 s, tap **Stop and save**.
+3. Tap **Share CSV** and send the file to the owner.
+
+Limits:
+- A release build can't be pulled with `adb`, so the share sheet is the only way to get the file.
+- Traces from this route don't count as the two-phone set until the owner has both phones.
 - Consent: the friend agrees to the recording. The CSV holds no name or location.
 
 ## Next steps
 
-1. Merge the open PRs in order: #5 (contract), #6 (T8), #7 (T5), #8 (T6), #9 (T7).
-2. Device test of the release APK (T8), on the emulator once memory allows, or on the friend's phone.
-3. Get two Android phones. Run the T3 and T4 phone checks, then the T5 recordings and T6 device details.
-4. Validate the synthetic traces against real data and update `docs/trace_format.md`.
-5. Later week: remove the dev skip button when the real auth lands.
+1. PRs: merge in order #5, #6, #7, #8, #9. Then the three building-territory PRs (plan and code to `main`, contract on top of T7).
+2. Rebuild the release APK from `main` after the merges.
+3. Get two Android phones. Run the phone checks, record traces, and fill `docs/devices.md`.
+4. Validate the data with the checker, log the TO VALIDATE values, and tune thresholds only with logged evidence.
+5. Decide the real-data folder and the commit policy for real CSVs.
+6. Later week: remove the dev skip button when the real auth lands.
 
 ## Environment notes
 
