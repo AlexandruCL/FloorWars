@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { FloorSensorsDebug } from '../native/FloorSensorsDebug';
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -9,7 +10,12 @@ function Placeholder({ title }: { title: string }) {
 }
 
 export function SignInScreen() {
-  return <Placeholder title="Sign in" />;
+  return (
+    <>
+      <Placeholder title="Sign in" />
+      {__DEV__ && <FloorSensorsDebug />}
+    </>
+  );
 }
 
 export function HomeScreen() {

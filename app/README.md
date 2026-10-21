@@ -33,6 +33,13 @@ npm test
 npx tsc --noEmit
 ```
 
+Kotlin checks, from `android/`:
+
+```sh
+./gradlew ktlintCheck          # ktlintFormat fixes what it can
+./gradlew testDebugUnitTest    # JUnit tests in app/src/test
+```
+
 ## Run on a device or emulator
 
 ```sh
