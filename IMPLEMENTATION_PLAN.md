@@ -215,7 +215,7 @@ Deliberately not used: Firebase as a platform (database, auth, analytics, crashl
 | Token storage | `react-native-keychain` (Android Keystore) |
 | QR scanning | `react-native-vision-camera` with the code scanner |
 | Check-in location | `react-native-geolocation-service`, one-shot fix, never continuous |
-| Cross-section drawing and animation | `react-native-svg` + Reanimated |
+| Standings drawing and animation | `react-native-svg` + Reanimated |
 | Share cards | `react-native-view-shot` + `react-native-share` |
 | Push token | Minimal FCM messaging dependency, token only (`@react-native-firebase/messaging` or a native Kotlin snippet). No other Firebase modules. See 7.2.1. |
 | Tests | Jest + React Native Testing Library; JUnit for Kotlin; pytest for the backend |
@@ -509,7 +509,7 @@ Input validation at the API boundary (Pydantic v2 strict). Parameterised SQL onl
 
 | | **Cristea (Member A): Sensing and Mobile Core** | **Ionut (Member B): Backend, Infra and Game UI** |
 |---|---|---|
-| Owns | RN app skeleton, Kotlin native module, foreground service, segmenter and classifier, Room outbox, sync, auth/check-in/fallback screens, privacy screens, evaluation | FastAPI, DB schema and migrations, scoring and claim transaction, Valkey, WebSocket, Celery/push, cloud setup, admin panel, deployment, monitoring, plus the game-facing RN screens (cross-section, leaderboards) |
+| Owns | RN app skeleton, Kotlin native module, foreground service, segmenter and classifier, Room outbox, sync, auth/check-in/fallback screens, privacy screens, evaluation | FastAPI, DB schema and migrations, scoring and claim transaction, Valkey, WebSocket, Celery/push, cloud setup, admin panel, deployment, monitoring, plus the game-facing RN screens (building standings, leaderboards) |
 | Hardest risk | Reliable background sensing and classifier accuracy | Race-free claim transaction and operating the deployment |
 | Delivers to the other | App shell, sync client, labelled traces | Stable OpenAPI contract, staging URL, WS events |
 
@@ -652,14 +652,14 @@ Goal: the loop is visible and social.
 - `POST /v1/landing-scans` with strict rate limits.
 - Anti-cheat v2: per-device limits, repeated identical segment detection, impossible-sequence checks (climbs in two buildings too close in time), fraud flag reasons.
 
-Exit: two phones on different teams: phone 1 climbs, phone 2's cross-section flips live and phone 2 gets a push. The barometer-less path works on a device or an emulator flag.
+Exit: two phones on different teams: phone 1 climbs, phone 2's building standings flip live and phone 2 gets a push. The barometer-less path works on a device or an emulator flag.
 
 ### Week 5: Admin, share cards, monitoring, operability
 
 Goal: feature complete and operable.
 
 **Cristea**
-- Share cards (9:16): building standings, personal stats, "building flipped" moment. Rendered with `react-native-view-shot`, sent via the Android share sheet. Ionut provides the cross-section component.
+- Share cards (9:16): building standings, personal stats, "building flipped" moment. Rendered with `react-native-view-shot`, sent via the Android share sheet. Ionut provides the standings component.
 - Season results screen and a "season paused" banner when the server switch is on.
 - Offline and error states everywhere: no network, expired token, 5xx, camera denied, missing sensor.
 - Accessible contribution mode behind a flag and non-shaming elevator wording (agree rules with Ionut).
@@ -700,7 +700,7 @@ Goal: real data from real users; numbers for the report; frozen release.
 - Pilot operations: watch Grafana and Alertmanager, fix server issues, tune plausibility rules from real fraud flags.
 - Metrics queries for the report: users, climbs, stair steps, flips per building, accepted vs rejected, WebSocket uptime.
 - Freeze production, verify backups, rehearse `deploy.sh rollback`.
-- Live Grafana dashboards and a wall-screen view of the cross-section for the demo.
+- Live Grafana dashboards and a wall-screen view of the building standings for the demo.
 - Report sections: architecture, DB design, deployment, security and privacy, monitoring.
 - Rehearse the demo twice with a failure plan (pre-recorded video, local fallback server).
 
@@ -713,7 +713,7 @@ Exit: signed APK on GitHub Releases; evaluation report with precision and recall
 | 1 | RN shell, native sensor logger, first traces | Schema v1, OpenAPI, CI, VM and TLS | `/healthz` over HTTPS; contract merged |
 | 2 | Segmenter v1, replay harness, auth and check-in UI | Auth, check-in, seed data, staging deploy | Sign up, then check in on a device |
 | 3 | Live service, outbox, sync | Segments API, plausibility, claim transaction, Valkey | Real climb becomes a verified claim |
-| 4 | WS manager, history, fallback, tuning 1 | Cross-section and leaderboards UI, WS hub, FCM push, anti-cheat v2 | Two phones: live flip and push |
+| 4 | WS manager, history, fallback, tuning 1 | Building standings and leaderboards UI, WS hub, FCM push, anti-cheat v2 | Two phones: live flip and push |
 | 5 | Share cards, GDPR UI, offline states, battery tests | Admin panel, config table, monitoring, backups, k6 | Feature complete, operable |
 | 6 | Pilot ground truth, evaluation, release APK | Pilot ops, metrics, freeze, demo infra | Pilot done, final demo |
 
@@ -769,7 +769,7 @@ CI gate: the trace-replay suite fails the build if precision drops below the agr
 
 - Platforms: TikTok and Instagram Reels (primary, campus content); Discord or WhatsApp communities per faculty for coordination; r/Romania or r/timisoara for launch posts.
 - Launch campaign "Faculty Wars Week": a one-week season at the start of a semester. A live building map runs on a screen in a busy hallway or canteen (with the faculty's permission). Student organisations act as team captains. The faculty holding the most floors at the end wins a sponsored prize (pizza for the year group, or a trophy that physically moves to the winning building). Daily recap reels follow the shifting map.
-- Recurring "Floor Flip of the Week": a 15-second vertical video. A building standings view animates colour changes over the week, cut with point-of-view stair-climb footage and one statistic ("the 7th floor changed hands 11 times"). The cross-section animation is exported from the app's own UI, so the format costs minutes.
+- Recurring "Building Flip of the Week": a 15-second vertical video. A building standings view animates colour changes over the week, cut with point-of-view stair-climb footage and one statistic ("the building changed hands 11 times"). The standings animation is exported from the app's own UI, so the format costs minutes.
 - Hashtags: `#FloorWars`, `#FloorWarsUPT` (one tag per campus), `#TakeTheStairs`.
 - Meme formats: "elevator people vs stair people", "POV your faculty just lost the building".
 - Each faculty gets a captain role that can call raids (stretch); captains become micro-influencers.
@@ -825,7 +825,7 @@ The PDF planned about 14 teaching weeks for 3 to 4 people, starting 19 October 2
 |---|---|---|
 | M1 Foundations | 19 Oct to 1 Nov | ER model, Alembic baseline, auth, health endpoint, Oracle VM (we use an Azure VM), CI, Caddy TLS, sensor logger app |
 | M2 Core pipeline | 2 to 15 Nov | `climb_segment` partitioned, scores, claims, seed data for 2 buildings, check-in and segment upload, staging, SOPS, pgBackRest, foreground service, segmenter, classifier v1, outbox and sync |
-| M3 Game loop | 16 to 29 Nov | Claim transaction with row locks, fraud flags, leaderboards, WebSocket flips, push, production deploy with manual approval and auto-rollback, monitoring, cross-section UI, QR check-in, share cards |
+| M3 Game loop | 16 to 29 Nov | Claim transaction with row locks, fraud flags, leaderboards, WebSocket flips, push, production deploy with manual approval and auto-rollback, monitoring, building standings UI, QR check-in, share cards |
 | M4 Hardening | 30 Nov to 13 Dec | First restore drill, EXPLAIN ANALYZE, rate limits, admin panel, export/delete, k6, Trivy, runbook, QR fallback, offline states, battery measurements |
 | M5 Pilot | 14 to 20 Dec and 5 to 17 Jan | Season results snapshot, threshold tuning via config table, on-call rota, pilot with 30 to 50 students in 2 buildings, classifier evaluation |
 | M6 Final demo | Last teaching week | Final metrics, frozen release, live dashboards, presentation and report |
