@@ -47,6 +47,28 @@ Not pushed. No PRs yet.
 3. Ionut delivers `/contracts/openapi.yaml` for T7.
 4. Close week 1 once T5 real data, T6 and T7 are done and the app installs on both phones.
 
+## Test build for a friend's phone (week 1 only)
+
+Goal: a friend records real sensor traces on his phone and sends the CSV back. Chosen route: a **release APK** with the dev skip-sign-in button kept in release builds.
+
+**Still needed in code (not done yet):** the skip button is currently `__DEV__`-only, so release builds cannot reach the sensor logger. Change its gate so it also shows in this release build, behind an explicit flag, and remove it with T7. Needs a Worker task before the build.
+
+Steps once that change is merged:
+
+1. Build: `cd app/android` then `./gradlew assembleRelease`. Output: `app/android/app/build/outputs/apk/release/app-release.apk`. The template signs release with the debug key, which is fine for this test only.
+2. Send the APK to the friend directly (chat, Drive, email). Don't commit it or put it on GitHub.
+3. Friend: allow installs from this source, install, open the app, tap **Skip sign-in (dev)**, then **Sensor logger** on Home.
+4. Friend: grant the permissions, pick a label and placement, tap **Start**, wait about 30 s, tap **Stop and save**, then **Share CSV** and send the file to the owner.
+5. Owner: check the CSV header (`# device_model`, `# has_barometer`, `# label`, `# placement`) and that pressure rows exist. Step rows only appear if the friend's phone has a step detector.
+6. Record the phone in `docs/devices.md` as a borrowed device, with the exact model string from the CSV header.
+
+Limits of this route:
+
+- A release build can't be pulled with `adb`, so the share sheet is the only way to get the file.
+- The friend's phone may kill background services. Check the battery setting on his phone (Unrestricted) before the recording.
+- Traces from this route still don't count as T5's two-device set until the owner has both phones.
+- Consent: the friend agrees to the recording. The CSV holds no name or location.
+
 ## Environment notes
 
 - Emulator: `floorwars_api36` (API 36, `sdk_gphone64_x86_64`). Pressure sensor present (`Goldfish`), no step detector.
