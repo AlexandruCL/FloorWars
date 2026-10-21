@@ -186,7 +186,7 @@ paths:
       description: |
         Idempotent. Segments are inserted ON CONFLICT DO NOTHING on (device, id), so a re-sent segment
         counts as accepted. Server plausibility checks repeat the on-device rules.
-        Rate limits (plan 3.4): 60 uploads per hour and 40 floors per 10 minutes per user.
+        Rate limits (plan 3.4): 60 uploads per hour and 600 verified steps per 10 minutes per user.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -226,19 +226,19 @@ paths:
                 items: { $ref: '#/components/schemas/Building' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  /buildings/{id}/floors:
+  /buildings/{id}/standings:
     get:
       tags: [buildings]
-      operationId: getBuildingFloors
-      summary: Floors with their current owner for the active season
+      operationId: getBuildingStandings
+      summary: Team standings and current owner of the building for the active season
       parameters:
         - $ref: '#/components/parameters/BuildingId'
       responses:
         '200':
-          description: Floors of the building, lowest first.
+          description: Standings for the building.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/BuildingFloors' }
+              schema: { $ref: '#/components/schemas/BuildingStanding' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -414,7 +414,7 @@ paths:
       description: |
         OpenAPI cannot describe WebSocket messages, so this documents the upgrade request only.
         The connection is authenticated on connect. Server-to-client messages are WsEvent
-        (floor_flipped, season_state); see x-websocket-events.
+        (building_flipped, season_state); see x-websocket-events.
       parameters:
         - name: access_token
           in: query
@@ -638,7 +638,8 @@ components:
         - id
         - checkin_id
         - started_at
-        - floors_gained
+        - building_id
+        - steps_scored
         - ascent_m
         - duration_s
         - vert_speed_mps
@@ -652,10 +653,19 @@ components:
           description: Client-generated UUID. Unique per device; a repeat is treated as success.
         checkin_id: { type: string, format: uuid }
         started_at: { type: string, format: date-time }
-        floors_gained:
+        building_id:
           type: integer
           minimum: 1
-          maximum: 30
+          description: Building of the active check-in the segment is attributed to.
+        steps_scored:
+          type: integer
+          minimum: 1
+          maximum: 2000
+          description: |
+            Verified stair steps the segment scores: all of its steps when steps and pressure change
+            agree (4 to 8 steps per metre of ascent, ascent 2.0 to 120.0 m). A segment that scores zero
+            is not uploaded. Inferred: sent by the client (the plan's section 6 example body omits it);
+            the server recomputes it and rejects a mismatch.
         ascent_m:
           type: number
           minimum: 2.0
@@ -670,9 +680,9 @@ components:
           description: 'Inferred: the non-negative bound.'
         steps:
           type: integer
-          minimum: 0
-          maximum: 32767
-          description: 'Inferred: bounds (smallint in the data model).'
+          minimum: 1
+          maximum: 2000
+          description: All step-detector events in the window. Bounds from plan section 2.
         stair_prob:
           type: number
           minimum: 0
@@ -707,8 +717,8 @@ components:
           items: { $ref: '#/components/schemas/RejectedSegment' }
         flips:
           type: array
-          description: Floors that changed owner because of this batch.
-          items: { $ref: '#/components/schemas/FloorFlip' }
+          description: Buildings that changed owner because of this batch.
+          items: { $ref: '#/components/schemas/BuildingFlip' }
 
     RejectedSegment:
       type: object
@@ -718,59 +728,58 @@ components:
         id: { type: string, format: uuid }
         reason:
           type: string
-          description: 'Inferred: the plausibility rule that failed, for example speed, cadence, steps_per_m, floors_range, rate_limit.'
+          description: 'Inferred: the plausibility rule that failed, for example speed, cadence, steps_per_m, ascent_range, steps_scored_mismatch, rate_limit.'
 
     Building:
       type: object
-      required: [id, name, floor_count]
+      required: [id, name]
       properties:
         id: { type: integer, minimum: 1 }
         name: { type: string }
-        floor_count:
+
+    BuildingStanding:
+      type: object
+      description: Who owns the building this season and every team's points in it (rolling 7 days).
+      required: [building_id, season_id, owner_team, teams]
+      properties:
+        building_id:
           type: integer
           minimum: 1
-          description: 'Inferred: exposed to clients (it is a column in the data model).'
-
-    BuildingFloors:
-      type: object
-      required: [building_id, season_id, floors]
-      properties:
-        building_id: { type: integer, minimum: 1 }
+          description: 'Inferred: echoed so the client can match the response to the building.'
         season_id:
           type: integer
           minimum: 1
-          description: 'Inferred: the active season the owners refer to.'
-        floors:
-          type: array
-          items: { $ref: '#/components/schemas/FloorOwnership' }
-
-    FloorOwnership:
-      type: object
-      required: [floor_id, floor_no, owner_team_id, claimed_at]
-      properties:
-        floor_id: { type: integer, minimum: 1 }
-        floor_no: { type: integer }
-        height_m:
-          type: number
-          description: 'Floor height in metres. Inferred: exposed to clients.'
-        owner_team_id:
-          type: [integer, 'null']
-          minimum: 1
-          description: Current owner this season, or null if nobody has claimed the floor.
-        claimed_at:
+          description: 'Inferred: the active season the standings refer to.'
+        owner_team:
           type: [string, 'null']
-          format: date-time
+          description: 'Team code of the current owner, or null if no team has scored. Inferred: code rather than id, as in BuildingFlip.'
+        teams:
+          type: array
+          description: 'Inferred: ordered by points, highest first.'
+          items: { $ref: '#/components/schemas/TeamPoints' }
 
-    FloorFlip:
+    TeamPoints:
       type: object
-      description: A floor changing owner. Same fields as the floor_flipped WebSocket event.
-      required: [building_id, floor_no, from_team, to_team, at]
+      description: 'Inferred: the shape of a standings row.'
+      required: [team, points]
+      properties:
+        team:
+          type: string
+          description: 'Inferred: team code (for example AC).'
+        points:
+          type: integer
+          minimum: 0
+          description: Points in the building over the rolling 7 days.
+
+    BuildingFlip:
+      type: object
+      description: A building changing owner. Same fields as the building_flipped WebSocket event.
+      required: [building_id, from_team, to_team, at]
       properties:
         building_id: { type: integer, minimum: 1 }
-        floor_no: { type: integer }
         from_team:
           type: [string, 'null']
-          description: 'Inferred: team code (for example AC), null when the floor had no owner. The plan does not say code or id.'
+          description: 'Inferred: team code (for example AC), null when the building had no owner. The plan does not say code or id.'
         to_team:
           type: string
           description: 'Inferred: team code (for example AC).'
@@ -802,24 +811,32 @@ components:
           type: string
           description: 'Inferred: display name or team code.'
         points: { type: integer, minimum: 0 }
+        steps_scored:
+          type: integer
+          minimum: 0
+          description: 'Inferred: verified stair steps behind the points (points can be lower after the hourly halving).'
+        ascent_m:
+          type: number
+          minimum: 0
+          description: 'Inferred: total verified ascent in metres.'
 
     SeasonStats:
       type: object
       description: Personal stats for one season. Also the data for the share card, which the app renders locally.
-      required: [season_id, team_id, floors_climbed, points, landmarks]
+      required: [season_id, team_id, steps_scored, ascent_m, points, landmarks]
       properties:
         season_id: { type: integer, minimum: 1 }
         team_id:
           type: [integer, 'null']
           description: 'Inferred: null if the user has not joined a team this season.'
-        floors_climbed:
+        steps_scored:
           type: integer
           minimum: 0
-          description: 'Inferred.'
+          description: 'Inferred: verified stair steps this season.'
         ascent_m:
           type: number
           minimum: 0
-          description: 'Inferred.'
+          description: 'Inferred: verified ascent this season, in metres.'
         points:
           type: integer
           minimum: 0
@@ -828,10 +845,10 @@ components:
           type: [integer, 'null']
           minimum: 1
           description: 'Inferred: individual rank this season.'
-        floors_owned_by_team:
+        buildings_owned_by_team:
           type: integer
           minimum: 0
-          description: 'Inferred: share-card figure.'
+          description: 'Inferred: share-card figure, the number of buildings the team owns now.'
         landmarks:
           type: array
           description: 'Inferred: landmarks progress (for example a tower height reached by total ascent).'
@@ -893,7 +910,7 @@ components:
       properties:
         qr_token:
           type: string
-          description: 'Inferred field name: the signed token from the landing sticker. It encodes the building and floor.'
+          description: 'Inferred field name: the signed token from the landing sticker. It encodes the building and the staircase landing.'
         scanned_at:
           type: string
           format: date-time
@@ -903,14 +920,13 @@ components:
     LandingScan:
       type: object
       description: 'Inferred: the response shape.'
-      required: [id, building_id, floor_no]
+      required: [id, building_id]
       properties:
         id: { type: string, format: uuid }
         building_id: { type: integer, minimum: 1 }
-        floor_no: { type: integer }
         flips:
           type: array
-          items: { $ref: '#/components/schemas/FloorFlip' }
+          items: { $ref: '#/components/schemas/BuildingFlip' }
 
     ClassifierConfig:
       type: object
@@ -943,14 +959,14 @@ components:
             stairs_window_max_s: { type: number, examples: [180] }
           additionalProperties: true
 
-    FloorFlippedEvent:
+    BuildingFlippedEvent:
       description: 'WebSocket event. Inferred: the flat envelope with a type field.'
       allOf:
         - type: object
           required: [type]
           properties:
-            type: { type: string, const: floor_flipped }
-        - $ref: '#/components/schemas/FloorFlip'
+            type: { type: string, const: building_flipped }
+        - $ref: '#/components/schemas/BuildingFlip'
 
     SeasonStateEvent:
       type: object
@@ -964,10 +980,10 @@ components:
     WsEvent:
       description: Any server-to-client WebSocket message.
       oneOf:
-        - $ref: '#/components/schemas/FloorFlippedEvent'
+        - $ref: '#/components/schemas/BuildingFlippedEvent'
         - $ref: '#/components/schemas/SeasonStateEvent'
       discriminator:
         propertyName: type
         mapping:
-          floor_flipped: '#/components/schemas/FloorFlippedEvent'
+          building_flipped: '#/components/schemas/BuildingFlippedEvent'
           season_state: '#/components/schemas/SeasonStateEvent'
