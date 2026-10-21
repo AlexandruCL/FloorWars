@@ -1,3 +1,6 @@
 <resources>
     <string name="app_name">FloorWars</string>
+    <string name="sensor_channel_name">Sensor logging</string>
+    <string name="sensor_notification_title">Logging sensors</string>
+    <string name="sensor_notification_text">Label: %1$s</string>
 </resources>
