@@ -1,5 +1,6 @@
 import { Button, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { DEV_SKIP_SIGN_IN } from '../config/devFlags';
 import { FloorSensorsDebug } from '../native/FloorSensorsDebug';
 import type { MainStackParamList } from '../navigation/types';
 
@@ -11,7 +12,7 @@ function Placeholder({ title }: { title: string }) {
   );
 }
 
-// onDevSkipSignIn opens the Main stack in dev builds until the auth stub (T7) exists.
+// onDevSkipSignIn opens the Main stack while DEV_SKIP_SIGN_IN is on, until the auth stub (T7) exists.
 export function SignInScreen({
   onDevSkipSignIn,
 }: {
@@ -20,7 +21,7 @@ export function SignInScreen({
   return (
     <>
       <Placeholder title="Sign in" />
-      {__DEV__ && onDevSkipSignIn && (
+      {DEV_SKIP_SIGN_IN && onDevSkipSignIn && (
         <Button title="Skip sign-in (dev)" onPress={onDevSkipSignIn} />
       )}
       {__DEV__ && <FloorSensorsDebug />}
