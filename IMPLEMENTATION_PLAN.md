@@ -94,6 +94,7 @@ Out of scope (PDF): indoor positioning of individual staircases, payments, chat,
 | Building ownership | The team with the most points in that building over the rolling 7 days owns it. | PDF, adapted (ours) |
 | Points | Per verified stair step. No reward for speed. Diminishing returns per hour. Elevator rides and flat walking score nothing. | PDF, adapted (ours) |
 | Point values and the diminishing curve | Start at 1 point per verified step, halving after 300 steps in an hour, tune. | Ours |
+| Floor-equivalent (display only) | 20 verified steps = 1 floor-equivalent, so a team with 200 steps in a building shows "10 floors". An estimate, about 6 steps per metre times a 3.3 m storey, tuned from real data. Never a real storey number, and no building floor data is used. Every screen that shows it says "floors (estimate)". | Ours |
 | Check-in validity | 90 minutes from check-in. Segments are attributed to the building of the active check-in. | PDF |
 | Segment attribution | A segment needs an active check-in to count. | PDF |
 | Per-user limits | At most 60 segment uploads per hour and at most 600 verified steps per 10 minutes. These double as anti-cheat signals. | PDF, adapted (ours) |
