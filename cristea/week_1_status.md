@@ -14,13 +14,13 @@ All week 1 tasks are implemented in code (T1 to T7), and the test build for a fr
 | T2 Kotlin `FloorSensors` skeleton | Done, merged | #2 (`ad6e8a3`) | ktlint, JUnit, start and stop verified on emulator |
 | T3 Foreground service | Done, merged | #3 (`bdeff89`) | Phone checks pending (see below) |
 | T4 Sensor logger screen | Done, merged | #4 (`1b83082`) | CSV export and share sheet verified on emulator. Step rows and phone checks pending |
-| T5 Labelled traces | Done on synthetic data | #5 | 24 synthetic traces, generator, checker, trace spec. Real recordings deferred |
-| T6 Test devices doc | Done, phone entries pending | #6 | `docs/devices.md` with emulator entry and pending phones |
-| T7 TS API client and auth stub | Done | #9 (stacked on #8 and #7) | Ionut ran the shell and confirmed it starts. Contract test runs under `npm test` (no CI yet) |
-| Contract `openapi.yaml` | Approved by both | #8 | Inferred fields marked in the file |
-| T8 Release test build | Done, device test not run | #7 | `DEV_SKIP_SIGN_IN` flag, release APK built, static checks only |
+| T5 Labelled traces | Done on synthetic data | #7 | 24 synthetic traces, generator, checker, trace spec. Real recordings deferred |
+| T6 Test devices doc | Done, phone entries pending | #8 | `docs/devices.md` with emulator entry and pending phones |
+| T7 TS API client and auth stub | Done | #9 (stacked on #5 and #6) | Ionut ran the shell and confirmed it starts. Contract test runs under `npm test` (no CI yet) |
+| Contract `openapi.yaml` | Approved by both | #5 | Inferred fields marked in the file |
+| T8 Release test build | Done, device test not run | #6 | `DEV_SKIP_SIGN_IN` flag, release APK built, static checks only |
 
-Only PRs #1 to #4 are merged. The rest are open. Merge order: #8, #7, #5, #6, #9.
+Only PRs #1 to #4 are merged. The rest are open. Merge order: #5 (contract), #6 (T8), #7 (T5), #8 (T6), #9 (T7).
 
 ## Verification
 
@@ -146,7 +146,7 @@ Phone-specific behaviour (for example, a battery saver that stops background sen
 
 ## Next steps
 
-1. Merge the open PRs in order: #8, #7, #5, #6, #9.
+1. Merge the open PRs in order: #5 (contract), #6 (T8), #7 (T5), #8 (T6), #9 (T7).
 2. Device test of the release APK (T8), on the emulator once memory allows, or on the friend's phone.
 3. Get two Android phones. Run the T3 and T4 phone checks, then the T5 recordings and T6 device details.
 4. Validate the synthetic traces against real data and update `docs/trace_format.md`.

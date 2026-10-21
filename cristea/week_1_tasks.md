@@ -18,9 +18,9 @@ Updated after each Worker report. A box is ticked only when the report shows the
 - [x] T2. Kotlin `FloorSensors` module skeleton (branch `feat/t2-floorsensors-skeleton`, 6 commits; ktlint, JUnit, lint, test, tsc, assembleDebug pass; permissions and start/stop verified on emulator)
 - [x] T3. Foreground service with sensor registration (branch `feat/t3-foreground-service`, 3 commits; emulator checks pass; phone checks deferred until real phones are available)
 - [x] T4. Sensor logger screen (merged to `main` via PR #4; emulator checks pass; step rows and phone checks deferred until real phones are available)
-- [x] T5. Record labelled traces and commit them (PR #5; synthetic traces in `fixtures/synthetic/` with checker and trace spec. Real recordings and validation of the synthetic data are still to do; see `docs/trace_format.md` section 6)
-- [x] T6. Document test devices (PR #6; `docs/devices.md` with the emulator and pending phone entries. Real phone details still to fill in)
-- [x] T7. Generate TS API client and auth stub (PR #9, stacked on #8 contract and #7 T8; Ionut ran the shell and confirmed it starts; contract test runs under `npm test`, no CI yet)
+- [x] T5. Record labelled traces and commit them (PR #7; synthetic traces in `fixtures/synthetic/` with checker and trace spec. Real recordings and validation of the synthetic data are still to do; see `docs/trace_format.md` section 6)
+- [x] T6. Document test devices (PR #8; `docs/devices.md` with the emulator and pending phone entries. Real phone details still to fill in)
+- [x] T7. Generate TS API client and auth stub (PR #9, stacked on #5 contract and #6 T8; Ionut ran the shell and confirmed it starts; contract test runs under `npm test`, no CI yet)
 
 Open for later, not blocking week 1 on synthetic data: validate the synthetic traces against real phones (`docs/trace_format.md` section 6), fill in the two phone entries in `docs/devices.md`, and replace the synthetic fixtures with real recordings for T5.
 
