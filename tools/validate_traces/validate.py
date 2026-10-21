@@ -1,4 +1,4 @@
-"""Check sensor trace CSVs against docs/trace_format.md, section 4 checks 1-8.
+"""Check sensor trace CSVs against docs/trace_format.md, section 4 checks 1-9.
 
 Usage: python tools/validate_traces/validate.py <dir_or_file> [...]
 Prints one line per file: PASS, or FAIL with the failed check numbers and why.
@@ -21,8 +21,12 @@ PRESSURE_HPA = (800.0, 1100.0)  # check 4
 STEP_HZ = (1.0, 3.0)  # check 5: (steps - 1) / (last step - first step), so needs 2+ steps
 STAIRS_NET_HPA = (0.5, 3.0)  # check 6: size of the net change; up falls, down rises
 ELEVATOR_NET_HPA = (1.0, 4.0)  # check 7: size of the net change; elevator_up falls
-NET_WINDOW_S = 1.0  # checks 6-7: net change compares the first and last second (section 3)
+NET_WINDOW_S = 1.0  # checks 6, 7, 9: net change compares the first and last second (section 3)
 ELAPSED_TOLERANCE_S = 0.0015  # check 1: elapsed_s is rounded to 3 decimals
+HPA_PER_M = 0.12  # check 9: net pressure change to metres of height (plan 3.3)
+STAIRS_STEPS_PER_M = (4.0, 8.0)  # check 9: stairs_up/down, steps per metre of net height change
+ELEVATOR_MAX_STEPS_PER_M = 1.0  # check 9: elevator_up must stay strictly below this
+FLAT_MAX_ASCENT_M = 2.0  # check 9: walk_flat and shake net ascent must stay under this
 
 LABELS = ["stairs_up", "stairs_down", "elevator_up", "walk_flat", "shake", "blow"]
 PLACEMENTS = ["pocket", "hand", "bag"]
@@ -202,6 +206,22 @@ def check_file(path):
     if meta.get("has_barometer") in ("true", "false"):
         if (meta["has_barometer"] == "true") != bool(pressure):
             fail(8, f"has_barometer {meta['has_barometer']} with {len(pressure)} pressure rows")
+
+    # 9. Pressure-steps match, the scoring rule: steps must fit the height change.
+    if label in ("stairs_up", "stairs_down", "elevator_up", "walk_flat", "shake"):
+        if not pressure:
+            fail(9, "no pressure rows")
+        else:
+            ascent_m = -net_change(pressure) / HPA_PER_M  # pressure falls as height rises
+            per_m = len(steps) / abs(ascent_m) if ascent_m else float("inf")
+            if label in ("walk_flat", "shake"):
+                if ascent_m >= FLAT_MAX_ASCENT_M:
+                    fail(9, f"net ascent {ascent_m:.2f} m with {len(steps)} steps")
+            elif label == "elevator_up":
+                if per_m >= ELEVATOR_MAX_STEPS_PER_M:
+                    fail(9, f"{len(steps)} steps over {ascent_m:+.2f} m ({per_m:.2f} per metre)")
+            elif not STAIRS_STEPS_PER_M[0] <= per_m <= STAIRS_STEPS_PER_M[1]:
+                fail(9, f"{len(steps)} steps over {ascent_m:+.2f} m ({per_m:.2f} per metre)")
 
     return failed, synthetic
 
