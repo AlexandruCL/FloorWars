@@ -40,9 +40,9 @@ Only PRs #1 to #4 are merged. The rest are open. Merge order: #8, #7, #5, #6, #9
 
 ## Requirement (decided)
 
-- **Runs on any Android phone with a barometer.** The app checks what the phone reports (barometer, sampling rate, step detector) and adapts. Phones without a barometer use the landing-scan fallback.
-- **Accuracy is stated per tested model.** Untested models are listed as unverified, not supported.
-- **Aim: accurate on every phone.** Reached by refining the app and thresholds from tested results, one model at a time. Not claimed until measured.
+- **Runs on any Android phone with a barometer.** The app checks the phone's capabilities (barometer, sampling rate, step detector) and adapts. Phones without a barometer use the landing-scan fallback. Nothing depends on a phone model name.
+- **Thresholds are tuned from measured results** across the phones we test. The phone model is not a parameter in the app, the config, or the docs.
+- **Aim: accurate on every phone.** Not claimed until measured. Accuracy is reported from the measured results, not from a model list.
 
 ## Open (decisions)
 
