@@ -36,7 +36,7 @@ Conventions used below:
 
 ### 1.1 Pitch
 
-FloorWars: **Take the stairs, take the building.** A campus territory game in which every sensor-verified flight of stairs claims floors of real buildings for your faculty.
+FloorWars: **Take the stairs, take the building.** A campus territory game in which every sensor-verified stair climb adds points to your faculty's claim on a real building.
 
 ### 1.2 Problem and niche
 
@@ -72,12 +72,12 @@ MVP (PDF, one semester; we deliver the subset marked in section 10):
 - Sign-up with a one-time code sent to the university student e-mail domain. The domain check blocks outsiders and duplicate accounts. Then a choice of faculty team for the season.
 - Building check-in by scanning a printed QR code at the building entrance (signed, rotating token), or by geofence when GPS accuracy allows. This sets the "current building" for 90 minutes.
 - Background climb detection in an Android foreground service: barometer at 10 to 25 Hz plus the hardware step detector; on-device segmentation into ascent windows; classification as stairs, elevator, or other.
-- Floor claims: each verified floor gained adds points for your team on that floor. The team with the most points in the rolling 7-day window owns the floor. A building cross-section shows floors in team colours, updated live over WebSocket.
+- Building claims: each verified stair step adds points for your team in that building. The team with the most points in the rolling 7-day window owns the building. A building standings view shows each team's share in team colours, updated live over WebSocket. No floor numbers are shown or stored; the app does not need building floor data.
 - Leaderboards for individuals, teams and buildings, plus season-long progress converted into landmarks ("your faculty climbed the Eiffel Tower 3.2 times").
-- Shareable 9:16 cards generated on the device: building cross-section, personal stats, "floor flipped" moments.
-- Fallback for phones without a barometer: small QR stickers on stair landings ("scan on the 4th floor") with rate limits.
-- Admin panel (web, team-only) to draw building footprints, set floor counts and heights, manage seasons, and review fraud flags.
-- Push notification to a team that lost a floor (FCM sent directly by the backend, see 7.2.1).
+- Shareable 9:16 cards generated on the device: building standings, personal stats, "building flipped" moments.
+- Fallback for phones without a barometer: small QR stickers on stair landings ("scan at the stairs of building X") with rate limits.
+- Admin panel (web, team-only) to draw building footprints, manage seasons, and review fraud flags. No floor counts or heights.
+- Push notification to a team that lost a building (FCM sent directly by the backend, see 7.2.1).
 
 Stretch (PDF): iOS client (Core Motion altimeter and pedometer), "raids" (one-hour team events with double points), achievements, Play Integrity attestation, on-device ML classifier v2 trained on pilot data, office-tower "corporate mode" with private leagues.
 
@@ -91,13 +91,14 @@ Out of scope (PDF): indoor positioning of individual staircases, payments, chat,
 |---|---|---|
 | Season length | Two-week rounds. A one-week "Faculty Wars Week" season is used for the launch. | PDF |
 | Teams | One team per user per season. Teams are faculties (codes such as AC, ETC, MEC) with a colour. | PDF |
-| Floor ownership | The team with the most points on that floor over the rolling 7 days owns it. | PDF |
-| Points | Per verified floor gained. No reward for speed. Diminishing returns per hour. | PDF |
-| Point values and the diminishing curve | Start at 10 points per floor, halving after 40 floors in an hour, tune. | Ours |
+| Building ownership | The team with the most points in that building over the rolling 7 days owns it. | PDF, adapted (ours) |
+| Points | Per verified stair step. No reward for speed. Diminishing returns per hour. Elevator rides and flat walking score nothing. | PDF, adapted (ours) |
+| Point values and the diminishing curve | Start at 1 point per verified step, halving after 300 steps in an hour, tune. | Ours |
+| Floor-equivalent (display only) | 20 verified steps = 1 floor-equivalent, so a team with 200 steps in a building shows "10 floors". An estimate, about 6 steps per metre times a 3.3 m storey, tuned from real data. Never a real storey number, and no building floor data is used. Every screen that shows it says "floors (estimate)". | Ours |
 | Check-in validity | 90 minutes from check-in. Segments are attributed to the building of the active check-in. | PDF |
 | Segment attribution | A segment needs an active check-in to count. | PDF |
-| Per-user limits | At most 60 segment uploads per hour and at most 40 floors per 10 minutes. These double as anti-cheat signals. | PDF |
-| Floor delta per segment | `floors_gained` between 1 and 30; `ascent_m` between 2.0 and 120.0. | PDF |
+| Per-user limits | At most 60 segment uploads per hour and at most 600 verified steps per 10 minutes. These double as anti-cheat signals. | PDF, adapted (ours) |
+| Segment bounds | `steps` between 1 and 2000; `ascent_m` between 2.0 and 120.0; a segment counts only if its pressure change matches its steps (section 3.2). | PDF, adapted (ours) |
 | Age | Users under 18 are not accepted. | PDF |
 | Accessibility | An accessible contribution mode (points for walking steps or for supporting actions). Copy never shames elevator use. | PDF mitigation, rules ours |
 | Safety | Safety copy in onboarding. No speed rewards. Hourly caps. | PDF |
@@ -116,14 +117,14 @@ Android app (React Native + Kotlin native module)
     Room/SQLite outbox
   JS layer: sync worker (backoff + idempotency), UI, WebSocket client
         |  POST /v1/segments (batch, Idempotency-Key)
-        |  GET  /v1/buildings/{id}/floors
+        |  GET  /v1/buildings/{id}/standings
         v
 FastAPI (2 replicas behind Caddy)
-  plausibility checks: speed, cadence, steps/m, rate
-  DB transaction: insert segment, add points, lock + update floor_claim
+  plausibility checks: speed, cadence, steps/m, rate, pressure-steps match
+  DB transaction: insert segment, add points, lock + update building_claim
         |                         |
         v                         v
-PostgreSQL 18 + PostGIS       Valkey: ZINCRBY leaderboards, PUBLISH floor_flipped
+PostgreSQL 18 + PostGIS       Valkey: ZINCRBY leaderboards, PUBLISH building_flipped
                                   |
                                   v
                           WS hub (inside api) -> phones
@@ -139,11 +140,11 @@ PostgreSQL 18 + PostGIS       Valkey: ZINCRBY leaderboards, PUBLISH floor_flippe
 5. The sync worker sends `POST /v1/segments` as a batch with an `Idempotency-Key`.
 6. The API validates schema and plausibility rules.
 7. Transaction begins. Insert the segment `ON CONFLICT DO NOTHING`.
-8. Upsert `team_floor_score` (+points).
-9. `SELECT ... FROM floor_claim WHERE season_id = $1 AND floor_id = $2 FOR UPDATE`, then set the owner to the team with the highest score. Commit.
-10. `ZINCRBY` season leaderboards, `PUBLISH floor_flipped`.
+8. Upsert `team_building_score` (+points for the verified steps).
+9. `SELECT ... FROM building_claim WHERE season_id = $1 AND building_id = $2 FOR UPDATE`, then set the owner to the team with the highest score. Commit.
+10. `ZINCRBY` season leaderboards, `PUBLISH building_flipped`.
 11. Response `200 {accepted, rejected, flips}`.
-12. The WebSocket hub pushes `"AC took floor 7"` to connected phones; a Celery job sends an FCM push to the losing team's devices.
+12. The WebSocket hub pushes `"AC took the Politehnica building"` to connected phones; a Celery job sends an FCM push to the losing team's devices.
 
 ### 3.2 Other data flows
 
@@ -152,14 +153,15 @@ PostgreSQL 18 + PostGIS       Valkey: ZINCRBY leaderboards, PUBLISH floor_flippe
 
 ### 3.3 Sensor fusion
 
-- Near sea level, pressure falls about 0.12 hPa per metre. A 3.2 m floor is about 0.38 hPa, well above the noise of a smoothed phone barometer.
+- Near sea level, pressure falls about 0.12 hPa per metre. A 3.2 m storey is about 0.38 hPa, well above the noise of a smoothed phone barometer. The app works in metres of ascent, not building floors, so no storey height is needed.
 - Weather moves pressure slowly, so ascent is measured only over short windows (seconds to a few minutes). Weather drift becomes negligible.
 - Stairs and elevators separate on two features:
   - Vertical speed: stairs are typically well under 1 m/s, elevators faster.
   - Steps per metre of ascent: stair steps are 15 to 18 cm, so stairs give roughly 6 steps per metre. An elevator gives almost none.
 - Car rides on hills are excluded by GPS speed and the absence of steps.
 - Shaking the phone produces steps without ascent. Blowing on the sensor produces pressure spikes without steps.
-- Exact thresholds are tuned on labelled pilot data. Precision and recall against hand-labelled climbs go into the final report.
+- **Points need a matching pressure change.** A segment scores only if its steps and its pressure change agree: stairs need both a rise in metres and steps at about 6 per metre. Steps with no ascent (shaking, flat walking) score nothing. Ascent with no steps (elevator, or a lift-like rise) scores nothing.
+- Exact thresholds are tuned on labelled pilot data and on the synthetic and real traces (`docs/trace_format.md`). Precision and recall against hand-labelled climbs go into the final report.
 - Server-side checks repeat the plausibility rules, because a modified client cannot be trusted.
 
 Starting thresholds for the rules classifier (ours, all tune):
@@ -169,12 +171,13 @@ Starting thresholds for the rules classifier (ours, all tune):
 | Vertical speed | 0.1 to 0.9 m/s | above 1.0 m/s | outside both |
 | Steps per metre of ascent | 4 to 8 | below 1 | steps without ascent, or ascent without steps |
 | Window length | 5 s to 3 min | any | any |
+| Points awarded | steps in the window, if both features match | none | none |
 
 ### 3.4 Anti-cheat layers
 
 1. On-device: classifier rejects non-stair patterns before upload.
-2. Server plausibility: speed, cadence, steps per metre, floors in range, rate limits.
-3. Valkey token bucket per user (60 uploads/hour, 40 floors/10 minutes).
+2. Server plausibility: speed, cadence, steps per metre, pressure-steps match, rate limits.
+3. Valkey token bucket per user (60 uploads/hour, 600 verified steps/10 minutes).
 4. Per-device limits and `fraud_flag` rows reviewed in the admin panel.
 5. Signed expiring QR tokens so photographed codes cannot be reused remotely.
 6. Stretch: Play Integrity attestation against emulators and modified clients.
@@ -196,7 +199,7 @@ Starting thresholds for the rules classifier (ours, all tune):
 | Hosting | One Azure VM, Docker Compose, Caddy 2 | Ours. PDF used an Oracle free VM. We keep the same self-managed model; the cloud only supplies infrastructure primitives. |
 | CI/CD | GitHub Actions, GHCR, SSH deploy script | See section 7. |
 | Monitoring | Prometheus, Grafana, Loki + Alloy, Alertmanager; custom metrics for segments accepted vs rejected and detection latency | Lets us show detection quality and fraud rates as live dashboards in the demo. |
-| Push | FCM HTTP v1, called directly by the Celery worker behind a `PushSender` interface | Needed to tell a team it lost a floor. FCM is the only Firebase feature used (section 7.2.1). |
+| Push | FCM HTTP v1, called directly by the Celery worker behind a `PushSender` interface | Needed to tell a team it lost a building. FCM is the only Firebase feature used (section 7.2.1). |
 | Cloud provider | Azure, infrastructure primitives only (section 7.2) | Ours. Replaces the PDF's Oracle VM. |
 
 Deliberately not used: Firebase as a platform (database, auth, analytics, crashlytics, hosting), Supabase, Appwrite, Back4App, Vercel, Netlify, Heroku, Render, Railway, and managed backend, auth or database services from Azure. Narrow external services that remain: FCM (push delivery only), an outbound e-mail service for one-time codes (Azure Communication Services or an SMTP relay; self-hosted mail has no sending reputation), and Blob Storage for backups.
@@ -212,7 +215,7 @@ Deliberately not used: Firebase as a platform (database, auth, analytics, crashl
 | Token storage | `react-native-keychain` (Android Keystore) |
 | QR scanning | `react-native-vision-camera` with the code scanner |
 | Check-in location | `react-native-geolocation-service`, one-shot fix, never continuous |
-| Cross-section drawing and animation | `react-native-svg` + Reanimated |
+| Standings drawing and animation | `react-native-svg` + Reanimated |
 | Share cards | `react-native-view-shot` + `react-native-share` |
 | Push token | Minimal FCM messaging dependency, token only (`@react-native-firebase/messaging` or a native Kotlin snippet). No other Firebase modules. See 7.2.1. |
 | Tests | Jest + React Native Testing Library; JUnit for Kotlin; pytest for the backend |
@@ -231,7 +234,7 @@ The PDF rejected cross-platform frameworks because their sensor plugins rarely s
 
 ## 5. Data model
 
-Third normal form. The only derived data are `team_floor_score` and `floor_claim`, maintained transactionally and rebuildable from `climb_segment` at any time.
+Third normal form. The only derived data are `team_building_score` and `building_claim`, maintained transactionally and rebuildable from `climb_segment` at any time.
 
 ### 5.1 Entities
 
@@ -242,23 +245,21 @@ Third normal form. The only derived data are `team_floor_score` and `floor_claim
 | `team` | `id int PK`, `code text UNIQUE` (e.g. AC, ETC, MEC), `color_hex text` | A faculty. |
 | `season` | `id int PK`, `active_during tstzrange` with EXCLUDE (no overlap) | Seasons never overlap. |
 | `team_membership` | `user_id PK/FK`, `season_id PK/FK`, `team_id FK` | Composite PK gives exactly one team per user per season. |
-| `building` | `id int PK`, `name text`, `footprint geometry(Polygon, 4326)` with GiST, `floor_count smallint` | |
-| `floor` | `id int PK`, `building_id FK`, `floor_no smallint`, `height_m real`, `UNIQUE(building_id, floor_no)` | |
+| `building` | `id int PK`, `name text`, `footprint geometry(Polygon, 4326)` with GiST | No floor count or heights: the app does not need building floor data. |
 | `checkin` | `id uuid PK`, `user_id FK`, `building_id FK`, `method text` (`qr` or `geofence`), `valid_during tstzrange` | |
-| `climb_segment` | `id uuid` (client-generated), `device_id FK`, `user_id FK`, `checkin_id FK`, `to_floor_id FK`, `floors_gained smallint`, `ascent_m real`, `vert_speed_mps real`, `steps smallint`, `stair_prob real`, `status text` (`pending`, `verified`, `rejected`), `started_at timestamptz` (partition key, monthly), `UNIQUE(device_id, id)` | Core fact table. |
+| `climb_segment` | `id uuid` (client-generated), `device_id FK`, `user_id FK`, `checkin_id FK`, `building_id FK`, `steps_scored smallint`, `ascent_m real`, `vert_speed_mps real`, `steps smallint`, `stair_prob real`, `status text` (`pending`, `verified`, `rejected`), `started_at timestamptz` (partition key, monthly), `UNIQUE(device_id, id)` | Core fact table. |
 | `fraud_flag` | `id bigint PK`, `segment_id FK`, `rule text`, `created_at`, `resolved_at` | |
-| `team_floor_score` | `season_id`, `floor_id`, `team_id` (composite PK), `points int` | Derived. |
-| `floor_claim` | `season_id`, `floor_id` (composite PK), `team_id FK`, `claimed_at` | Derived. Current owner per season and floor. |
+| `team_building_score` | `season_id`, `building_id`, `team_id` (composite PK), `points int` | Derived. |
+| `building_claim` | `season_id`, `building_id` (composite PK), `team_id FK`, `claimed_at` | Derived. Current owner per season and building. |
 | `refresh_token` | `id uuid PK`, `user_id FK`, `token_hash bytea UNIQUE`, `family_id uuid`, `revoked_at` | |
 
 Our additions (not in the PDF ER diagram): a `config` table of versioned classifier thresholds, a season results table, and a QR token or signing-key record for rotating entrance codes.
 
 ### 5.2 Constraints
 
-- `CHECK (floors_gained BETWEEN 1 AND 30)`
+- `CHECK (steps_scored BETWEEN 1 AND 2000)`
 - `CHECK (ascent_m BETWEEN 2.0 AND 120.0)`
 - `CHECK (stair_prob BETWEEN 0 AND 1)`
-- `UNIQUE (building_id, floor_no)`
 - `UNIQUE (device_id, id)` on segments, so uploads are idempotent
 - Foreign keys from user-owned tables use `ON DELETE CASCADE`, so GDPR account deletion is a single statement.
 
@@ -266,11 +267,11 @@ Our additions (not in the PDF ER diagram): a `config` table of versioned classif
 
 | Index | Query it supports |
 |---|---|
-| `climb_segment (to_floor_id, started_at DESC) WHERE status = 'verified'` (partial, per partition) | Recompute a floor's owner from the last 7 days of verified climbs. |
-| `climb_segment (user_id, started_at DESC)` | Personal history screen; per-user rate checks ("more than 40 floors in 10 minutes?"). |
+| `climb_segment (building_id, started_at DESC) WHERE status = 'verified'` (partial, per partition) | Recompute a building's owner from the last 7 days of verified climbs. |
+| `climb_segment (user_id, started_at DESC)` | Personal history screen; per-user rate checks ("more than 600 steps in 10 minutes?"). |
 | `building USING GIST (footprint)` | Geofence check-in: `ST_Contains(footprint, ST_SetSRID(ST_MakePoint(lon, lat), 4326))` or `ST_DWithin` with a 30 m tolerance. |
-| PK `team_floor_score (season_id, floor_id, team_id)` | Increment a team's score (`INSERT ... ON CONFLICT DO UPDATE`). |
-| PK `floor_claim (season_id, floor_id)` | Read or lock the current owner; render a building cross-section in one query. |
+| PK `team_building_score (season_id, building_id, team_id)` | Increment a team's score (`INSERT ... ON CONFLICT DO UPDATE`). |
+| PK `building_claim (season_id, building_id)` | Read or lock the current owner; render building standings in one query. |
 | `fraud_flag (created_at) WHERE resolved_at IS NULL` | Moderation queue in the admin panel. |
 | `refresh_token (token_hash)` unique | Constant-time lookup on refresh; reuse detection by family. |
 | `season USING GIST (active_during)` (from the exclusion constraint) | "Which season is active now?" |
@@ -278,7 +279,7 @@ Our additions (not in the PDF ER diagram): a `config` table of versioned classif
 ### 5.4 Partitioning, transactions, migrations, backups
 
 - `climb_segment` is range-partitioned by month on `started_at`. Season queries touch one or two partitions. Raw climb data older than 12 months is removed by dropping a partition, not by a slow `DELETE`.
-- Accepting a verified segment runs in one transaction (see 3.1). The row lock on `floor_claim` serialises concurrent climbs on the same floor, so two teams cannot both "win" a race. Climbs on different floors run in parallel.
+- Accepting a verified segment runs in one transaction (see 3.1). The row lock on `building_claim` serialises concurrent climbs in the same building, so two teams cannot both "win" a race. Climbs in different buildings run in parallel.
 - Migrations use Alembic. Autogenerated revisions are reviewed by hand. Partition creation for the next month is a scheduled migration-style job. CI applies all revisions to an empty database and runs `alembic check` to detect drift.
 - Migrations follow expand, migrate, contract (see 7.7).
 - Backups use pgBackRest with point-in-time recovery (see 7.7). Before a season ends, take a manual `pgbackrest backup --type=full`, because season results are the data users care about most.
@@ -289,7 +290,7 @@ Our additions (not in the PDF ER diagram): a `config` table of versioned classif
 
 All endpoints are under `/v1`. The canonical definition lives in `/contracts/openapi.yaml`. Both members must approve changes to it.
 
-PDF-defined: `POST /v1/segments`, `GET /v1/buildings/{id}/floors`, `POST /v1/checkins`, `GET /v1/me/season-stats`. Everything else is ours.
+PDF-defined: `POST /v1/segments`, `GET /v1/buildings/{id}/standings` (was `/floors`, changed to building standings: see the adapted rules in section 2), `POST /v1/checkins`, `GET /v1/me/season-stats`. Everything else is ours.
 
 | Endpoint | Purpose | Notes |
 |---|---|---|
@@ -300,7 +301,7 @@ PDF-defined: `POST /v1/segments`, `GET /v1/buildings/{id}/floors`, `POST /v1/che
 | `POST /v1/checkins` | Check in by signed QR token or geofence | Server verifies HMAC and time window; creates 90-minute range |
 | `POST /v1/segments` | Upload a batch of segments | Idempotent; header `Idempotency-Key`; response `{accepted, rejected, flips}` |
 | `GET /v1/buildings` | Buildings list | |
-| `GET /v1/buildings/{id}/floors` | Floors with current owner for the active season | One query |
+| `GET /v1/buildings/{id}/standings` | Team standings and current owner for the building in the active season | One query |
 | `GET /v1/leaderboards` | Individual, team, building | Served from Valkey sorted sets |
 | `GET /v1/me/season-stats` | Personal stats, landmarks progress, share-card data | |
 | `GET /v1/me/segments` | Personal history | |
@@ -310,7 +311,7 @@ PDF-defined: `POST /v1/segments`, `GET /v1/buildings/{id}/floors`, `POST /v1/che
 | `GET /v1/me/export`, `DELETE /v1/me` | GDPR export and delete | Delete cascades |
 | `WS /v1/ws` | Live events | Authenticated on connect |
 
-WebSocket events (ours): `floor_flipped {building_id, floor_no, from_team, to_team, at}`, `season_state {paused, ends_at}`.
+WebSocket events (ours): `building_flipped {building_id, from_team, to_team, at}`, `season_state {paused, ends_at}`.
 
 Segment upload body (one item, ours):
 
@@ -319,7 +320,7 @@ Segment upload body (one item, ours):
   "id": "client-uuid",
   "checkin_id": "uuid",
   "started_at": "2026-11-02T10:14:03Z",
-  "floors_gained": 3,
+  "building_id": 4,
   "ascent_m": 9.7,
   "duration_s": 22,
   "vert_speed_mps": 0.44,
@@ -402,14 +403,14 @@ How it works:
 1. Create a free Firebase project and register the Android app (its package name). Download `google-services.json` into the app.
 2. Create a service account allowed to send messages. Store its JSON key in SOPS and mount it as a secret on the worker container.
 3. The app reads its device token with the minimal FCM messaging dependency and registers it with `POST /v1/devices/push-token`.
-4. When a floor flips, the Celery worker calls the FCM HTTP v1 API for each device of the losing team.
+4. When a building flips, the Celery worker calls the FCM HTTP v1 API for each device of the losing team.
 5. Behind a small `PushSender` interface, so the sender could change (for example to Notification Hubs) without touching game logic.
 
 Details:
 
-- Message content: short text such as "AC took floor 7" plus `building_id` and `floor_no` in the data payload, so a tap opens the right building screen.
+- Message content: short text such as "AC took the Politehnica building" plus `building_id` in the data payload, so a tap opens the right building screen.
 - Delete tokens that FCM reports as invalid or unregistered.
-- Rate limit pushes per user (for example at most one per floor per 10 minutes) so a flip war does not spam players.
+- Rate limit pushes per user (for example at most one per building per 10 minutes) so a flip war does not spam players.
 - The in-app WebSocket still delivers live flips while the app is open. FCM covers the app being closed or in the background.
 - Privacy: the push payload contains no personal data beyond the team code and building.
 
@@ -496,9 +497,9 @@ Input validation at the API boundary (Pydantic v2 strict). Parameterised SQL onl
 - Data minimisation: raw sensor streams never leave the phone. Only per-segment features (ascent, duration, steps, vertical speed, classifier score) are uploaded. Location is used only at check-in, never tracked continuously.
 - Encryption: TLS 1.3 in transit; LUKS-encrypted database volume; encrypted pgBackRest repository; tokens in the Android Keystore.
 - Input validation: Pydantic strict models with bounded numeric ranges. Server-side plausibility rules mirror the client rules. Signed, expiring QR tokens prevent photographed codes from being reused remotely.
-- Rate limiting: Caddy per-IP limits; a Valkey token bucket per user (at most 60 segment uploads per hour and 40 floors per 10 minutes).
+- Rate limiting: Caddy per-IP limits; a Valkey token bucket per user (at most 60 segment uploads per hour and 600 verified steps per 10 minutes).
 - Health-adjacent data: activity data is personal data under GDPR. The privacy notice states purpose. Raw segments are kept for 12 months. Users can export or delete everything. Users under 18 are not accepted.
-- Safety by design: points never reward speed, only verified floors, with diminishing returns per hour, so the game never encourages running on stairs.
+- Safety by design: points never reward speed, only verified stair steps with a matching pressure change, with diminishing returns per hour, so the game never encourages running on stairs.
 - Admin panel: team IPs only plus admin role in the JWT.
 - Aggregated insights (future B2B): building-level only, published when at least 20 users contribute, never individual data.
 
@@ -508,7 +509,7 @@ Input validation at the API boundary (Pydantic v2 strict). Parameterised SQL onl
 
 | | **Cristea (Member A): Sensing and Mobile Core** | **Ionut (Member B): Backend, Infra and Game UI** |
 |---|---|---|
-| Owns | RN app skeleton, Kotlin native module, foreground service, segmenter and classifier, Room outbox, sync, auth/check-in/fallback screens, privacy screens, evaluation | FastAPI, DB schema and migrations, scoring and claim transaction, Valkey, WebSocket, Celery/push, cloud setup, admin panel, deployment, monitoring, plus the game-facing RN screens (cross-section, leaderboards) |
+| Owns | RN app skeleton, Kotlin native module, foreground service, segmenter and classifier, Room outbox, sync, auth/check-in/fallback screens, privacy screens, evaluation | FastAPI, DB schema and migrations, scoring and claim transaction, Valkey, WebSocket, Celery/push, cloud setup, admin panel, deployment, monitoring, plus the game-facing RN screens (building standings, leaderboards) |
 | Hardest risk | Reliable background sensing and classifier accuracy | Race-free claim transaction and operating the deployment |
 | Delivers to the other | App shell, sync client, labelled traces | Stable OpenAPI contract, staging URL, WS events |
 
@@ -544,8 +545,8 @@ About 85% of the work is independent. These are the moments that need both of yo
 | Week 1, first 2 days | Review and freeze `openapi.yaml` and WS event schemas | Both | PR merged with both approvals |
 | Week 1, end | App shell and API client handed over; fake-segment script shipped; cloud provider chosen | Cristea, Ionut, both | Ionut runs the shell; Cristea posts a segment with the script |
 | Week 2 | Staging URL live, so Cristea can switch from the mock to the real server | Ionut, then Cristea | Sign-in works on a phone against staging |
-| Week 3, Wednesday | First real end-to-end test: one real climb through the real service, API and database | Both | A real climb appears as `verified` and the floor owner changes; ugly is fine |
-| Week 4 | Push setup (Firebase project, token registration, FCM send from the worker, tap to open) | Pair | Phone 2 gets a push when phone 1 flips a floor |
+| Week 3, Wednesday | First real end-to-end test: one real climb through the real service, API and database | Both | A real climb appears as `verified` and the building owner changes; ugly is fine |
+| Week 4 | Push setup (Firebase project, token registration, FCM send from the worker, tap to open) | Pair | Phone 2 gets a push when phone 1 flips a building |
 | Any week | Contract change | Author, then the other reviews | `openapi.yaml` PR approved |
 | Weeks 5 and 6 | Threshold tuning loop: Cristea's trace results to Ionut's config table | Both | New thresholds live through `GET /v1/config` without a deploy |
 
@@ -573,7 +574,7 @@ Goal: both sides can build and run; contract frozen; first sensor traces recorde
 
 **Ionut**
 - Scaffold `/server` and `/infra`. Review the ER model in section 5.
-- Alembic baseline: `user`, `device`, `team`, `season` (tstzrange plus exclusion constraint), `team_membership`, `building` (PostGIS polygon, GiST), `floor`, `refresh_token`.
+- Alembic baseline: `user`, `device`, `team`, `season` (tstzrange plus exclusion constraint), `team_membership`, `building` (PostGIS polygon, GiST), `refresh_token`.
 - Write `openapi.yaml` for all endpoints in section 6 and the WebSocket event schema. Review with Cristea.
 - FastAPI skeleton: `/healthz`, config, structured JSON logging.
 - GitHub Actions: lint and pytest on PR, multi-stage multi-arch (amd64 and arm64) Docker build, push to GHCR.
@@ -588,7 +589,7 @@ Exit: `/healthz` answers over HTTPS; `openapi.yaml` merged; the app installs on 
 Goal: a user can sign in and check in; the segmenter detects climbs offline on recorded traces.
 
 **Cristea**
-- Segmenter v1 in Kotlin (pure, no Android imports): pressure low-pass or median smoothing, ascent-window detection (seconds to minutes), features `ascent_m`, `duration`, `vert_speed_mps`, `steps`, `steps_per_m`, `floors_gained`.
+- Segmenter v1 in Kotlin (pure, no Android imports): pressure low-pass or median smoothing, ascent-window detection (seconds to minutes), features `ascent_m`, `duration`, `vert_speed_mps`, `steps`, `steps_per_m`, and the pressure-steps match flag.
 - Rules classifier v1 (stairs, elevator, other) using the starting thresholds in 3.3. Reject shake and blow patterns.
 - JUnit trace-replay harness over `/traces` that prints a confusion matrix. Put baseline numbers in `/docs/evaluation.md`.
 - Auth screens: e-mail, OTP entry, team choice. Keystore token storage, refresh interceptor with rotating refresh token. Generated TS API client wired in.
@@ -599,7 +600,7 @@ Goal: a user can sign in and check in; the segmenter detects climbs offline on r
 - Team and season endpoints; join once per season.
 - `POST /v1/checkins`: verify the HMAC-signed rotating QR token and its window; geofence path with `ST_Contains` / `ST_DWithin` 30 m; insert the check-in with a 90-minute range.
 - Script that generates printable entrance QR codes.
-- Seed data: 2 real buildings (footprints, floor counts, heights), 4 to 5 teams, one active season.
+- Seed data: 2 real buildings (footprints only), 4 to 5 teams, one active season.
 - Tests: auth flow, OTP abuse, token reuse, check-in valid, expired and forged.
 - Staging deploy from `main` (GHCR pull, `deploy.sh`), SOPS and age secrets to `/run/secrets`.
 
@@ -618,17 +619,17 @@ Goal: a real stair climb in a building becomes points on the server.
 - Verify the service survives screen-off and app swipe-away on both phones. Log a "sessions with gaps" metric.
 
 **Ionut**
-- Migrations: `climb_segment` (monthly range partitions, `UNIQUE(device_id, id)`, CHECKs), `fraud_flag`, `team_floor_score`, `floor_claim`, the indexes in 5.3, the next-month partition job.
-- `POST /v1/segments`: Pydantic strict batch; server plausibility rules (speed, cadence, steps/m, floor range, per-user rate); status `verified` or `rejected`; `fraud_flag` for rejects.
-- Claim transaction as in 3.1, with a concurrency test (parallel climbs on one floor).
-- Scoring: points per verified floor with diminishing returns per hour.
-- Valkey: `ZINCRBY` leaderboards, `PUBLISH floor_flipped`, token bucket (60 uploads/hour, 40 floors/10 minutes).
-- `GET /v1/buildings/{id}/floors` (owner per floor in one query) and `GET /v1/leaderboards`.
+- Migrations: `climb_segment` (monthly range partitions, `UNIQUE(device_id, id)`, CHECKs), `fraud_flag`, `team_building_score`, `building_claim`, the indexes in 5.3, the next-month partition job.
+- `POST /v1/segments`: Pydantic strict batch; server plausibility rules (speed, cadence, steps/m, pressure-steps match, per-user rate); status `verified` or `rejected`; `fraud_flag` for rejects.
+- Claim transaction as in 3.1, with a concurrency test (parallel climbs in one building).
+- Scoring: points per verified stair step with diminishing returns per hour.
+- Valkey: `ZINCRBY` leaderboards, `PUBLISH building_flipped`, token bucket (60 uploads/hour, 600 verified steps/10 minutes).
+- `GET /v1/buildings/{id}/standings` (owner and team standings in one query) and `GET /v1/leaderboards`.
 - Fake-segment script. Replay `/traces` through the server plausibility rules as a pytest case.
 
 Wednesday check: run one real climb through the real service, API and database as early in the week as possible, even if it is ugly. Surprises (field names, time zones, auth edges) surface here.
 
-Exit: walk up real stairs with the phone in a pocket; the segment lands in the DB as `verified`; team score and `floor_claim` update; a duplicate upload is a no-op.
+Exit: walk up real stairs with the phone in a pocket; the segment lands in the DB as `verified`; team score and `building_claim` update; a duplicate upload is a no-op.
 
 ### Week 4: Live game UI, push, anti-cheat
 
@@ -636,29 +637,29 @@ Goal: the loop is visible and social.
 
 **Cristea**
 - WebSocket connection manager (auth, reconnect, resume) exposed as a hook for Ionut's screens.
-- Home screen: current check-in, today's floors, pending-sync indicator.
+- Home screen: current check-in, today's stair steps and metres, pending-sync indicator.
 - Personal history screen with the reason for each rejected segment.
-- Barometer-less fallback: detect `has_barometer=false`, QR-sticker-on-landing flow ("scan on the 4th floor") with local rate limit.
+- Barometer-less fallback: detect `has_barometer=false`, QR-sticker-on-landing flow ("scan at the stairs of building X") with local rate limit.
 - Onboarding: safety copy (no running), permission explanations, per-manufacturer battery-optimisation guide.
 - Classifier tuning pass 1 with new real-world traces (pocket, bag, hand, going down, flat walking). Record new precision and recall.
 
 **Ionut**
-- Building cross-section screen (`react-native-svg`): floors in team colours from `GET /v1/buildings/{id}/floors`, live updates from `floor_flipped`, Reanimated colour-flip animation.
+- Building standings screen (`react-native-svg`): team shares in team colours from `GET /v1/buildings/{id}/standings`, live updates from `building_flipped`, Reanimated colour-flip animation.
 - Leaderboards screen: individual, team, building tabs; season selector.
 - WebSocket hub in the API: auth on connect, Valkey pub/sub fan-out so two replicas share events.
-- Celery worker: push "AC took floor 7" to the losing team through the `PushSender` interface (FCM HTTP v1 with the service-account key from SOPS). `POST /v1/devices/push-token`, invalid-token cleanup, per-user push rate limit. Pair with Cristea on the RN token registration and the notification tap that deep-links to the building screen.
+- Celery worker: push "AC took the Politehnica building" to the losing team through the `PushSender` interface (FCM HTTP v1 with the service-account key from SOPS). `POST /v1/devices/push-token`, invalid-token cleanup, per-user push rate limit. Pair with Cristea on the RN token registration and the notification tap that deep-links to the building screen.
 - Landmarks progress (Eiffel Tower style conversion) in `GET /v1/me/season-stats`.
 - `POST /v1/landing-scans` with strict rate limits.
-- Anti-cheat v2: per-device limits, repeated identical segment detection, impossible-sequence checks (floor jump between buildings), fraud flag reasons.
+- Anti-cheat v2: per-device limits, repeated identical segment detection, impossible-sequence checks (climbs in two buildings too close in time), fraud flag reasons.
 
-Exit: two phones on different teams: phone 1 climbs, phone 2's cross-section flips live and phone 2 gets a push. The barometer-less path works on a device or an emulator flag.
+Exit: two phones on different teams: phone 1 climbs, phone 2's building standings flip live and phone 2 gets a push. The barometer-less path works on a device or an emulator flag.
 
 ### Week 5: Admin, share cards, monitoring, operability
 
 Goal: feature complete and operable.
 
 **Cristea**
-- Share cards (9:16): building cross-section, personal stats, "floor flipped" moment. Rendered with `react-native-view-shot`, sent via the Android share sheet. Ionut provides the cross-section component.
+- Share cards (9:16): building standings, personal stats, "building flipped" moment. Rendered with `react-native-view-shot`, sent via the Android share sheet. Ionut provides the standings component.
 - Season results screen and a "season paused" banner when the server switch is on.
 - Offline and error states everywhere: no network, expired token, 5xx, camera denied, missing sensor.
 - Accessible contribution mode behind a flag and non-shaming elevator wording (agree rules with Ionut).
@@ -667,7 +668,7 @@ Goal: feature complete and operable.
 - Classifier tuning pass 2. Thresholds move into a structure that the server `config` table can override via `GET /v1/config`.
 
 **Ionut**
-- Admin panel (SQLAdmin, IP-allowlisted through Caddy `remote_ip`, admin JWT role): edit building footprints (GeoJSON), floor counts and heights, create seasons, assign teams, review and resolve fraud flags, "season paused" switch.
+- Admin panel (SQLAdmin, IP-allowlisted through Caddy `remote_ip`, admin JWT role): edit building footprints (GeoJSON), create seasons, assign teams, review and resolve fraud flags, "season paused" switch.
 - Versioned classifier-threshold `config` table and `GET /v1/config`.
 - Season close transaction with results snapshot. Celery scheduled jobs: season rollover, partition creation, digests.
 - `GET /v1/me/export` and `DELETE /v1/me` (cascade). Retention job that drops partitions older than 12 months.
@@ -693,13 +694,13 @@ Goal: real data from real users; numbers for the report; frozen release.
 - Evaluation: precision, recall and F1 per class, per device model, per placement; barometer coverage; battery cost; sessions-with-gaps rate. Write `/docs/evaluation.md` with the confusion matrix and charts.
 - Final threshold tuning with Ionut through the config table. Re-run all traces in CI.
 - Signed release APK, crash-free check, UX polish.
-- Demo script: check in, climb, faculty colour takes floor 6, rival gets a push.
+- Demo script: check in, climb, faculty colour takes the building, rival gets a push.
 
 **Ionut**
 - Pilot operations: watch Grafana and Alertmanager, fix server issues, tune plausibility rules from real fraud flags.
-- Metrics queries for the report: users, climbs, floors, flips per floor, accepted vs rejected, WebSocket uptime.
+- Metrics queries for the report: users, climbs, stair steps, flips per building, accepted vs rejected, WebSocket uptime.
 - Freeze production, verify backups, rehearse `deploy.sh rollback`.
-- Live Grafana dashboards and a wall-screen view of the cross-section for the demo.
+- Live Grafana dashboards and a wall-screen view of the building standings for the demo.
 - Report sections: architecture, DB design, deployment, security and privacy, monitoring.
 - Rehearse the demo twice with a failure plan (pre-recorded video, local fallback server).
 
@@ -712,7 +713,7 @@ Exit: signed APK on GitHub Releases; evaluation report with precision and recall
 | 1 | RN shell, native sensor logger, first traces | Schema v1, OpenAPI, CI, VM and TLS | `/healthz` over HTTPS; contract merged |
 | 2 | Segmenter v1, replay harness, auth and check-in UI | Auth, check-in, seed data, staging deploy | Sign up, then check in on a device |
 | 3 | Live service, outbox, sync | Segments API, plausibility, claim transaction, Valkey | Real climb becomes a verified claim |
-| 4 | WS manager, history, fallback, tuning 1 | Cross-section and leaderboards UI, WS hub, FCM push, anti-cheat v2 | Two phones: live flip and push |
+| 4 | WS manager, history, fallback, tuning 1 | Building standings and leaderboards UI, WS hub, FCM push, anti-cheat v2 | Two phones: live flip and push |
 | 5 | Share cards, GDPR UI, offline states, battery tests | Admin panel, config table, monitoring, backups, k6 | Feature complete, operable |
 | 6 | Pilot ground truth, evaluation, release APK | Pilot ops, metrics, freeze, demo infra | Pilot done, final demo |
 
@@ -731,7 +732,7 @@ The project produces measurable results rather than screenshots. These numbers g
 | Sessions with gaps | Fraction of check-in windows where the service was killed | Cristea |
 | Upload latency | Segment `started_at` to server accept | Ionut |
 | Accepted vs rejected segments, fraud flags by rule | Prometheus counters and `fraud_flag` | Ionut |
-| Flips per floor, active users, climbs | Report queries | Ionut |
+| Flips per building, active users, climbs | Report queries | Ionut |
 | API load behaviour | k6 results | Ionut |
 | Backup restore | Restore drill log | Ionut |
 
@@ -768,9 +769,9 @@ CI gate: the trace-replay suite fails the build if precision drops below the agr
 
 - Platforms: TikTok and Instagram Reels (primary, campus content); Discord or WhatsApp communities per faculty for coordination; r/Romania or r/timisoara for launch posts.
 - Launch campaign "Faculty Wars Week": a one-week season at the start of a semester. A live building map runs on a screen in a busy hallway or canteen (with the faculty's permission). Student organisations act as team captains. The faculty holding the most floors at the end wins a sponsored prize (pizza for the year group, or a trophy that physically moves to the winning building). Daily recap reels follow the shifting map.
-- Recurring "Floor Flip of the Week": a 15-second vertical video. A building cross-section animates colour changes over the week, cut with point-of-view stair-climb footage and one statistic ("the 7th floor changed hands 11 times"). The cross-section animation is exported from the app's own UI, so the format costs minutes.
+- Recurring "Building Flip of the Week": a 15-second vertical video. A building standings view animates colour changes over the week, cut with point-of-view stair-climb footage and one statistic ("the building changed hands 11 times"). The standings animation is exported from the app's own UI, so the format costs minutes.
 - Hashtags: `#FloorWars`, `#FloorWarsUPT` (one tag per campus), `#TakeTheStairs`.
-- Meme formats: "elevator people vs stair people", "POV your faculty just lost the 4th floor".
+- Meme formats: "elevator people vs stair people", "POV your faculty just lost the building".
 - Each faculty gets a captain role that can call raids (stretch); captains become micro-influencers.
 
 ### 13.2 Monetization (PDF, not part of the 6-week build)
@@ -797,7 +798,7 @@ Running cost: covered by the student cloud credit during the course (Azure VM, s
 | 1 | FloorWars: take the stairs, take the building | A campus territory game powered by the barometer already in every phone. |
 | 2 | The problem nobody gamified | Stair challenges exist, but they rely on paper logs or NFC hardware; personal floor counters have no social pull. |
 | 3 | The insight: one floor is about 0.38 hPa | Phone sensors can tell stairs from elevators with no hardware installed in buildings. |
-| 4 | Demo storyboard | Check in, climb, your faculty's colour takes floor 6, the rival team gets a push notification. |
+| 4 | Demo storyboard | Check in, climb, your faculty's colour takes the building, the rival team gets a push notification. |
 | 5 | Market and competitors | StepJockey, health apps, manual challenges: what each lacks and where FloorWars sits. |
 | 6 | Why this is academically solid | Sensor fusion under noise, a measurable classifier (precision and recall on labelled climbs), adversarial anti-cheat, background-execution constraints. A mobile systems problem, not a CRUD app. |
 | 7 | Engineering decisions | PostgreSQL 18 + PostGIS, monthly partitions, row locks for claims, pgBackRest PITR; Docker multi-stage builds, Caddy TLS, GitHub Actions, Prometheus and Grafana; rotating refresh tokens. |
@@ -824,7 +825,7 @@ The PDF planned about 14 teaching weeks for 3 to 4 people, starting 19 October 2
 |---|---|---|
 | M1 Foundations | 19 Oct to 1 Nov | ER model, Alembic baseline, auth, health endpoint, Oracle VM (we use an Azure VM), CI, Caddy TLS, sensor logger app |
 | M2 Core pipeline | 2 to 15 Nov | `climb_segment` partitioned, scores, claims, seed data for 2 buildings, check-in and segment upload, staging, SOPS, pgBackRest, foreground service, segmenter, classifier v1, outbox and sync |
-| M3 Game loop | 16 to 29 Nov | Claim transaction with row locks, fraud flags, leaderboards, WebSocket flips, push, production deploy with manual approval and auto-rollback, monitoring, cross-section UI, QR check-in, share cards |
+| M3 Game loop | 16 to 29 Nov | Claim transaction with row locks, fraud flags, leaderboards, WebSocket flips, push, production deploy with manual approval and auto-rollback, monitoring, building standings UI, QR check-in, share cards |
 | M4 Hardening | 30 Nov to 13 Dec | First restore drill, EXPLAIN ANALYZE, rate limits, admin panel, export/delete, k6, Trivy, runbook, QR fallback, offline states, battery measurements |
 | M5 Pilot | 14 to 20 Dec and 5 to 17 Jan | Season results snapshot, threshold tuning via config table, on-call rota, pilot with 30 to 50 students in 2 buildings, classifier evaluation |
 | M6 Final demo | Last teaching week | Final metrics, frozen release, live dashboards, presentation and report |
@@ -857,11 +858,11 @@ Our 6 weeks map onto this as: Week 1 = M1, Week 2 and 3 = M2, Week 4 = M3, Week 
 | Term | Meaning |
 |---|---|
 | Segment | One detected ascent window with its features and classification. |
-| Claim | The current owner of a floor in a season. |
-| Flip | A change of floor owner. |
+| Claim | The current owner of a building in a season. |
+| Flip | A change of building owner. |
 | Check-in | A 90-minute context that says which building the user is in. |
 | Outbox | Local queue of segments waiting to upload. |
-| Plausibility rules | Server checks on speed, cadence, steps per metre, floors and rate. |
+| Plausibility rules | Server checks on speed, cadence, steps per metre, pressure-steps match and rate. |
 | Season | A two-week competition round (one week for the launch). |
 | Raid | Stretch feature: one-hour team event with double points. |
 | RPO / RTO | Maximum data loss / maximum time to recover. |
