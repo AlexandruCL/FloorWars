@@ -3,16 +3,24 @@ package com.floorwars.floorsensors
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 
 class FloorSensorsModule(reactContext: ReactApplicationContext) :
     NativeFloorSensorsSpec(reactContext) {
 
     private val statusListener = { emitStatus() }
+
+    private val hasBarometer by lazy {
+        reactApplicationContext.getSystemService(SensorManager::class.java)
+            .getDefaultSensor(Sensor.TYPE_PRESSURE) != null
+    }
 
     init {
         FloorSensorsService.statusListener = statusListener
@@ -36,6 +44,18 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
         Log.i(TAG, "stopLogging label=${FloorSensorsService.label}")
         // The service reports idle from onDestroy; a service that was not running never does.
         if (!reactApplicationContext.stopService(serviceIntent())) emitStatus()
+    }
+
+    override fun getStatus(promise: Promise) {
+        val label = FloorSensorsService.label
+        val status = Arguments.createMap().apply {
+            putBoolean("logging", label != null)
+            putString("label", label.orEmpty())
+            putBoolean("has_barometer", hasBarometer)
+            putInt("buffered", FloorSensorsService.buffer.size())
+        }
+        Log.i(TAG, "getStatus $status")
+        promise.resolve(status)
     }
 
     override fun invalidate() {

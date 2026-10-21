@@ -6,6 +6,7 @@ import { FloorSensors, requestPermissions } from './floorSensors';
 export function FloorSensorsDebug() {
   const [status, setStatus] = useState('idle');
   const [permissions, setPermissions] = useState('');
+  const [nativeStatus, setNativeStatus] = useState('');
 
   useEffect(() => {
     const subscription = FloorSensors.onStatusChange(event => {
@@ -21,6 +22,12 @@ export function FloorSensorsDebug() {
     setPermissions(JSON.stringify(results, null, 1));
   };
 
+  const onGetStatus = async () => {
+    const result = await FloorSensors.getStatus();
+    console.log('[FloorSensors] getStatus', result);
+    setNativeStatus(JSON.stringify(result));
+  };
+
   return (
     <View style={styles.panel}>
       <Text>{`FloorSensors: ${status}`}</Text>
@@ -33,6 +40,8 @@ export function FloorSensorsDebug() {
         title="stopLogging()"
         onPress={() => FloorSensors.stopLogging()}
       />
+      <Button title="getStatus()" onPress={onGetStatus} />
+      <Text>{nativeStatus}</Text>
       <Text>{permissions}</Text>
     </View>
   );
