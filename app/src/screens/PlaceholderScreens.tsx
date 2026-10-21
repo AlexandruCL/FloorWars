@@ -1,5 +1,7 @@
 import { Button, StyleSheet, Text, View } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { FloorSensorsDebug } from '../native/FloorSensorsDebug';
+import type { MainStackParamList } from '../navigation/types';
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -26,8 +28,18 @@ export function SignInScreen({
   );
 }
 
-export function HomeScreen() {
-  return <Placeholder title="Home" />;
+export function HomeScreen({
+  navigation,
+}: NativeStackScreenProps<MainStackParamList, 'Home'>) {
+  return (
+    <>
+      <Placeholder title="Home" />
+      <Button
+        title="Sensor logger"
+        onPress={() => navigation.navigate('SensorLogger')}
+      />
+    </>
+  );
 }
 
 const styles = StyleSheet.create({

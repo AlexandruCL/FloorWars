@@ -1,6 +1,7 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { HomeScreen, SignInScreen } from '../screens/PlaceholderScreens';
+import { SensorLoggerScreen } from '../screens/SensorLoggerScreen';
 import type {
   AuthStackParamList,
   MainStackParamList,
@@ -27,6 +28,11 @@ function MainNavigator() {
   return (
     <MainStack.Navigator>
       <MainStack.Screen name="Home" component={HomeScreen} />
+      <MainStack.Screen
+        name="SensorLogger"
+        component={SensorLoggerScreen}
+        options={{ title: 'Sensor logger' }}
+      />
     </MainStack.Navigator>
   );
 }

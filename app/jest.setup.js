@@ -4,6 +4,11 @@ jest.mock(
   () => require('react-native-safe-area-context/jest/mock').default,
 );
 
+jest.mock('react-native-share', () => ({
+  __esModule: true,
+  default: { open: jest.fn(() => Promise.resolve({ success: true })) },
+}));
+
 jest.mock('./src/native/NativeFloorSensors', () => ({
   __esModule: true,
   default: {
