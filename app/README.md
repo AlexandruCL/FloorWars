@@ -57,6 +57,19 @@ cd android
 
 The APK lands in `android/app/build/outputs/apk/debug/app-debug.apk`. Install it with `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`.
 
+## Release test build
+
+A standalone APK with the JS bundle inside, for testers without Metro:
+
+```sh
+cd android
+./gradlew assembleRelease
+```
+
+The APK lands in `android/app/build/outputs/apk/release/app-release.apk`. Install it with `adb install -r android/app/build/outputs/apk/release/app-release.apk`. It is signed with the debug keystore, so it is for testing only, not for the Play Store.
+
+`DEV_SKIP_SIGN_IN` in `src/config/devFlags.ts` shows "Skip sign-in (dev)" in release builds so testers can reach the sensor logger. Set it to `false` or remove it before T7 (auth stub) lands.
+
 ## Layout
 
 ```
