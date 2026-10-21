@@ -6,6 +6,7 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
+import com.floorwars.floorsensors.FloorSensorsPackage
 
 class MainApplication :
     Application(),
@@ -16,8 +17,7 @@ class MainApplication :
             context = applicationContext,
             packageList =
             PackageList(this).packages.apply {
-                // Packages that cannot be autolinked yet can be added manually here, for example:
-                // add(MyReactNativePackage())
+                add(FloorSensorsPackage())
             }
         )
     }
