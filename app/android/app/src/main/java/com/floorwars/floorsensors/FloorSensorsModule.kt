@@ -11,6 +11,8 @@ import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
+import java.io.File
+import java.io.IOException
 
 class FloorSensorsModule(reactContext: ReactApplicationContext) :
     NativeFloorSensorsSpec(reactContext) {
@@ -58,6 +60,41 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
         promise.resolve(status)
     }
 
+    override fun saveTrace(placement: String, promise: Promise) {
+        val session = FloorSensorsService.session
+        val stoppedAt = session?.stoppedAtMillis
+        if (session == null || stoppedAt == null) {
+            promise.reject("E_NO_TRACE", "No stopped logging session to save")
+            return
+        }
+        val metadata = listOf(
+            "device_model" to "${Build.MANUFACTURER} ${Build.MODEL}",
+            "has_barometer" to hasBarometer.toString(),
+            "label" to session.label,
+            "placement" to placement,
+            "start_utc" to TraceCsv.isoUtc(session.startedAtMillis),
+            "stop_utc" to TraceCsv.isoUtc(stoppedAt)
+        )
+        try {
+            val dir = File(reactApplicationContext.filesDir, "traces").apply { mkdirs() }
+            val file =
+                File(dir, TraceCsv.fileName(session.label, placement, session.startedAtMillis))
+            file.bufferedWriter().use { out ->
+                TraceCsv.write(
+                    out,
+                    metadata,
+                    FloorSensorsService.buffer.snapshot(),
+                    session.startElapsedNanos,
+                    ::sensorName
+                )
+            }
+            Log.i(TAG, "saveTrace ${file.absolutePath}")
+            promise.resolve(file.absolutePath)
+        } catch (e: IOException) {
+            promise.reject("E_SAVE_TRACE", e)
+        }
+    }
+
     override fun invalidate() {
         if (FloorSensorsService.statusListener === statusListener) {
             FloorSensorsService.statusListener = null
@@ -72,6 +109,12 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
             reactApplicationContext,
             Manifest.permission.ACTIVITY_RECOGNITION
         ) == PackageManager.PERMISSION_GRANTED
+
+    private fun sensorName(type: Int) = when (type) {
+        Sensor.TYPE_PRESSURE -> "pressure"
+        Sensor.TYPE_STEP_DETECTOR -> "step"
+        else -> type.toString()
+    }
 
     private fun emitStatus() {
         val label = FloorSensorsService.label

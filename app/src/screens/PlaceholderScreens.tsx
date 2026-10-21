@@ -1,5 +1,7 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Button, StyleSheet, Text, View } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { FloorSensorsDebug } from '../native/FloorSensorsDebug';
+import type { MainStackParamList } from '../navigation/types';
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -9,17 +11,35 @@ function Placeholder({ title }: { title: string }) {
   );
 }
 
-export function SignInScreen() {
+// onDevSkipSignIn opens the Main stack in dev builds until the auth stub (T7) exists.
+export function SignInScreen({
+  onDevSkipSignIn,
+}: {
+  onDevSkipSignIn?: () => void;
+}) {
   return (
     <>
       <Placeholder title="Sign in" />
+      {__DEV__ && onDevSkipSignIn && (
+        <Button title="Skip sign-in (dev)" onPress={onDevSkipSignIn} />
+      )}
       {__DEV__ && <FloorSensorsDebug />}
     </>
   );
 }
 
-export function HomeScreen() {
-  return <Placeholder title="Home" />;
+export function HomeScreen({
+  navigation,
+}: NativeStackScreenProps<MainStackParamList, 'Home'>) {
+  return (
+    <>
+      <Placeholder title="Home" />
+      <Button
+        title="Sensor logger"
+        onPress={() => navigation.navigate('SensorLogger')}
+      />
+    </>
+  );
 }
 
 const styles = StyleSheet.create({
