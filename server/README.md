@@ -62,8 +62,10 @@ build context. Secrets are never baked in; they are mounted at `/run/secrets` (p
 ## Configuration
 
 Settings are read from environment variables with the `FLOORWARS_` prefix (see `.env.example`).
-When `/run/secrets` exists (deployed hosts, plan 7.5), a file named after the field, for example
-`/run/secrets/database_url`, is read too; secrets belong there, not in env files.
+When `/run/secrets` exists (deployed hosts, plan 7.5), a file named after the variable, lower-case
+with the prefix, for example `/run/secrets/floorwars_database_url`, is read too (pydantic-settings
+applies `env_prefix` to secret file names); secrets belong there, not in env files. Compose maps
+the host files to these names, see `infra/secrets/README.md`.
 
 | Variable | Default | Values / notes |
 |---|---|---|

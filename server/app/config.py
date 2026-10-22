@@ -2,8 +2,8 @@
 
 Values come from environment variables prefixed with ``FLOORWARS_``. In deployed
 environments secrets are files in ``/run/secrets`` (decrypted by ``deploy.sh`` from SOPS);
-a file named after the field (for example ``/run/secrets/database_url``) is read when the
-directory exists. Local runs without that directory fall back to plain environment variables.
+a file named after the prefixed variable (for example ``/run/secrets/floorwars_database_url``;
+pydantic-settings applies ``env_prefix`` to secret file names) is read when the directory exists. Local runs without that directory fall back to plain environment variables.
 
 Connection strings are ``SecretStr`` so they never show up in reprs or logs.
 """
