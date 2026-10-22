@@ -185,7 +185,12 @@ paths:
       summary: Upload a batch of climb segments
       description: |
         Idempotent. Segments are inserted ON CONFLICT DO NOTHING on (device, id), so a re-sent segment
-        counts as accepted. Server plausibility checks repeat the on-device rules.
+        counts as accepted. Server plausibility checks repeat the on-device rules (plan 3.3, 3.4).
+        A segment scores only if its steps match its pressure change (about 4 to 8 steps per metre of
+        ascent); points go to the building of the active check-in, and the building's owner is
+        recomputed in the same transaction. Building flips caused by the batch are returned in flips.
+        Inferred: each item is checked on its own, so an item outside the bounds or failing a rule is
+        returned in rejected and does not fail the batch; 422 is for a body that is not a valid batch.
         Rate limits (plan 3.4): 60 uploads per hour and 40 floors per 10 minutes per user.
       parameters:
         - name: Idempotency-Key
@@ -642,7 +647,7 @@ components:
         - id
         - checkin_id
         - started_at
-        - floors_gained
+        - building_id
         - ascent_m
         - duration_s
         - vert_speed_mps
@@ -656,14 +661,15 @@ components:
           description: Client-generated UUID. Unique per device; a repeat is treated as success.
         checkin_id: { type: string, format: uuid }
         started_at: { type: string, format: date-time }
-        floors_gained:
+        building_id:
           type: integer
           minimum: 1
-          maximum: 30
+          description: 'Building of the check-in. Inferred: a segment whose building differs from its check-in is rejected (building_mismatch).'
         ascent_m:
           type: number
           minimum: 2.0
           maximum: 120.0
+          description: Ascent in metres from the barometer. Not a floor count.
         duration_s:
           type: number
           exclusiveMinimum: 0
@@ -674,9 +680,9 @@ components:
           description: 'Inferred: the non-negative bound.'
         steps:
           type: integer
-          minimum: 0
-          maximum: 32767
-          description: 'Inferred: bounds (smallint in the data model).'
+          minimum: 1
+          maximum: 2000
+          description: Steps detected in the ascent window (plan section 2 bounds).
         stair_prob:
           type: number
           minimum: 0
@@ -703,16 +709,32 @@ components:
       properties:
         accepted:
           type: array
-          description: 'Inferred: ids of accepted segments, including repeats of already stored ones.'
-          items: { type: string, format: uuid }
+          description: 'Inferred: accepted segments, including repeats of already stored ones.'
+          items: { $ref: '#/components/schemas/AcceptedSegment' }
         rejected:
           type: array
           description: 'Inferred: rejected segments with the failed rule.'
           items: { $ref: '#/components/schemas/RejectedSegment' }
         flips:
           type: array
-          description: Floors that changed owner because of this batch.
-          items: { $ref: '#/components/schemas/FloorFlip' }
+          description: Buildings that changed owner because of this batch.
+          items: { $ref: '#/components/schemas/BuildingFlip' }
+
+    AcceptedSegment:
+      type: object
+      description: 'Inferred: the shape of an accepted item.'
+      required: [id, steps_scored]
+      properties:
+        id: { type: string, format: uuid }
+        steps_scored:
+          type: integer
+          minimum: 0
+          maximum: 2000
+          description: 'Inferred: verified stair steps credited for this segment (steps_scored in the data model).'
+        points:
+          type: integer
+          minimum: 0
+          description: 'Inferred: points added by this segment after the hourly diminishing returns. Omitted for a repeat of an already stored segment.'
 
     RejectedSegment:
       type: object
@@ -722,7 +744,24 @@ components:
         id: { type: string, format: uuid }
         reason:
           type: string
-          description: 'Inferred: the plausibility rule that failed, for example speed, cadence, steps_per_m, floors_range, rate_limit.'
+          enum:
+            - pressure_steps_mismatch
+            - ascent_range
+            - steps_range
+            - speed
+            - cadence
+            - duration
+            - rate_limit
+            - no_checkin
+            - building_mismatch
+          description: |
+            Inferred: the rule that failed (plan 2, 3.3, 3.4).
+            pressure_steps_mismatch: steps per metre of ascent outside 4 to 8 (elevator, flat walking, shaking).
+            ascent_range: ascent_m outside 2.0 to 120.0. steps_range: steps outside 1 to 2000.
+            speed: vertical speed outside 0.1 to 0.9 m/s. cadence: implausible step rate.
+            duration: window outside 5 s to 3 min. rate_limit: the user is over 600 verified steps per
+            10 minutes (over 60 uploads per hour returns 429 for the whole batch). no_checkin: no check-in valid at started_at. building_mismatch:
+            building_id differs from the check-in's building.
 
     Building:
       type: object
@@ -778,16 +817,15 @@ components:
           minimum: 0
           description: Points from verified stair steps (plan section 2). Not floors.
 
-    FloorFlip:
+    BuildingFlip:
       type: object
-      description: A floor changing owner. Same fields as the floor_flipped WebSocket event.
-      required: [building_id, floor_no, from_team, to_team, at]
+      description: A building changing owner. Same fields as the building_flipped WebSocket event.
+      required: [building_id, from_team, to_team, at]
       properties:
         building_id: { type: integer, minimum: 1 }
-        floor_no: { type: integer }
         from_team:
           type: [string, 'null']
-          description: 'Inferred: team code (for example AC), null when the floor had no owner. The plan does not say code or id.'
+          description: 'Inferred: team code (for example AC), null when the building had no owner. The plan does not say code or id.'
         to_team:
           type: string
           description: 'Inferred: team code (for example AC).'
@@ -868,11 +906,16 @@ components:
       allOf:
         - $ref: '#/components/schemas/SegmentFields'
         - type: object
-          required: [status]
+          required: [status, steps_scored]
           properties:
             status:
               type: string
               enum: [pending, verified, rejected]
+            steps_scored:
+              type: integer
+              minimum: 0
+              maximum: 2000
+              description: 'Verified stair steps credited for the segment. Inferred: 0 while pending or when rejected.'
       unevaluatedProperties: false
 
     SegmentPage:
@@ -927,7 +970,7 @@ components:
         floor_no: { type: integer }
         flips:
           type: array
-          items: { $ref: '#/components/schemas/FloorFlip' }
+          items: { $ref: '#/components/schemas/BuildingFlip' }
 
     ClassifierConfig:
       type: object
@@ -967,7 +1010,7 @@ components:
           required: [type]
           properties:
             type: { type: string, const: floor_flipped }
-        - $ref: '#/components/schemas/FloorFlip'
+        - $ref: '#/components/schemas/BuildingFlip'
 
     SeasonStateEvent:
       type: object
