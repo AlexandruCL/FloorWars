@@ -1,9 +1,19 @@
 openapi: 3.1.0
 info:
   title: FloorWars API
-  version: 0.1.0-draft
+  version: 0.2.0-draft
   description: |
     Approved by both members on 2026-10-21. Every later change is a PR reviewed by the other member.
+
+    Changelog:
+    - 0.2.0-draft (2026-10-22): building territory (plan sections 2, 3.3, 5, 6). Territory is per
+      building and points are verified stair steps; floors are no longer a game unit.
+      GET /buildings/{id}/floors replaced by GET /buildings/{id}/standings; Building drops floor_count;
+      segment item adds building_id, drops floors_gained, steps bounded 1-2000; upload result carries
+      steps_scored, step-based rejection reasons and building flips; WebSocket event floor_flipped
+      renamed building_flipped; season stats report steps_verified and buildings_owned_by_team;
+      landing scans name a building, never a floor; rate limit is 600 verified steps per 10 minutes.
+    - 0.1.0-draft (2026-10-21): first approved version.
 
     Source: IMPLEMENTATION_PLAN.md section 6 (endpoints, WebSocket events, segment body),
     section 3 (climb-to-claim flow, check-ins, anti-cheat) and section 5 (data model and constraints).
@@ -191,7 +201,7 @@ paths:
         recomputed in the same transaction. Building flips caused by the batch are returned in flips.
         Inferred: each item is checked on its own, so an item outside the bounds or failing a rule is
         returned in rejected and does not fail the batch; 422 is for a body that is not a valid batch.
-        Rate limits (plan 3.4): 60 uploads per hour and 40 floors per 10 minutes per user.
+        Rate limits (plan 2, 3.4): 60 uploads per hour and 600 verified steps per 10 minutes per user.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -256,7 +266,7 @@ paths:
       tags: [leaderboards]
       operationId: getLeaderboard
       summary: Individual, team or building leaderboard
-      description: Served from Valkey sorted sets.
+      description: Served from Valkey sorted sets. Ranked by points from verified stair steps.
       parameters:
         - name: scope
           in: query
@@ -354,7 +364,10 @@ paths:
       tags: [checkins]
       operationId: createLandingScan
       summary: Barometer-less fallback scan on a stair landing
-      description: For phones without a barometer. Strict rate limit.
+      description: |
+        For phones without a barometer: the user scans a sticker at the stairs of a building. The scan
+        identifies the building only, never a floor or storey number. Strict rate limit
+        (Inferred: the exact limit is a server setting the plan does not fix).
       requestBody:
         required: true
         content:
@@ -368,7 +381,7 @@ paths:
               schema: { $ref: '#/components/schemas/LandingScan' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403':
-          description: 'Inferred: landing QR token invalid or outside its time window.'
+          description: 'Inferred: sticker token invalid, outside its time window, or not for the given building.'
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -857,25 +870,31 @@ components:
         name:
           type: string
           description: 'Inferred: display name or team code.'
-        points: { type: integer, minimum: 0 }
+        points:
+          type: integer
+          minimum: 0
+          description: Points from verified stair steps, after the hourly diminishing returns.
 
     SeasonStats:
       type: object
-      description: Personal stats for one season. Also the data for the share card, which the app renders locally.
-      required: [season_id, team_id, floors_climbed, points, landmarks]
+      description: |
+        Personal stats for one season. Also the data for the share card, which the app renders locally.
+        Steps-based: no floor counts are returned. A floor-equivalent is computed by the app for display
+        only (20 verified steps = 1, labelled "floors (estimate)"; app/src/scoring/floorEquivalent.ts).
+      required: [season_id, team_id, steps_verified, ascent_m, points, landmarks]
       properties:
         season_id: { type: integer, minimum: 1 }
         team_id:
           type: [integer, 'null']
           description: 'Inferred: null if the user has not joined a team this season.'
-        floors_climbed:
+        steps_verified:
           type: integer
           minimum: 0
-          description: 'Inferred.'
+          description: 'Inferred: verified stair steps this season (sum of steps_scored).'
         ascent_m:
           type: number
           minimum: 0
-          description: 'Inferred.'
+          description: 'Inferred: total ascent in metres of verified segments this season.'
         points:
           type: integer
           minimum: 0
@@ -884,10 +903,10 @@ components:
           type: [integer, 'null']
           minimum: 1
           description: 'Inferred: individual rank this season.'
-        floors_owned_by_team:
+        buildings_owned_by_team:
           type: integer
           minimum: 0
-          description: 'Inferred: share-card figure.'
+          description: 'Inferred: share-card figure, buildings the user''s team owns now.'
         landmarks:
           type: array
           description: 'Inferred: landmarks progress (for example a tower height reached by total ascent).'
@@ -950,11 +969,15 @@ components:
 
     LandingScanRequest:
       type: object
-      required: [qr_token]
+      required: [qr_token, building_id]
       properties:
         qr_token:
           type: string
-          description: 'Inferred field name: the signed token from the landing sticker. It encodes the building and floor.'
+          description: 'Inferred field name: the signed token from the sticker at the stairs. It encodes the building only.'
+        building_id:
+          type: integer
+          minimum: 1
+          description: 'Inferred: the building the sticker belongs to. Must match the building in the token.'
         scanned_at:
           type: string
           format: date-time
@@ -964,12 +987,16 @@ components:
     LandingScan:
       type: object
       description: 'Inferred: the response shape.'
-      required: [id, building_id, floor_no]
+      required: [id, building_id]
       properties:
         id: { type: string, format: uuid }
         building_id: { type: integer, minimum: 1 }
-        floor_no: { type: integer }
+        points:
+          type: integer
+          minimum: 0
+          description: 'Inferred: points credited for the scan (accessible contribution mode). The value is not set by the plan.'
         flips:
+          description: 'Inferred: buildings that changed owner because of the scan.'
           type: array
           items: { $ref: '#/components/schemas/BuildingFlip' }
 
