@@ -1,7 +1,8 @@
 # FloorWars server
 
 FastAPI backend (plan sections 4.1, 6 and 7). Current state: scaffold with `/healthz`,
-a stub `/metrics`, settings and structured JSON logging. API routes will live under `/v1`.
+a stub `/metrics`, settings, structured JSON logging and the baseline database schema
+(Alembic). API routes will live under `/v1`.
 
 ## Run
 
@@ -52,6 +53,43 @@ build context. Secrets are never baked in; they are mounted at `/run/secrets` (p
   requests only build. Pushes to `main` publish `ghcr.io/<owner>/floorwars-api:<git sha>` and
   `:main` to GHCR using the workflow's `GITHUB_TOKEN`. Trivy scanning is added in Week 5.
 
+`tests/test_migrations.py` is skipped unless `FLOORWARS_TEST_DATABASE_URL` points at a
+PostgreSQL + PostGIS database. It migrates that database to head and back to base, so use a
+throwaway one:
+
+```sh
+docker run -d --rm --name fw-db -e POSTGRES_PASSWORD=test -e POSTGRES_DB=floorwars \
+  -p 55432:5432 postgis/postgis:18-3.6
+export FLOORWARS_TEST_DATABASE_URL=postgresql+psycopg://postgres:test@localhost:55432/floorwars
+python -m pytest -q tests/test_migrations.py
+docker stop fw-db
+```
+
+## Database and migrations
+
+Schema: `app/db/models.py` (SQLAlchemy 2.0, GeoAlchemy2), migrations in `migrations/versions/`.
+The baseline `0001_baseline` creates `user`, `device`, `team`, `season`, `team_membership`,
+`building` and `refresh_token`, and enables the `postgis` and `citext` extensions. Review notes
+and schema decisions: [`docs/er_review.md`](docs/er_review.md).
+
+From `server/`, with `FLOORWARS_DATABASE_URL` set:
+
+```sh
+python -m alembic upgrade head        # apply all migrations
+python -m alembic check               # fail if models and migrations differ (drift)
+python -m alembic downgrade -1        # undo the last migration (base = empty schema)
+python -m alembic revision --autogenerate -m "short message"   # then review by hand
+```
+
+Notes:
+
+- `user` is a reserved word in PostgreSQL; quote it (`"user"`) in hand-written SQL.
+- The migration connection pins `search_path=public`, because the `postgis/postgis` image adds
+  the `tiger` and `topology` schemas to it and Alembic would otherwise report their tables.
+- Downgrading drops tables only; the `postgis` and `citext` extensions stay.
+- `app/db/session.py` has a sync engine for now: the async engine needs `greenlet`
+  (`sqlalchemy[asyncio]`), which is not a declared dependency yet.
+
 ## Endpoints
 
 | Path | Purpose |
@@ -69,7 +107,8 @@ When `/run/secrets` exists (deployed hosts, plan 7.5), a file named after the fi
 |---|---|---|
 | `FLOORWARS_ENV` | `dev` | `dev`, `staging`, `prod` |
 | `FLOORWARS_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
-| `FLOORWARS_DATABASE_URL` | unset | PostgreSQL URL (`postgresql+psycopg://...`). Secret. Optional for now. |
+| `FLOORWARS_DATABASE_URL` | unset | PostgreSQL URL (`postgresql+psycopg://...`). Secret. Required by Alembic and the DB session. |
+| `FLOORWARS_TEST_DATABASE_URL` | unset | Tests only: throwaway PostGIS database for `tests/test_migrations.py`. Not read by the app. |
 | `FLOORWARS_VALKEY_URL` | unset | Valkey URL (`redis://...`). Secret. Optional for now. |
 
 ## Logging
