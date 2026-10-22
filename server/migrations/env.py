@@ -1,4 +1,4 @@
-﻿"""Alembic environment.
+"""Alembic environment.
 
 The URL comes from ``config.attributes["database_url"]`` when set programmatically (tests),
 otherwise from settings (``FLOORWARS_DATABASE_URL`` or ``/run/secrets/database_url``).
