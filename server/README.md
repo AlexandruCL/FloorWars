@@ -21,7 +21,36 @@ python -m ruff format --check .
 python -m mypy app
 ```
 
-Dependencies are declared in `pyproject.toml` (`dev` dependency group for test and lint tools).
+Dependencies are declared in `pyproject.toml` (`dev` dependency group for test and lint tools)
+and pinned in `uv.lock`. After changing dependencies run `uv lock` and commit the lockfile;
+CI and the image install with `--frozen` and fail if it is stale (`uv lock --check`).
+
+## Docker and CI
+
+Build and run the image from the repo root (plan 7.3):
+
+```sh
+docker build -t floorwars-api:local server
+docker run --rm --read-only -p 8000:8000 floorwars-api:local
+curl -s localhost:8000/healthz
+```
+
+The `Dockerfile` has two stages: a builder that installs the locked, non-dev dependencies
+with uv (pinned version) into `/app/.venv`, and a `python:3.13-slim` runtime that runs as
+uid 10001, writes nothing to disk (bytecode is precompiled, so `read_only: true` works), and has a
+`HEALTHCHECK` on `/healthz`. `.dockerignore` keeps `.venv`, tests, caches and `.env*` out of the
+build context. Secrets are never baked in; they are mounted at `/run/secrets` (plan 7.5).
+
+`.github/workflows/server.yml` runs on pull requests and on pushes to `main` that touch
+`server/`, `contracts/` or the workflow itself:
+
+- `lint-test`: `uv sync --frozen`, OpenAPI validation of `contracts/openapi.yaml`,
+  `ruff check`, `ruff format --check`, `mypy app` and `pytest -q`. A `postgis/postgis:18-3.6`
+  service container is started and `FLOORWARS_TEST_DATABASE_URL` is set, so database and
+  migration tests run in CI (they are skipped locally when the variable is unset).
+- `image`: builds `linux/amd64` and `linux/arm64` with Buildx (GitHub Actions cache). Pull
+  requests only build. Pushes to `main` publish `ghcr.io/<owner>/floorwars-api:<git sha>` and
+  `:main` to GHCR using the workflow's `GITHUB_TOKEN`. Trivy scanning is added in Week 5.
 
 ## Endpoints
 
