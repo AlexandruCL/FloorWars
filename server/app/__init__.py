@@ -1,0 +1,1 @@
+"""FloorWars API server."""
