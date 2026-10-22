@@ -1,2 +1,20 @@
 .claude/
 graphify-out/
+
+# Secrets: only SOPS-encrypted files are committed
+google-services.json
+*.key
+.env
+.env.*
+!.env.example
+infra/secrets/*
+!infra/secrets/*.enc.*
+!infra/secrets/README.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
