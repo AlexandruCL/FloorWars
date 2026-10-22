@@ -33,10 +33,10 @@ test('api() calls the contract path with the stub token and JSON body', async ()
 test('api() fills path parameters and throws ApiError with the problem body on 4xx', async () => {
   const problem = { title: 'Not Found', status: 404 };
   const fetchMock = mockFetch(false, 404, problem);
-  const call = api('get', '/buildings/{id}/floors', { path: { id: 99 } });
+  const call = api('get', '/buildings/{id}/standings', { path: { id: 99 } });
   await expect(call).rejects.toBeInstanceOf(ApiError);
   await expect(call).rejects.toMatchObject({ status: 404, problem });
   expect(fetchMock.mock.calls[0]).toEqual(
-    expect.arrayContaining([`${API_BASE_URL}/buildings/99/floors`]),
+    expect.arrayContaining([`${API_BASE_URL}/buildings/99/standings`]),
   );
 });

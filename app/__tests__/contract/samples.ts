@@ -65,7 +65,7 @@ export const segment: Schemas['Segment'] = {
   id: '00000000-0000-4000-8000-000000000002',
   checkin_id: '00000000-0000-4000-8000-000000000001',
   started_at: '2026-11-02T10:14:03Z',
-  floors_gained: 3,
+  building_id: 4,
   ascent_m: 9.7,
   duration_s: 22,
   vert_speed_mps: 0.44,
@@ -81,12 +81,16 @@ export const noIdempotencyKey: paths['/segments']['post']['parameters']['header'
   {};
 export const batchResult: paths['/segments']['post']['responses'][200]['content']['application/json'] =
   {
-    accepted: [segment.id],
-    rejected: [{ id: '00000000-0000-4000-8000-000000000003', reason: 'speed' }],
+    accepted: [{ id: segment.id, steps_scored: 58, points: 58 }],
+    rejected: [
+      {
+        id: '00000000-0000-4000-8000-000000000003',
+        reason: 'pressure_steps_mismatch',
+      },
+    ],
     flips: [
       {
-        building_id: 1,
-        floor_no: 7,
+        building_id: 4,
         from_team: null,
         to_team: 'AC',
         at: '2026-11-02T10:14:30Z',
@@ -98,6 +102,83 @@ export const rawStream: Schemas['Segment'] = {
   // @ts-expect-error raw sensor streams never appear in a request
   pressure: [1013.2, 1012.8],
 };
+export const floorsInSegment: Schemas['Segment'] = {
+  ...segment,
+  // @ts-expect-error floors are not a game unit: segments carry steps and ascent only
+  floors_gained: 3,
+};
+export const unknownReason: Schemas['RejectedSegment'] = {
+  id: '00000000-0000-4000-8000-000000000003',
+  // @ts-expect-error rejection reasons are a fixed list
+  reason: 'floors_range',
+};
+export const floorInFlip: Schemas['BuildingFlip'] = {
+  building_id: 4,
+  from_team: 'ETC',
+  to_team: 'AC',
+  at: '2026-11-02T10:14:30Z',
+  // @ts-expect-error a flip is per building, never per floor
+  floor_no: 7,
+};
+
+// GET /buildings/{id}/standings
+export const standings: paths['/buildings/{id}/standings']['get']['responses'][200]['content']['application/json'] =
+  {
+    building_id: 4,
+    season_id: 1,
+    owner: { id: 1, code: 'AC', color_hex: '#1E88E5' },
+    claimed_at: '2026-11-02T10:14:30Z',
+    window_start: '2026-10-26T10:15:00Z',
+    teams: [
+      { team_id: 1, code: 'AC', color_hex: '#1E88E5', points: 412 },
+      { team_id: 2, code: 'ETC', color_hex: '#E53935', points: 390 },
+    ],
+  };
+export const unclaimed: Schemas['BuildingStandings'] = {
+  building_id: 5,
+  season_id: 1,
+  owner: null,
+  claimed_at: null,
+  teams: [],
+};
+
+// WebSocket events
+export const flippedEvent: Schemas['WsEvent'] = {
+  type: 'building_flipped',
+  building_id: 4,
+  from_team: 'ETC',
+  to_team: 'AC',
+  at: '2026-11-02T10:14:30Z',
+};
+export const seasonEvent: Schemas['WsEvent'] = {
+  type: 'season_state',
+  paused: false,
+  ends_at: '2026-11-09T00:00:00Z',
+};
+export const oldFloorEvent: Schemas['WsEvent'] = {
+  // @ts-expect-error floor_flipped was renamed building_flipped
+  type: 'floor_flipped',
+  building_id: 4,
+  from_team: 'ETC',
+  to_team: 'AC',
+  at: '2026-11-02T10:14:30Z',
+};
+
+// GET /me/season-stats (steps-based; the floor-equivalent is computed in the app)
+export const seasonStats: Schemas['SeasonStats'] = {
+  season_id: 1,
+  team_id: 1,
+  steps_verified: 1240,
+  ascent_m: 205.3,
+  points: 1180,
+  landmarks: [],
+};
+
+// POST /landing-scans (sticker at the stairs of a building, no floor)
+export const landingScan: JsonBody<'/landing-scans', 'post'> = {
+  qr_token: 'signed-sticker-token',
+  building_id: 4,
+};
 
 // Typed client calls: these only need to compile; the runtime test below exercises one.
 export async function typedCalls() {
@@ -108,10 +189,10 @@ export async function typedCalls() {
     header: segmentHeaders,
     body: batch,
   });
-  const floors: Schemas['BuildingFloors'] = await api(
+  const buildingStandings: Schemas['BuildingStandings'] = await api(
     'get',
-    '/buildings/{id}/floors',
+    '/buildings/{id}/standings',
     { path: { id: 1 } },
   );
-  return { tokens, result, floors };
+  return { tokens, result, buildingStandings };
 }
