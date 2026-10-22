@@ -1,0 +1,9 @@
+{
+  "name": "floorwars-root",
+  "private": true,
+  "description": "Repository-level scripts only. The app has its own package.json in app/.",
+  "scripts": {
+    "mock:api": "npx --yes @stoplight/prism-cli@5.14.2 mock contracts/openapi.yaml --port 4010",
+    "mock:api:dynamic": "npx --yes @stoplight/prism-cli@5.14.2 mock contracts/openapi.yaml --port 4010 --dynamic"
+  }
+}
