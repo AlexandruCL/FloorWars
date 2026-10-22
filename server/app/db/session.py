@@ -1,16 +1,15 @@
-"""Async engine and session factory built from settings.
+"""Engine and session factory built from settings.
 
 Nothing connects at import time; the engine is created on first use.
+
+Sync for now: SQLAlchemy's asyncio extension needs ``greenlet`` (``sqlalchemy[asyncio]``),
+which is not a declared dependency yet. Switch to ``create_async_engine`` once it is.
 """
 
 from functools import lru_cache
 
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
 
@@ -24,10 +23,10 @@ def database_url() -> str:
 
 
 @lru_cache(maxsize=1)
-def get_engine() -> AsyncEngine:
-    return create_async_engine(database_url(), pool_pre_ping=True)
+def get_engine() -> Engine:
+    return create_engine(database_url(), pool_pre_ping=True)
 
 
 @lru_cache(maxsize=1)
-def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
-    return async_sessionmaker(get_engine(), expire_on_commit=False)
+def get_sessionmaker() -> sessionmaker[Session]:
+    return sessionmaker(get_engine(), expire_on_commit=False)
