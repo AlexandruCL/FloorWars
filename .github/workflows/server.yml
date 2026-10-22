@@ -1,0 +1,138 @@
+name: server
+
+on:
+  pull_request:
+    paths:
+      - "server/**"
+      - "contracts/**"
+      - ".github/workflows/server.yml"
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "contracts/**"
+      - ".github/workflows/server.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Keep in step with the uv image tag in server/Dockerfile.
+  UV_VERSION: "0.13.5"
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  lint-test:
+    name: lint and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    services:
+      postgres:
+        image: postgis/postgis:18-3.6
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: floorwars
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d floorwars"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Database tests (including the Alembic upgrade + `alembic check` test) run when this is
+      # set and are skipped otherwise. Throwaway credentials for the service container only.
+      FLOORWARS_TEST_DATABASE_URL: postgresql+psycopg://postgres:test@localhost:5432/floorwars
+    steps:
+      - uses: actions/checkout@v7
+
+      # setup-uv publishes no major-version tag; pinned to the v10.3.0 commit.
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen
+
+      - name: Validate OpenAPI contract
+        run: uvx --from openapi-spec-validator==0.9.0 openapi-spec-validator ../contracts/openapi.yaml
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: Mypy
+        run: uv run mypy app
+
+      - name: Pytest
+        run: uv run pytest -q
+
+  image:
+    name: build image
+    needs: lint-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # GHCR image names must be lowercase; the repository owner may not be.
+      - name: Image name
+        id: image
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "name=ghcr.io/${OWNER,,}/floorwars-api" >> "$GITHUB_OUTPUT"
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=raw,value=${{ github.sha }}
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pull requests build both architectures without pushing; main pushes :<sha> and :main.
+      - name: Build (and push on main)
+        uses: docker/build-push-action@v7
+        with:
+          context: server
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=floorwars-api
+          cache-to: type=gha,mode=max,scope=floorwars-api
+
+      # TODO(week 5, plan 7.6): Trivy scan of the pushed image, failing on HIGH/CRITICAL CVEs
+      # that have a fix, e.g. aquasecurity/trivy-action with severity: HIGH,CRITICAL,
+      # ignore-unfixed: true, exit-code: "1". Run it before the push (build, load amd64, scan,
+      # then push) so a vulnerable image never reaches GHCR.
