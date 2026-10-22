@@ -226,19 +226,23 @@ paths:
                 items: { $ref: '#/components/schemas/Building' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  /buildings/{id}/floors:
+  /buildings/{id}/standings:
     get:
       tags: [buildings]
-      operationId: getBuildingFloors
-      summary: Floors with their current owner for the active season
+      operationId: getBuildingStandings
+      summary: Team standings and current owner of a building in the active season
+      description: |
+        Territory is per building. The owner is the team with the most points in the building over the
+        rolling 7-day window (plan section 2). Served by one query on building_claim and
+        team_building_score. There are no floor numbers: the app has no building floor data.
       parameters:
         - $ref: '#/components/parameters/BuildingId'
       responses:
         '200':
-          description: Floors of the building, lowest first.
+          description: The building's owner and each team's points in it.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/BuildingFloors' }
+              schema: { $ref: '#/components/schemas/BuildingStandings' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -722,44 +726,57 @@ components:
 
     Building:
       type: object
-      required: [id, name, floor_count]
+      description: A claimable building. No floor count or heights (the app needs no building floor data).
+      required: [id, name]
       properties:
         id: { type: integer, minimum: 1 }
         name: { type: string }
-        floor_count:
-          type: integer
-          minimum: 1
-          description: 'Inferred: exposed to clients (it is a column in the data model).'
 
-    BuildingFloors:
+    BuildingStandings:
       type: object
-      required: [building_id, season_id, floors]
+      description: Current owner of one building and each team's points in it over the rolling 7-day window.
+      required: [building_id, season_id, owner, claimed_at, teams]
       properties:
         building_id: { type: integer, minimum: 1 }
         season_id:
           type: integer
           minimum: 1
-          description: 'Inferred: the active season the owners refer to.'
-        floors:
-          type: array
-          items: { $ref: '#/components/schemas/FloorOwnership' }
-
-    FloorOwnership:
-      type: object
-      required: [floor_id, floor_no, owner_team_id, claimed_at]
-      properties:
-        floor_id: { type: integer, minimum: 1 }
-        floor_no: { type: integer }
-        height_m:
-          type: number
-          description: 'Floor height in metres. Inferred: exposed to clients.'
-        owner_team_id:
-          type: [integer, 'null']
-          minimum: 1
-          description: Current owner this season, or null if nobody has claimed the floor.
+          description: 'Inferred: the active season the standings refer to.'
+        owner:
+          description: Team that owns the building now (building_claim), or null if nobody has claimed it.
+          oneOf:
+            - $ref: '#/components/schemas/Team'
+            - type: 'null'
         claimed_at:
           type: [string, 'null']
           format: date-time
+          description: When the current owner took the building, or null if nobody has claimed it.
+        window_start:
+          type: string
+          format: date-time
+          description: 'Inferred: start of the rolling 7-day window the points are counted over.'
+        teams:
+          type: array
+          description: 'Inferred: teams with points in this building in the window, most points first.'
+          items: { $ref: '#/components/schemas/TeamStanding' }
+
+    TeamStanding:
+      type: object
+      description: One team's points in one building over the rolling 7-day window.
+      required: [team_id, code, color_hex, points]
+      properties:
+        team_id: { type: integer, minimum: 1 }
+        code:
+          type: string
+          description: Faculty code, for example AC, ETC, MEC.
+        color_hex:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+          description: 'Team colour. Inferred: the "#RRGGBB" format.'
+        points:
+          type: integer
+          minimum: 0
+          description: Points from verified stair steps (plan section 2). Not floors.
 
     FloorFlip:
       type: object
