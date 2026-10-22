@@ -1,0 +1,45 @@
+# Local override for a dev PC (Windows/macOS/Linux with Docker Desktop or Engine).
+#   sh infra/scripts/make-local-secrets.sh            # once: dummy secrets in infra/local-secrets/
+#   cd infra
+#   docker compose -f docker-compose.yml -f compose.local.yml up -d --build --wait
+#   curl -s http://localhost:8080/healthz              # {"status":"ok"} via Caddy -> 2 api replicas
+#   docker compose -f docker-compose.yml -f compose.local.yml down -v
+#
+# Differences from production: api is built from ../server, Caddy serves plain HTTP on :8080
+# (no ACME), secrets are dummy files, postgres uses a named volume instead of the data disk.
+
+name: floorwars-local
+
+services:
+  caddy:
+    ports: !override
+      - "127.0.0.1:8080:80"
+      - "127.0.0.1:8443:443"
+    environment:
+      DOMAIN: ":80" # any host, HTTP only; set DOMAIN=localhost for Caddy's internal TLS on 8443
+      ACME_EMAIL: dev@localhost.invalid
+
+  api:
+    image: floorwars-api:local
+    build:
+      context: ../server
+    environment:
+      FLOORWARS_ENV: dev
+      FLOORWARS_LOG_LEVEL: ${FLOORWARS_LOG_LEVEL:-INFO}
+
+  postgres:
+    volumes: !override
+      - pgdata-local:/var/lib/postgresql
+
+volumes:
+  pgdata-local: {}
+
+secrets:
+  database_url:
+    file: ./local-secrets/database_url
+  valkey_url:
+    file: ./local-secrets/valkey_url
+  postgres_password:
+    file: ./local-secrets/postgres_password
+  valkey_password:
+    file: ./local-secrets/valkey_password
