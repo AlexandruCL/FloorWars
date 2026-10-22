@@ -85,7 +85,7 @@ Run on the VM. The agents write `docs/runbook.md` with the same commands; if it 
 
 1. Update: `sudo apt update && sudo apt -y upgrade`.
 2. Format and mount the data disk (find it with `lsblk`, usually `/dev/sdc`, **check it is the empty one**): `sudo mkfs.ext4 /dev/sdX`, `sudo mkdir -p /srv/floorwars`, mount it, and add its UUID (`sudo blkid`) to `/etc/fstab`.
-3. Create the deploy user: `sudo adduser --disabled-password deploy`. Put `floorwars_deploy.pub` in `/home/deploy/.ssh/authorized_keys` prefixed with `command="/srv/floorwars/deploy.sh",no-port-forwarding,no-pty,no-agent-forwarding `.
+3. Create the deploy user: `sudo adduser --disabled-password deploy`. Put `floorwars_deploy.pub` in `/home/deploy/.ssh/authorized_keys` prefixed with `command="sudo -n /srv/floorwars/deploy.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty `. The script runs as root, so also add the sudoers rule from `docs/runbook.md` (only this script, keeps `SSH_ORIGINAL_COMMAND`) and check it with `sudo visudo -c`.
 4. SSH config `/etc/ssh/sshd_config.d/99-floorwars.conf`: `PermitRootLogin no`, `PasswordAuthentication no`. Then `sudo systemctl reload ssh`. **Keep your current session open and test a second login before closing it.**
 5. Firewall: `sudo ufw default deny incoming`, `sudo ufw allow 80,443/tcp`, `sudo ufw allow from <your_ip> to any port 22 proto tcp`, `sudo ufw enable`.
 6. `sudo apt -y install unattended-upgrades fail2ban`, then `sudo dpkg-reconfigure -plow unattended-upgrades`.
@@ -112,7 +112,7 @@ Firebase console <https://console.firebase.google.com>:
 
 Encrypt the key with SOPS (from the repo root, after the agents create `.sops.yaml` with your age public key):
 
-1. Encrypt straight from the download into the repo: `sops --encrypt $HOME\Downloads\<key>.json > infra/secrets/fcm-service-account.enc.json`. Only `*.enc.*` files under `infra/secrets/` are tracked by git; plaintext there is ignored.
+1. Encrypt straight from the download into the repo (needs sops 3.9 or newer, so the `.sops.yaml` rule for the target path applies): `sops --encrypt --filename-override infra/secrets/fcm-service-account.enc.json $HOME\Downloads\<key>.json > infra/secrets/fcm-service-account.enc.json`. Only `*.enc.*` files under `infra/secrets/` are tracked by git; plaintext there is ignored.
 2. Check the file shows `ENC[...]` values, then commit it. Delete the plaintext download from Downloads and the recycle bin.
 
 Other secrets (JWT keys, DB password, QR HMAC key, SMTP) follow the same pattern. The agents will list which ones are needed.
