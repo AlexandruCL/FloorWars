@@ -39,6 +39,8 @@ main() {
 
   [[ $EUID -eq 0 ]] || die "must run as root (the deploy user calls it through sudo)"
   [[ -d "$REPO_DIR/.git" ]] || die "no git clone at $REPO_DIR"
+  # Never start postgres on the OS disk by accident (data disk not mounted after a reboot).
+  mountpoint -q "$ROOT" || die "$ROOT is not a mount point; is the data disk mounted?"
 
   exec 9>"$LOCK_FILE"
   flock -n 9 || die "another deploy is running"

@@ -45,8 +45,8 @@ sudo install -d -m 0700 /srv/floorwars/data
 ```
 
 `nofail` keeps the VM bootable if the disk is missing. Then `/srv/floorwars` is an empty
-directory on the OS disk, so after every reboot check `df -h /srv/floorwars` shows the data disk
-before deploying (`deploy.sh` would otherwise create a fresh, empty database there).
+directory on the OS disk; `deploy.sh` refuses to run unless `/srv/floorwars` is a mount point.
+After a reboot, check `df -h /srv/floorwars` shows the data disk.
 
 ## 3. SSH, firewall, updates, fail2ban
 
