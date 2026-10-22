@@ -13,7 +13,7 @@ The full project reference and six-week plan is [`IMPLEMENTATION_PLAN.md`](IMPLE
 | Week 1, code | Done: app shell, Kotlin sensor module, foreground service, sensor logger, API client and auth stub, contract, release test build |
 | Week 1, synthetic data | Done: 24 labelled synthetic traces, generator, checker, trace spec |
 | Week 1, real phones | Open: phone checks, real recordings, device details (see `cristea/phone_tests.md`) |
-| Building territory | Plan, scoring rule, floor-equivalent helper and contract revision merged |
+| Building territory | Plan, scoring rule and floor-equivalent helper merged. Contract revision 0.2.0-draft on `feat/building-territory-contract`, in review |
 | Backend | Not started (week 2 onwards) |
 
 ## How the game works
@@ -39,6 +39,7 @@ Dates are when the decision was made. The rule that is in force is in the plan a
 | 2026-10-22 | No building floor data. Ascent is measured in metres. Floors removed as a game unit. | Plan sections 2, 3, 5, 6 |
 | 2026-10-22 | Territory per building. Points per verified stair step, with a pressure-steps match (the scoring rule). | Plan section 3.3 |
 | 2026-10-22 | Floor-equivalent for display only: 20 steps = 1 floor, labelled "floors (estimate)". | Plan section 2, `app/src/scoring/floorEquivalent.ts` |
+| 2026-10-22 | Contract 0.2.0-draft for building territory: `GET /buildings/{id}/standings` replaces `/floors`, `building_flipped` replaces `floor_flipped`, steps-based stats, rejection reasons and limits. Landing scans name a building, never a floor. | `contracts/openapi.yaml` |
 
 Starting values are ours and tunable from real data: 1 point per verified step, halving after 300 steps in an hour, at most 600 verified steps per 10 minutes per user, 20 steps per floor-equivalent.
 

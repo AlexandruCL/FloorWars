@@ -134,8 +134,13 @@ export interface paths {
         /**
          * Upload a batch of climb segments
          * @description Idempotent. Segments are inserted ON CONFLICT DO NOTHING on (device, id), so a re-sent segment
-         *     counts as accepted. Server plausibility checks repeat the on-device rules.
-         *     Rate limits (plan 3.4): 60 uploads per hour and 40 floors per 10 minutes per user.
+         *     counts as accepted. Server plausibility checks repeat the on-device rules (plan 3.3, 3.4).
+         *     A segment scores only if its steps match its pressure change (about 4 to 8 steps per metre of
+         *     ascent); points go to the building of the active check-in, and the building's owner is
+         *     recomputed in the same transaction. Building flips caused by the batch are returned in flips.
+         *     Inferred: each item is checked on its own, so an item outside the bounds or failing a rule is
+         *     returned in rejected and does not fail the batch; 422 is for a body that is not a valid batch.
+         *     Rate limits (plan 2, 3.4): 60 uploads per hour and 600 verified steps per 10 minutes per user.
          */
         post: operations["uploadSegments"];
         delete?: never;
@@ -161,15 +166,20 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/buildings/{id}/floors": {
+    "/buildings/{id}/standings": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Floors with their current owner for the active season */
-        get: operations["getBuildingFloors"];
+        /**
+         * Team standings and current owner of a building in the active season
+         * @description Territory is per building. The owner is the team with the most points in the building over the
+         *     rolling 7-day window (plan section 2). Served by one query on building_claim and
+         *     team_building_score. There are no floor numbers: the app has no building floor data.
+         */
+        get: operations["getBuildingStandings"];
         put?: never;
         post?: never;
         delete?: never;
@@ -187,7 +197,7 @@ export interface paths {
         };
         /**
          * Individual, team or building leaderboard
-         * @description Served from Valkey sorted sets.
+         * @description Served from Valkey sorted sets. Ranked by points from verified stair steps.
          */
         get: operations["getLeaderboard"];
         put?: never;
@@ -263,7 +273,9 @@ export interface paths {
         put?: never;
         /**
          * Barometer-less fallback scan on a stair landing
-         * @description For phones without a barometer. Strict rate limit.
+         * @description For phones without a barometer: the user scans a sticker at the stairs of a building. The scan
+         *     identifies the building only, never a floor or storey number. Strict rate limit
+         *     (Inferred: the exact limit is a server setting the plan does not fix).
          */
         post: operations["createLandingScan"];
         delete?: never;
@@ -339,8 +351,9 @@ export interface paths {
         /**
          * Live events over WebSocket (WS /v1/ws)
          * @description OpenAPI cannot describe WebSocket messages, so this documents the upgrade request only.
-         *     The connection is authenticated on connect. Server-to-client messages are WsEvent
-         *     (floor_flipped, season_state); see x-websocket-events.
+         *     The connection is authenticated on connect. Server-to-client messages are WsEvent:
+         *     building_flipped {building_id, from_team, to_team, at} when a building changes owner, and
+         *     season_state {paused, ends_at}; see x-websocket-events.
          */
         get: operations["openWebSocket"];
         put?: never;
@@ -467,13 +480,15 @@ export interface components {
             checkin_id: string;
             /** Format: date-time */
             started_at: string;
-            floors_gained: number;
+            /** @description Building of the check-in. Inferred: a segment whose building differs from its check-in is rejected (building_mismatch). */
+            building_id: number;
+            /** @description Ascent in metres from the barometer. Not a floor count. */
             ascent_m: number;
             /** @description Inferred: number (the plan example is 22) and the positive bound. */
             duration_s: number;
             /** @description Inferred: the non-negative bound. */
             vert_speed_mps: number;
-            /** @description Inferred: bounds (smallint in the data model). */
+            /** @description Steps detected in the ascent window (plan section 2 bounds). */
             steps: number;
             stair_prob: number;
             /** @description For example rules-1. */
@@ -484,47 +499,77 @@ export interface components {
             segments: components["schemas"]["Segment"][];
         };
         SegmentBatchResult: {
-            /** @description Inferred: ids of accepted segments, including repeats of already stored ones. */
-            accepted: string[];
+            /** @description Inferred: accepted segments, including repeats of already stored ones. */
+            accepted: components["schemas"]["AcceptedSegment"][];
             /** @description Inferred: rejected segments with the failed rule. */
             rejected: components["schemas"]["RejectedSegment"][];
-            /** @description Floors that changed owner because of this batch. */
-            flips: components["schemas"]["FloorFlip"][];
+            /** @description Buildings that changed owner because of this batch. */
+            flips: components["schemas"]["BuildingFlip"][];
+        };
+        /** @description Inferred: the shape of an accepted item. */
+        AcceptedSegment: {
+            /** Format: uuid */
+            id: string;
+            /** @description Inferred: verified stair steps credited for this segment (steps_scored in the data model). */
+            steps_scored: number;
+            /** @description Inferred: points added by this segment after the hourly diminishing returns. Omitted for a repeat of an already stored segment. */
+            points?: number;
         };
         /** @description Inferred: the shape of a rejected item. */
         RejectedSegment: {
             /** Format: uuid */
             id: string;
-            /** @description Inferred: the plausibility rule that failed, for example speed, cadence, steps_per_m, floors_range, rate_limit. */
-            reason: string;
+            /**
+             * @description Inferred: the rule that failed (plan 2, 3.3, 3.4).
+             *     pressure_steps_mismatch: steps per metre of ascent outside 4 to 8 (elevator, flat walking, shaking).
+             *     ascent_range: ascent_m outside 2.0 to 120.0. steps_range: steps outside 1 to 2000.
+             *     speed: vertical speed outside 0.1 to 0.9 m/s. cadence: implausible step rate.
+             *     duration: window outside 5 s to 3 min. rate_limit: the user is over 600 verified steps per
+             *     10 minutes (over 60 uploads per hour returns 429 for the whole batch). no_checkin: no check-in valid at started_at. building_mismatch:
+             *     building_id differs from the check-in's building.
+             * @enum {string}
+             */
+            reason: "pressure_steps_mismatch" | "ascent_range" | "steps_range" | "speed" | "cadence" | "duration" | "rate_limit" | "no_checkin" | "building_mismatch";
         };
+        /** @description A claimable building. No floor count or heights (the app needs no building floor data). */
         Building: {
             id: number;
             name: string;
-            /** @description Inferred: exposed to clients (it is a column in the data model). */
-            floor_count: number;
         };
-        BuildingFloors: {
+        /** @description Current owner of one building and each team's points in it over the rolling 7-day window. */
+        BuildingStandings: {
             building_id: number;
-            /** @description Inferred: the active season the owners refer to. */
+            /** @description Inferred: the active season the standings refer to. */
             season_id: number;
-            floors: components["schemas"]["FloorOwnership"][];
-        };
-        FloorOwnership: {
-            floor_id: number;
-            floor_no: number;
-            /** @description Floor height in metres. Inferred: exposed to clients. */
-            height_m?: number;
-            /** @description Current owner this season, or null if nobody has claimed the floor. */
-            owner_team_id: number | null;
-            /** Format: date-time */
+            /** @description Team that owns the building now (building_claim), or null if nobody has claimed it. */
+            owner: components["schemas"]["Team"] | null;
+            /**
+             * Format: date-time
+             * @description When the current owner took the building, or null if nobody has claimed it.
+             */
             claimed_at: string | null;
+            /**
+             * Format: date-time
+             * @description Inferred: start of the rolling 7-day window the points are counted over.
+             */
+            window_start?: string;
+            /** @description Inferred: teams with points in this building in the window, most points first. */
+            teams: components["schemas"]["TeamStanding"][];
         };
-        /** @description A floor changing owner. Same fields as the floor_flipped WebSocket event. */
-        FloorFlip: {
+        /** @description One team's points in one building over the rolling 7-day window. */
+        TeamStanding: {
+            team_id: number;
+            /** @description Faculty code, for example AC, ETC, MEC. */
+            code: string;
+            /** @description Team colour. Inferred: the "#RRGGBB" format. */
+            color_hex: string;
+            /** @description Points from verified stair steps (plan section 2). Not floors. */
+            points: number;
+        };
+        /** @description A building changing owner. Same fields as the building_flipped WebSocket event. */
+        BuildingFlip: {
             building_id: number;
-            floor_no: number;
-            /** @description Inferred: team code (for example AC), null when the floor had no owner. The plan does not say code or id. */
+            /** @description Inferred: team code (for example AC), null when the building had no owner. The plan does not say code or id. */
             from_team: string | null;
             /** @description Inferred: team code (for example AC). */
             to_team: string;
@@ -546,23 +591,28 @@ export interface components {
             id: string;
             /** @description Inferred: display name or team code. */
             name: string;
+            /** @description Points from verified stair steps, after the hourly diminishing returns. */
             points: number;
         };
-        /** @description Personal stats for one season. Also the data for the share card, which the app renders locally. */
+        /**
+         * @description Personal stats for one season. Also the data for the share card, which the app renders locally.
+         *     Steps-based: no floor counts are returned. A floor-equivalent is computed by the app for display
+         *     only (20 verified steps = 1, labelled "floors (estimate)"; app/src/scoring/floorEquivalent.ts).
+         */
         SeasonStats: {
             season_id: number;
             /** @description Inferred: null if the user has not joined a team this season. */
             team_id: number | null;
-            /** @description Inferred. */
-            floors_climbed: number;
-            /** @description Inferred. */
-            ascent_m?: number;
+            /** @description Inferred: verified stair steps this season (sum of steps_scored). */
+            steps_verified: number;
+            /** @description Inferred: total ascent in metres of verified segments this season. */
+            ascent_m: number;
             /** @description Inferred. */
             points: number;
             /** @description Inferred: individual rank this season. */
             rank?: number | null;
-            /** @description Inferred: share-card figure. */
-            floors_owned_by_team?: number;
+            /** @description Inferred: share-card figure, buildings the user's team owns now. */
+            buildings_owned_by_team?: number;
             /** @description Inferred: landmarks progress (for example a tower height reached by total ascent). */
             landmarks: components["schemas"]["LandmarkProgress"][];
         };
@@ -576,6 +626,8 @@ export interface components {
         SegmentRecord: components["schemas"]["SegmentFields"] & {
             /** @enum {string} */
             status: "pending" | "verified" | "rejected";
+            /** @description Verified stair steps credited for the segment. Inferred: 0 while pending or when rejected. */
+            steps_scored: number;
         };
         SegmentPage: {
             items: components["schemas"]["SegmentRecord"][];
@@ -598,8 +650,10 @@ export interface components {
             platform: "android";
         };
         LandingScanRequest: {
-            /** @description Inferred field name: the signed token from the landing sticker. It encodes the building and floor. */
+            /** @description Inferred field name: the signed token from the sticker at the stairs. It encodes the building only. */
             qr_token: string;
+            /** @description Inferred: the building the sticker belongs to. Must match the building in the token. */
+            building_id: number;
             /**
              * Format: date-time
              * @description Inferred: device time of the scan.
@@ -611,8 +665,10 @@ export interface components {
             /** Format: uuid */
             id: string;
             building_id: number;
-            floor_no: number;
-            flips?: components["schemas"]["FloorFlip"][];
+            /** @description Inferred: points credited for the scan (accessible contribution mode). The value is not set by the plan. */
+            points?: number;
+            /** @description Inferred: buildings that changed owner because of the scan. */
+            flips?: components["schemas"]["BuildingFlip"][];
         };
         /** @description Versioned thresholds for the rules classifier. Starting values are in plan section 3.3. */
         ClassifierConfig: {
@@ -640,16 +696,16 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        /** @description WebSocket event. Inferred: the flat envelope with a type field. */
-        FloorFlippedEvent: {
+        /** @description WebSocket event: a building changed owner. Inferred: the flat envelope with a type field. */
+        BuildingFlippedEvent: {
             /** @constant */
-            type: "floor_flipped";
-        } & components["schemas"]["FloorFlip"] & {
+            type: "building_flipped";
+        } & components["schemas"]["BuildingFlip"] & {
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            type: "floor_flipped";
+            type: "building_flipped";
         };
         /** @description WebSocket event. Inferred: the flat envelope with a type field. */
         SeasonStateEvent: {
@@ -663,7 +719,7 @@ export interface components {
             ends_at: string;
         };
         /** @description Any server-to-client WebSocket message. */
-        WsEvent: components["schemas"]["FloorFlippedEvent"] | components["schemas"]["SeasonStateEvent"];
+        WsEvent: components["schemas"]["BuildingFlippedEvent"] | components["schemas"]["SeasonStateEvent"];
     };
     responses: {
         /** @description Missing, invalid or expired access token. */
@@ -969,7 +1025,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
-    getBuildingFloors: {
+    getBuildingStandings: {
         parameters: {
             query?: never;
             header?: never;
@@ -980,13 +1036,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Floors of the building, lowest first. */
+            /** @description The building's owner and each team's points in it. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BuildingFloors"];
+                    "application/json": components["schemas"]["BuildingStandings"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -1121,7 +1177,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description Inferred: landing QR token invalid or outside its time window. */
+            /** @description Inferred: sticker token invalid, outside its time window, or not for the given building. */
             403: {
                 headers: {
                     [name: string]: unknown;
