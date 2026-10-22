@@ -15,6 +15,7 @@ The full project reference and six-week plan is [`IMPLEMENTATION_PLAN.md`](IMPLE
 | Week 1, real phones | Open: phone checks, real recordings, device details (see `cristea/phone_tests.md`) |
 | Building territory | Plan, scoring rule and floor-equivalent helper merged. Contract revision 0.2.0-draft on `feat/building-territory-contract`, in review |
 | Backend | Not started (week 2 onwards) |
+| Infra, week 1 | Compose stack (Caddy, 2 API replicas, PostGIS, Valkey), `deploy.sh`, SOPS layout, runbook. Verified locally; VM deploy open (`docs/runbook.md`) |
 
 ## How the game works
 
@@ -38,6 +39,8 @@ Dates are when the decision was made. The rule that is in force is in the plan a
 | 2026-10-22 | Requirement: runs on any Android phone with a barometer. Capabilities are checked at run time. No dependency on phone model names. | `cristea/phone_tests.md` |
 | 2026-10-22 | No building floor data. Ascent is measured in metres. Floors removed as a game unit. | Plan sections 2, 3, 5, 6 |
 | 2026-10-22 | Territory per building. Points per verified stair step, with a pressure-steps match (the scoring rule). | Plan section 3.3 |
+| 2026-10-22 | Secrets: SOPS + age files `infra/secrets/<name>.enc.<env\|json\|yaml>`, decrypted by `deploy.sh` to tmpfs and mounted as Compose secrets. API secret files carry the `floorwars_` prefix. | `infra/secrets/README.md` |
+| 2026-10-22 | Caddy balances over every API replica (`dynamic a`) with active `/healthz` checks; `/metrics` is not public. | `infra/caddy/Caddyfile` |
 | 2026-10-22 | Floor-equivalent for display only: 20 steps = 1 floor, labelled "floors (estimate)". | Plan section 2, `app/src/scoring/floorEquivalent.ts` |
 | 2026-10-22 | Contract 0.2.0-draft for building territory: `GET /buildings/{id}/standings` replaces `/floors`, `building_flipped` replaces `floor_flipped`, steps-based stats, rejection reasons and limits. Landing scans name a building, never a floor. | `contracts/openapi.yaml` |
 
@@ -52,7 +55,8 @@ Starting values are ours and tunable from real data: 1 point per verified step, 
 | `contracts/openapi.yaml` | API contract (OpenAPI 3.1) |
 | `contracts/prism/` | How to run the Prism mock of the contract (`npm run mock:api` in the root `package.json`) |
 | `cristea/` | Cristea's week 1 tasks and status |
-| `docs/` | Trace format and expected values (`trace_format.md`), test device log (`devices.md`) |
+| `docs/` | Trace format and expected values (`trace_format.md`), test device log (`devices.md`), VM runbook (`runbook.md`), cost estimate (`cost.md`) |
+| `infra/` | Docker Compose stack, Caddyfile, `deploy.sh`, encrypted secrets. See `infra/README.md` |
 | `fixtures/synthetic/` | Synthetic labelled traces for week 1. Not real data |
 | `tools/fake_segments/` | Script that posts fake climb segments to `POST /segments` (stairs, elevator, shake) with no phone |
 | `tools/synthetic_traces/` | Seeded generator for the synthetic traces |
@@ -77,6 +81,7 @@ Starting values are ours and tunable from real data: 1 point per verified step, 
 
 - Real-phone tests and real recordings: see `cristea/phone_tests.md`.
 - Backend and database (weeks 2 to 5): see the plan.
+- Infra: first deploy on the Azure VM (`docs/runbook.md`), real age public key in `.sops.yaml`, encrypted Week 1 secrets, how CI reaches SSH (NSG allows team IPs only), restart after reboot (secrets live on tmpfs).
 - Auth: replace the stub and remove the dev skip flag (T7 follow-up).
 - CI: none yet. The contract test runs under `npm test` locally.
 - Dependency audit: the app reports 54 npm vulnerabilities (5 moderate, 49 high). Not yet triaged.

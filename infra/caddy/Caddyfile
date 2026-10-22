@@ -1,0 +1,83 @@
+# FloorWars reverse proxy (plan 7.4). DOMAIN and ACME_EMAIL come from the compose environment.
+# Production: DOMAIN=api.<domain> -> automatic HTTPS with Let's Encrypt.
+# Local (compose.local.yml): DOMAIN=:80 -> plain HTTP, no certificates.
+{
+	email {$ACME_EMAIL}
+	# Caddy's admin API stays on localhost inside the container (used by `caddy reload`).
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		Permissions-Policy "geolocation=(), camera=(), microphone=()"
+		-Server
+		-Via
+	}
+}
+
+{$DOMAIN} {
+	import security_headers
+	encode zstd gzip
+
+	# /metrics is scraped by Prometheus on the internal network (Week 5), never public.
+	@internal path /metrics /metrics/*
+	respond @internal 404
+
+	# TODO (Week 5, plan 7.4/7.11): per-IP request limits. Needs a Caddy build with the
+	# rate_limit plugin (github.com/mholt/caddy-ratelimit) via xcaddy; the stock caddy:2
+	# image has no rate limiter. Per-user limits are a Valkey token bucket in the API.
+
+	reverse_proxy {
+		# `dynamic a` resolves every api replica (Docker DNS returns one A record per
+		# container), so round robin and health checks apply per replica, and scaling or
+		# recreating replicas needs no Caddy reload.
+		dynamic a {
+			name api
+			port 8000
+			refresh 5s
+		}
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 250ms
+
+		# Active health checks against the app's liveness endpoint.
+		health_uri /healthz
+		health_interval 10s
+		health_timeout 3s
+		health_status 2xx
+
+		# Passive: remember a failed connection to a replica for 30 s and avoid it meanwhile.
+		fail_duration 30s
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# Later (Week 5): admin panel and Grafana, team IPs only (plan 7.1).
+# {$ADMIN_DOMAIN} {
+# 	import security_headers
+# 	@team remote_ip <TEAM_IP_1>/32 <TEAM_IP_2>/32
+# 	handle @team {
+# 		reverse_proxy admin:8000
+# 	}
+# 	respond 403
+# }
+#
+# {$GRAFANA_DOMAIN} {
+# 	import security_headers
+# 	@team remote_ip <TEAM_IP_1>/32 <TEAM_IP_2>/32
+# 	handle @team {
+# 		basic_auth {
+# 			<user> <bcrypt hash from `caddy hash-password`>
+# 		}
+# 		reverse_proxy grafana:3000
+# 	}
+# 	respond 403
+# }

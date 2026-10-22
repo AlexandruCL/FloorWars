@@ -1,0 +1,4 @@
+# Shell scripts and configs run on Linux: keep LF even on Windows checkouts.
+*.sh text eol=lf
+caddy/Caddyfile text eol=lf
+*.yml text eol=lf
