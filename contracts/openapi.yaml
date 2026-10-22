@@ -422,8 +422,9 @@ paths:
       summary: Live events over WebSocket (WS /v1/ws)
       description: |
         OpenAPI cannot describe WebSocket messages, so this documents the upgrade request only.
-        The connection is authenticated on connect. Server-to-client messages are WsEvent
-        (floor_flipped, season_state); see x-websocket-events.
+        The connection is authenticated on connect. Server-to-client messages are WsEvent:
+        building_flipped {building_id, from_team, to_team, at} when a building changes owner, and
+        season_state {paused, ends_at}; see x-websocket-events.
       parameters:
         - name: access_token
           in: query
@@ -1003,13 +1004,13 @@ components:
             stairs_window_max_s: { type: number, examples: [180] }
           additionalProperties: true
 
-    FloorFlippedEvent:
-      description: 'WebSocket event. Inferred: the flat envelope with a type field.'
+    BuildingFlippedEvent:
+      description: 'WebSocket event: a building changed owner. Inferred: the flat envelope with a type field.'
       allOf:
         - type: object
           required: [type]
           properties:
-            type: { type: string, const: floor_flipped }
+            type: { type: string, const: building_flipped }
         - $ref: '#/components/schemas/BuildingFlip'
 
     SeasonStateEvent:
@@ -1024,10 +1025,10 @@ components:
     WsEvent:
       description: Any server-to-client WebSocket message.
       oneOf:
-        - $ref: '#/components/schemas/FloorFlippedEvent'
+        - $ref: '#/components/schemas/BuildingFlippedEvent'
         - $ref: '#/components/schemas/SeasonStateEvent'
       discriminator:
         propertyName: type
         mapping:
-          floor_flipped: '#/components/schemas/FloorFlippedEvent'
+          building_flipped: '#/components/schemas/BuildingFlippedEvent'
           season_state: '#/components/schemas/SeasonStateEvent'
