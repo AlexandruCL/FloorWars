@@ -14,7 +14,7 @@ def test_log_record_is_single_line_json_with_required_fields() -> None:
     log.addHandler(handler)
     log.propagate = False
     try:
-        log.warning("hello %s", "world", extra={"request_id": "abc"})
+        log.warning("hello %s", "world", extra={"request_id": "abc", "color_message": "\x1b[1mhi"})
     finally:
         log.removeHandler(handler)
 
@@ -26,6 +26,7 @@ def test_log_record_is_single_line_json_with_required_fields() -> None:
     assert payload["message"] == "hello world"
     assert "timestamp" in payload
     assert payload["request_id"] == "abc"
+    assert "color_message" not in payload
 
 
 def test_configure_logging_routes_uvicorn_through_root() -> None:

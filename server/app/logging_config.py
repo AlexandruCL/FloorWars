@@ -10,9 +10,12 @@ import logging
 import logging.config
 from typing import Any
 
+from pythonjsonlogger.core import RESERVED_ATTRS
 from pythonjsonlogger.json import JsonFormatter
 
 UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+# Uvicorn adds an ANSI-coloured duplicate of the message as ``color_message``; drop it.
+DROPPED_ATTRS = ("color_message",)
 
 
 def build_formatter() -> JsonFormatter:
@@ -22,6 +25,7 @@ def build_formatter() -> JsonFormatter:
         style="{",
         rename_fields={"levelname": "level", "name": "logger"},
         timestamp=True,
+        reserved_attrs=[*RESERVED_ATTRS, *DROPPED_ATTRS],
     )
 
 
