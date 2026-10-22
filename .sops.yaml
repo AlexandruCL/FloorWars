@@ -1,0 +1,12 @@
+# SOPS configuration (plan 7.5). Secrets are committed only in encrypted form under
+# infra/secrets/ as <name>.enc.<json|yaml|env>; see infra/secrets/README.md.
+#
+# REPLACE AGE_PUBLIC_KEY_PLACEHOLDER with the team's age PUBLIC key (starts with "age1",
+# printed by `age-keygen`). Never put the private key here. To add a second recipient,
+# separate public keys with commas, then run `sops updatekeys <file>` on every secret.
+#
+# path_regex is matched against the file name SOPS is given; when encrypting from a
+# plaintext file elsewhere, pass --filename-override infra/secrets/<name>.enc.<ext>.
+creation_rules:
+  - path_regex: infra/secrets/.*\.enc\.(json|yaml|env)$
+    age: AGE_PUBLIC_KEY_PLACEHOLDER
