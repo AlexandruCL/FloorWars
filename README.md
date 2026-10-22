@@ -50,9 +50,11 @@ Starting values are ours and tunable from real data: 1 point per verified step, 
 | `IMPLEMENTATION_PLAN.md` | Project reference and six-week plan (source of truth) |
 | `app/` | React Native app and Kotlin native module (`FloorSensors`). See `app/README.md` for setup and the release test build |
 | `contracts/openapi.yaml` | API contract (OpenAPI 3.1) |
+| `contracts/prism/` | How to run the Prism mock of the contract (`npm run mock:api` in the root `package.json`) |
 | `cristea/` | Cristea's week 1 tasks and status |
 | `docs/` | Trace format and expected values (`trace_format.md`), test device log (`devices.md`) |
 | `fixtures/synthetic/` | Synthetic labelled traces for week 1. Not real data |
+| `tools/fake_segments/` | Script that posts fake climb segments to `POST /segments` (stairs, elevator, shake) with no phone |
 | `tools/synthetic_traces/` | Seeded generator for the synthetic traces |
 | `tools/validate_traces/` | Checker for trace files against `docs/trace_format.md` (checks 1 to 9) |
 
