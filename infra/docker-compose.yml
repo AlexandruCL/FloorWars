@@ -1,0 +1,162 @@
+# FloorWars production stack (plan 7.1 to 7.5). Week 1 scope: caddy, api (2 replicas),
+# postgres + PostGIS, valkey. Run through infra/deploy.sh on the VM, which sets API_TAG and
+# decrypts the secrets into SECRETS_DIR. Local run: see infra/README.md (compose.local.yml).
+#
+# Interpolation values come from the shell or infra/.env (non-secret only, see .env.example).
+# Secrets are Compose file secrets: bind-mounted read-only files under /run/secrets in the
+# container, never environment variables, so they do not show in `docker inspect`.
+
+name: floorwars
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certificates and ACME account: keep across deploys
+      - caddy-config:/config
+    networks:
+      - edge
+      - app
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  api:
+    image: ${API_IMAGE:-ghcr.io/alexandrucl/floorwars-api}:${API_TAG:?set API_TAG to the git sha to run}
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+    # No ports: only Caddy publishes. The healthcheck is the image's own HEALTHCHECK (/healthz).
+    environment:
+      FLOORWARS_ENV: ${FLOORWARS_ENV:-prod}
+      FLOORWARS_LOG_LEVEL: ${FLOORWARS_LOG_LEVEL:-INFO}
+    # pydantic-settings reads /run/secrets/<env prefix + field>, so targets carry the prefix.
+    secrets:
+      - source: database_url
+        target: floorwars_database_url
+      - source: valkey_url
+        target: floorwars_valkey_url
+    networks:
+      - app
+      - data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  postgres:
+    image: postgis/postgis:18-3.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: floorwars
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    # PG 18 images keep PGDATA at /var/lib/postgresql/18/docker; mount the parent so a
+    # future major upgrade (pg_upgrade --link) can live next to it. DATA_DIR is the
+    # encrypted Azure data disk.
+    volumes:
+      - ${DATA_DIR:-/srv/floorwars/data}/postgres:/var/lib/postgresql
+    shm_size: 256m
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d floorwars"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+    # TODO (Week 2, plan 7.7): separate migration role (DDL) and app role (no DDL).
+
+  valkey:
+    image: valkey/valkey:8
+    restart: unless-stopped
+    user: "999:999" # valkey user in the image
+    # The password goes into a config file on tmpfs, not into the command line or env.
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        umask 077 &&
+        printf 'requirepass "%s"\n' "$$(cat /run/secrets/valkey_password)" > /tmp/valkey.conf &&
+        exec valkey-server /tmp/valkey.conf --appendonly yes --dir /data
+    secrets:
+      - valkey_password
+    volumes:
+      - valkey-data:/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/valkey_password)\" valkey-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  # Later weeks (placeholders only, not services yet):
+  # worker:     Celery worker, same image as api, networks app + data (Week 2/4).
+  # scheduler:  Celery beat (Week 4).
+  # admin:      SQLAdmin, reachable only from team IPs through Caddy (Week 5).
+  # monitoring: prometheus, grafana, loki, alloy, alertmanager, node_exporter, cadvisor,
+  #             postgres_exporter on the `monitoring` network (Week 5, plan 7.8).
+  # backup:     pgBackRest to Azure Blob (Week 5, plan 7.7).
+
+networks:
+  edge: {} # Caddy only; the one network with published ports
+  app: {} # api (and later workers); outbound internet for FCM/e-mail
+  data:
+    internal: true # postgres and valkey: no route to the internet, no published ports
+  monitoring: {} # exporters (Week 5)
+
+volumes:
+  caddy-data: {}
+  caddy-config: {}
+  valkey-data: {}
+
+# Files written by deploy.sh (SOPS-decrypted, mode 0400) into SECRETS_DIR on tmpfs.
+secrets:
+  database_url:
+    file: ${SECRETS_DIR:-/run/secrets/floorwars}/database_url
+  valkey_url:
+    file: ${SECRETS_DIR:-/run/secrets/floorwars}/valkey_url
+  postgres_password:
+    file: ${SECRETS_DIR:-/run/secrets/floorwars}/postgres_password
+  valkey_password:
+    file: ${SECRETS_DIR:-/run/secrets/floorwars}/valkey_password
