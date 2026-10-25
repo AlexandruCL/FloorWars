@@ -8,5 +8,5 @@
 # path_regex is matched against the file name SOPS is given; when encrypting from a
 # plaintext file elsewhere, pass --filename-override infra/secrets/<name>.enc.<ext>.
 creation_rules:
-  - path_regex: infra/secrets/.*\.enc\.(json|yaml|env)$
+  - path_regex: infra[/\\]secrets[/\\].*\.enc\.(json|yaml|env)$
     age: age1p67hncsvvuzl7ax2nasmlmy8s5pas26fju5qhu7m9f8kc0rg94gqr43tse
