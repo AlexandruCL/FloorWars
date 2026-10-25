@@ -1,16 +1,20 @@
 # Cost estimate (Azure)
 
-**Estimate only.** Rough pay-as-you-go list prices for an EU region (West/North Europe), Linux,
-USD, 730 hours a month, written in Week 1 without access to the account. Prices change by region
-and over time: **verify every line in the Azure pricing calculator**
-(<https://azure.microsoft.com/pricing/calculator/>) and update this table with the real numbers
-and the date.
+**Estimate only.** Rough pay-as-you-go list prices, Linux, USD, 730 hours a month. The table
+below was written before the account existed. **Update 2026-10-25:** the VM is deployed as
+`B2als_v2` (2 vCPU, 4 GiB) in **Sweden Central** at **$0.0389/hour, about $28.40 a month** (shown
+by the portal when creating it). The student subscription only allows `francecentral`,
+`polandcentral`, `italynorth`, `swedencentral` and `austriaeast`; West Europe is blocked, and
+the B-series sizes were not deployable in Poland Central. Realistic total with the VM running all
+the time: **about $37 to $42 a month**, so the $100 credit lasts about 2.5 months. Prices change
+over time: verify in the Azure pricing calculator
+(<https://azure.microsoft.com/pricing/calculator/>) and record real figures below.
 
 ## Monthly estimate
 
 | Item | Choice (plan 7.2) | Approx. USD / month | Notes |
 |---|---|---|---|
-| VM | B2s (2 vCPU, 4 GB) | ~35 | Running 24/7. Deallocated VMs cost no compute. |
+| VM | **B2als_v2 (2 vCPU, 4 GiB), Sweden Central, deployed** (estimated here as B2s) | 28.40 (was ~35) | Running 24/7. Deallocated VMs cost no compute. |
 | VM (alternative) | B2ms (2 vCPU, 8 GB) | ~70 | Only if Postgres + monitoring need the RAM (Week 5). |
 | OS disk | 30 GB Standard SSD (E4) | ~2.5 | Premium SSD (P4) is ~5; Standard is enough here. |
 | Data disk | 32 GB Standard SSD (E4), encryption at rest (platform keys) | ~2.5 | Billed even when the VM is deallocated. |
