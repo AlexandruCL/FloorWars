@@ -143,7 +143,8 @@ release() {
   decrypt_secrets || return 1
 
   export API_TAG="$sha"
-  install -d -m 0700 "$DATA_DIR/postgres"
+  # the postgres image (uid 999) must be able to traverse its bind-mounted parent dir
+  install -d -m 0700 -o 999 -g 999 "$DATA_DIR/postgres"
   compose pull --quiet || { log "image pull failed (is root logged in to ghcr.io?)"; return 1; }
   compose up -d --wait --wait-timeout "$HEALTH_TIMEOUT" postgres valkey || return 1
 
