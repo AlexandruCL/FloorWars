@@ -53,7 +53,7 @@ After a reboot, check `df -h /srv/floorwars` shows the data disk.
 Keep the current SSH session open until a second login works.
 
 ```sh
-sudo tee /etc/ssh/sshd_config.d/99-floorwars.conf >/dev/null <<'EOF'
+sudo tee /etc/ssh/sshd_config.d/00-floorwars.conf >/dev/null <<'EOF'
 PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no

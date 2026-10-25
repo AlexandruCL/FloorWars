@@ -1,7 +1,9 @@
 # Same rules as the root .gitignore on chore/ionut-docs-gitignore, scoped to infra/.
 # Only SOPS-encrypted files (and the README) are committed under secrets/.
 secrets/*
-!secrets/*.enc.*
+!secrets/*.enc.json
+!secrets/*.enc.yaml
+!secrets/*.enc.env
 !secrets/README.md
 
 # Dummy secrets for compose.local.yml (scripts/make-local-secrets.sh)

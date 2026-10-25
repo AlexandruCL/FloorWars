@@ -86,7 +86,7 @@ Run on the VM. The agents write `docs/runbook.md` with the same commands; if it 
 1. Update: `sudo apt update && sudo apt -y upgrade`.
 2. Format and mount the data disk (find it with `lsblk`, usually `/dev/sdc`, **check it is the empty one**): `sudo mkfs.ext4 /dev/sdX`, `sudo mkdir -p /srv/floorwars`, mount it, and add its UUID (`sudo blkid`) to `/etc/fstab`.
 3. Create the deploy user: `sudo adduser --disabled-password deploy`. Put `floorwars_deploy.pub` in `/home/deploy/.ssh/authorized_keys` prefixed with `command="sudo -n /srv/floorwars/deploy.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty `. The script runs as root, so also add the sudoers rule from `docs/runbook.md` (only this script, keeps `SSH_ORIGINAL_COMMAND`) and check it with `sudo visudo -c`.
-4. SSH config `/etc/ssh/sshd_config.d/99-floorwars.conf`: `PermitRootLogin no`, `PasswordAuthentication no`. Then `sudo systemctl reload ssh`. **Keep your current session open and test a second login before closing it.**
+4. SSH config `/etc/ssh/sshd_config.d/00-floorwars.conf`: `PermitRootLogin no`, `PasswordAuthentication no`. Then `sudo systemctl reload ssh`. **Keep your current session open and test a second login before closing it.**
 5. Firewall: `sudo ufw default deny incoming`, `sudo ufw allow 80,443/tcp`, `sudo ufw allow from <your_ip> to any port 22 proto tcp`, `sudo ufw enable`.
 6. `sudo apt -y install unattended-upgrades fail2ban`, then `sudo dpkg-reconfigure -plow unattended-upgrades`.
 7. Docker: follow <https://docs.docker.com/engine/install/ubuntu/>, then `sudo usermod -aG docker azureuser`. Check `docker compose version`.

@@ -8,7 +8,9 @@ google-services.json
 .env.*
 !.env.example
 infra/secrets/*
-!infra/secrets/*.enc.*
+!infra/secrets/*.enc.json
+!infra/secrets/*.enc.yaml
+!infra/secrets/*.enc.env
 !infra/secrets/README.md
 
 # Python
@@ -18,3 +20,6 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Local-only secrets folder (keys, service-account JSON, google-services.json). Never committed.
+.secrets/
