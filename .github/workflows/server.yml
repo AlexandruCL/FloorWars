@@ -6,12 +6,11 @@ on:
       - "server/**"
       - "contracts/**"
       - ".github/workflows/server.yml"
+  # No path filter on main: deploy.sh pulls the image tagged with the deployed commit, so every
+  # commit on main (including infra-only ones) needs its own image.
   push:
     branches: [main]
-    paths:
-      - "server/**"
-      - "contracts/**"
-      - ".github/workflows/server.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
