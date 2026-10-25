@@ -14,14 +14,16 @@ import sys
 from pathlib import Path
 
 # Thresholds from docs/trace_format.md section 4. Tunable after the first real recordings.
-MIN_PRESSURE_S = 25.0  # check 2: span of pressure readings
+MIN_PRESSURE_S = 10.0  # check 2: span of pressure readings
+MIN_PRESSURE_S_SHORT = 4.0  # check 2: same, for shake and blow (short by nature)
 MAX_PRESSURE_GAP_S = 1.0  # check 2: longest allowed gap between pressure readings
 PRESSURE_HZ = (20.0, 100.0)  # check 3
 PRESSURE_HPA = (800.0, 1100.0)  # check 4
 STEP_HZ = (1.0, 3.0)  # check 5: (steps - 1) / (last step - first step), so needs 2+ steps
-STAIRS_NET_HPA = (0.5, 3.0)  # check 6: size of the net change; up falls, down rises
+STAIRS_NET_HPA = (0.3, 3.0)  # check 6: size of the net change; up falls, down rises
 ELEVATOR_NET_HPA = (1.0, 4.0)  # check 7: size of the net change; elevator_up falls
 NET_WINDOW_S = 1.0  # checks 6, 7, 9: net change compares the first and last second (section 3)
+BACKWARDS_TOLERANCE_NS = 2_000_000  # check 1: pressure and step events from two sensors can arrive <2 ms out of order
 ELAPSED_TOLERANCE_S = 0.0015  # check 1: elapsed_s is rounded to 3 decimals
 HPA_PER_M = 0.12  # check 9: net pressure change to metres of height (plan 3.3)
 STAIRS_STEPS_PER_M = (4.0, 8.0)  # check 9: stairs_up/down, steps per metre of net height change
@@ -106,9 +108,9 @@ def check_rows(rows, first_line, fail):
             fail(1, f"line {n}: value {value_text!r} is not a number")
             continue
         ts = int(ts_text)
-        if previous_ts is not None and ts < previous_ts:
+        if previous_ts is not None and ts < previous_ts - BACKWARDS_TOLERANCE_NS:
             fail(1, f"line {n}: timestamp_ns goes backwards")
-        previous_ts = ts
+        previous_ts = max(ts, previous_ts or 0)
         # elapsed_s must track timestamp_ns; its zero point can be before the first event.
         this_offset = float(elapsed_text) - ts / 1e9
         if offset is None:
@@ -163,8 +165,9 @@ def check_file(path):
     else:
         span = (pressure[-1][0] - pressure[0][0]) / 1e9
         gap = max(((b[0] - a[0]) / 1e9 for a, b in zip(pressure, pressure[1:])), default=0.0)
-        if span < MIN_PRESSURE_S:
-            fail(2, f"pressure spans {span:.2f} s, need {MIN_PRESSURE_S:g}")
+        need = MIN_PRESSURE_S_SHORT if label in ("shake", "blow") else MIN_PRESSURE_S
+        if span < need:
+            fail(2, f"pressure spans {span:.2f} s, need {need:g}")
         if gap > MAX_PRESSURE_GAP_S:
             fail(2, f"pressure gap of {gap:.2f} s")
 

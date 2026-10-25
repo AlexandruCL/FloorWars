@@ -25,7 +25,7 @@ Rules:
 - `label` is one of `stairs_up`, `stairs_down`, `elevator_up`, `walk_flat`, `shake`, `blow`.
 - `placement` is one of `pocket`, `hand`, `bag`.
 - `sensor` is `pressure` or `step`. No other values.
-- `timestamp_ns` is the sensor event time from `SensorEvent.timestamp` (elapsed realtime, nanoseconds). It is non-decreasing within the file.
+- `timestamp_ns` is the sensor event time from `SensorEvent.timestamp` (elapsed realtime, nanoseconds). It is non-decreasing within the file, except that pressure and step events from the two sensors may arrive up to 2 ms out of order.
 - `elapsed_s` is seconds since the session start (the T4 export writes `(timestamp_ns - session start) / 1e9`), to 3 decimal places. The first row is therefore small but not 0. Checks use differences of `timestamp_ns`, not `elapsed_s` alone.
 - `value` for `pressure` is the reading in hPa. For `step` the value is `1`, written as `1.0` by the app.
 - No names, locations, or other personal data in any field.
@@ -38,7 +38,7 @@ Rules:
 | Pressure per metre of height | ~0.12 hPa/m near sea level | Standard atmosphere (about 12 Pa/m) | Fixed |
 | Storey height | ~3–3.5 m | Building norm. Used only for the floor-equivalent display estimate (20 steps = 1 floor), never for scoring | TO VALIDATE from real stair climbs |
 | Pressure change per storey | ~0.36–0.42 hPa | Storey height × 0.12 hPa/m | Follows from the two rows above |
-| Pressure sampling rate | ~50 Hz at SENSOR_DELAY_GAME | T3 emulator: 285 events in 5.7 s | TO VALIDATE on phones; devices may deliver slower or faster |
+| Pressure sampling rate | ~50 Hz on the emulator, ~25 Hz on the Samsung SM-S918B at SENSOR_DELAY_GAME | T3 emulator: 285 events in 5.7 s; S918B real recordings | Validated on one phone; devices may deliver slower or faster |
 | Step rate while walking | ~1.4–2.1 Hz | Typical adult gait | TO VALIDATE per person |
 | Recording length | ~30 s | T4 spec | Fixed |
 | Sensor noise (`hand`, `pocket`, `bag`) | ~0.01–0.02 hPa std | Assumption from the synthetic model | TO VALIDATE; likely varies by phone |
@@ -64,11 +64,11 @@ Exact pass/fail thresholds are in the validator (task for Worker). They are kept
 A trace is usable when all of these pass:
 
 1. Format and metadata as in section 1.
-2. At least 25 s of pressure readings, and no gaps longer than 1 s.
+2. At least 10 s of pressure readings (4 s for `shake` and `blow`), and no gaps longer than 1 s.
 3. Pressure sampling rate between 20 and 100 Hz.
 4. Every pressure value between 800 and 1100 hPa.
 5. For `stairs_*` and `walk_flat`: at least one step event, and step rate between 1 and 3 Hz.
-6. For `stairs_up` and `stairs_down`: net pressure change of the expected sign and between 0.5 and 3 hPa.
+6. For `stairs_up` and `stairs_down`: net pressure change of the expected sign and between 0.3 and 3 hPa (one storey measured about 0.41 hPa).
 7. For `elevator_up`: net change of the expected sign and between 1 and 4 hPa.
 8. `has_barometer` agrees with the pressure rows: `true` if there are pressure rows, `false` if there are none.
 9. Pressure-steps match (plan section 3.3, the scoring rule). For `stairs_up` and `stairs_down`: steps per metre of net ascent between 4 and 8. For `elevator_up`: below 1 step per metre. For `walk_flat` and `shake`: net ascent under 2.0 m, so no points. Points are awarded only when the rule matches. Thresholds are TO VALIDATE from real climbs.
