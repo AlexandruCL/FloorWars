@@ -17,7 +17,7 @@ The full project reference and six-week plan is [`IMPLEMENTATION_PLAN.md`](IMPLE
 | Backend, week 1 | Done: FastAPI skeleton (`/healthz`, `/metrics` stub, JSON logs), Alembic baseline with 7 tables (`user`, `device`, `team`, `season`, `team_membership`, `building`, `refresh_token`), server tests. API endpoints start in week 2 |
 | Infra, week 1 | Done: deployed on the Azure VM `floorwars-vm` (Sweden Central, B2als_v2, hardened) with Docker Compose, Caddy and Let's Encrypt. `/healthz` answers over HTTPS at `https://api.4.223.83.29.sslip.io/healthz`. Real domain pending (`floorwars.me` claim with Namecheap) |
 | CI, week 1 | Done: `server` workflow (ruff, mypy, pytest with PostGIS on pull requests, multi-arch image pushed to GHCR for every commit on `main`). Deploy from CI is week 2 |
-| Push (FCM) | Firebase project `floorwars-7d3aa` (FCM only), service-account key encrypted with SOPS in the repo, `google-services.json` handed to Cristea |
+| Notifications | No Firebase (course rule, 2026-10-29). Own channel planned for week 4: `game_event` feed, WebSocket replay from the Kotlin sensing service, polling fallback, local notifications (plan 7.2.1) |
 | Fakes and mock | Done: `tools/fake_segments/` and a Prism mock config (`contracts/prism/`) |
 
 ## How the game works
@@ -50,7 +50,8 @@ Dates are when the decision was made. The rule that is in force is in the plan a
 | 2026-10-25 | The VM pulls the repo with a read-only GitHub deploy key and pulls the public GHCR image `ghcr.io/alexandrucl/floorwars-api`. | `docs/runbook.md` |
 | 2026-10-25 | CI builds an image for every commit on `main`, because `deploy.sh` pulls the image tagged with the deployed commit. Pull requests keep the path filter. | `.github/workflows/server.yml` |
 | 2026-10-25 | Until the real domain is ready the API name is `api.4.223.83.29.sslip.io` (resolves to the VM, certificate from Let's Encrypt). Switching is one line in `infra/.env`. | `infra/.env.example` |
-| 2026-10-25 | Firebase project `floorwars-7d3aa` is used for FCM only. The service-account key lives only as `infra/secrets/fcm-service-account.enc.json`. Cristea is a project owner. | Plan section 7.2.1 |
+| 2026-10-25 | ~~Firebase project for FCM only~~ Replaced on 2026-10-29, see the next row. | |
+| 2026-10-29 | No Firebase or managed push service (professor's rule). Notifications use our own channel: `game_event` table, WebSocket replay from the Kotlin sensing service, WorkManager polling fallback, local Android notifications. The FCM key and the Firebase project are deleted. | Plan section 7.2.1 |
 
 Starting values are ours and tunable from real data: 1 point per verified step, halving after 300 steps in an hour, at most 600 verified steps per 10 minutes per user, 20 steps per floor-equivalent.
 

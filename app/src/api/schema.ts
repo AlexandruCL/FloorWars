@@ -242,20 +242,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/devices/push-token": {
+    "/me/events": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /**
-         * Register the device push token
-         * @description Stored per device. Tokens that FCM rejects are deleted.
+         * Game events for the player's team after a given id (notification feed)
+         * @description Plan 7.2.1. Fallback for notifications when no WebSocket is open (WorkManager polls it), and
+         *     the same feed the WebSocket replays on connect. Events are ordered by event_id ascending.
+         *     The client stores the highest event_id it has handled and passes it as since.
          */
-        post: operations["registerPushToken"];
+        get: operations["listMyEvents"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -353,7 +355,9 @@ export interface paths {
          * @description OpenAPI cannot describe WebSocket messages, so this documents the upgrade request only.
          *     The connection is authenticated on connect. Server-to-client messages are WsEvent:
          *     building_flipped {building_id, from_team, to_team, at} when a building changes owner, and
-         *     season_state {paused, ends_at}; see x-websocket-events.
+         *     season_state {paused, ends_at}; see x-websocket-events. Plan 7.2.1: on connect the server first
+         *     replays the events after since for the player's team, then streams new ones (at least once;
+         *     the client ignores event_id values it has handled).
          */
         get: operations["openWebSocket"];
         put?: never;
@@ -634,20 +638,12 @@ export interface components {
             /** @description Inferred: cursor pagination; null on the last page. */
             next_cursor: string | null;
         };
-        PushTokenRequest: {
-            /**
-             * Format: uuid
-             * @description Inferred: how the server knows which device the token belongs to.
-             */
-            device_id: string;
-            /** @description FCM registration token. */
-            token: string;
-            /**
-             * @description Inferred: Android only for now.
-             * @default android
-             * @enum {string}
-             */
-            platform: "android";
+        GameEventPage: {
+            items: components["schemas"]["WsEvent"][];
+            /** @description Inferred: highest event_id in items, or the since value when items is empty. Pass it as since next time. */
+            last_event_id: number;
+            /** @description Inferred: true when more events follow; call again with since=last_event_id. */
+            has_more?: boolean;
         };
         LandingScanRequest: {
             /** @description Inferred field name: the signed token from the sticker at the stairs. It encodes the building only. */
@@ -700,6 +696,8 @@ export interface components {
         BuildingFlippedEvent: {
             /** @constant */
             type: "building_flipped";
+            /** @description Inferred: id of the stored game event (plan 7.2.1); grows over time; used for since. */
+            event_id?: number;
         } & components["schemas"]["BuildingFlip"] & {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -714,6 +712,8 @@ export interface components {
              * @enum {string}
              */
             type: "season_state";
+            /** @description Inferred: id of the stored game event (plan 7.2.1); grows over time; used for since. */
+            event_id?: number;
             paused: boolean;
             /** Format: date-time */
             ends_at: string;
@@ -1130,28 +1130,30 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
-    registerPushToken: {
+    listMyEvents: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Inferred: return events with event_id greater than this. 0 returns the oldest kept events. */
+                since?: number;
+                /** @description Inferred. */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PushTokenRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Stored. */
-            204: {
+            /** @description Events after since, oldest first. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GameEventPage"];
+                };
             };
             401: components["responses"]["Unauthorized"];
-            422: components["responses"]["ValidationError"];
         };
     };
     createLandingScan: {
@@ -1256,6 +1258,8 @@ export interface operations {
     openWebSocket: {
         parameters: {
             query?: {
+                /** @description Inferred: replay events with event_id greater than this before live events. */
+                since?: number;
                 /** @description Inferred: access token for clients that cannot set an Authorization header on the upgrade request. Either this or the bearer header. */
                 access_token?: string;
             };

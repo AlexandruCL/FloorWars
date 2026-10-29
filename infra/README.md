@@ -56,7 +56,7 @@ re-pins `last_good` without migrations. `deploy.sh rollback` re-pins `last_good`
 
 - Week 2: Celery `worker` (same image, networks app + data), separate migration and app DB
   roles, JWT/QR/e-mail secrets.
-- Week 4: `scheduler` (Celery beat), FCM service account secret on the worker.
+- Week 4: `scheduler` (Celery beat). Notifications go through the API's own WebSocket and event feed (plan 7.2.1); no push service or extra secret.
 - Week 5: monitoring stack (Prometheus, Grafana, Loki, Alloy, Alertmanager, node_exporter,
   cAdvisor, postgres_exporter) on the `monitoring` network, `admin` (SQLAdmin) and Grafana
   behind Caddy IP allowlists, pgBackRest to Azure Blob, Caddy per-IP rate limits, Trivy in CI.

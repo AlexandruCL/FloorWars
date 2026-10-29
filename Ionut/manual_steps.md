@@ -16,10 +16,10 @@ Estimated time: 3 to 4 hours, most of it waiting for DNS and the VM.
 | 3 | VM, data disk, firewall | Azure | A reachable VM |
 | 4 | Harden the VM | SSH | Section 7.1 done |
 | 5 | Domain and DNS | Student Pack | `api.<domain>` points at the VM |
-| 6 | Firebase project (FCM only), SOPS | Google account | `google-services.json`, encrypted service-account key |
+| 6 | ~~Firebase project (FCM only)~~ dropped (course rule); SOPS only | Nothing | Nothing |
 | 7 | Deploy compose, check HTTPS | Agents' files | `/healthz` answers over HTTPS |
 | 8 | GitHub: GHCR, secrets | GitHub | CI can push images |
-| 9 | Hand-offs to Cristea | Chat | Contract reviewed, `google-services.json` sent, app on both phones |
+| 9 | Hand-offs to Cristea | Chat | Contract reviewed, app on both phones |
 
 Steps 1 to 5 can be started while the agents write code. Step 7 needs their `infra/` files.
 
@@ -29,7 +29,6 @@ Steps 1 to 5 can be started while the agents write code. Step 7 needs their `inf
 
 1. GitHub Student Developer Pack: <https://education.github.com/pack>. It gives the free domain, GitHub Pro and the Azure for Students offer. Approval can take days, so start it first.
 2. Azure for Students: <https://azure.microsoft.com/free/students>. USD 100 credit, no card. Verify the current terms.
-3. A Google account for Firebase (use the team's, not a personal one if you have one).
 4. A password manager entry named "FloorWars secrets" (the age private key goes here, step 2).
 5. Tools on your PC: `ssh`, `git`, `az` (Azure CLI), `sops`, `age`. Install only what you are missing, for example with `winget install Microsoft.AzureCLI`, `winget install FiloSottile.age`, `winget install Mozilla.SOPS`. Check with `az --version`, `age --version`, `sops --version`.
 
@@ -100,19 +99,13 @@ Run on the VM. The agents write `docs/runbook.md` with the same commands; if it 
 
 Tell the agents the domain name so Caddy gets `api.<domain>`.
 
-## 6. Firebase (FCM only) and SOPS
+## 6. ~~Firebase (FCM only)~~ dropped, SOPS only
 
-Firebase console <https://console.firebase.google.com>:
+**2026-10-29: the course does not allow Firebase.** Do not create a Firebase project. If one exists, delete it (console, Project settings, General, Delete project). Notifications use our own channel (plan 7.2.1). Example of encrypting any JSON secret with SOPS:
 
-1. Add project `floorwars`. Disable Google Analytics.
-2. Project settings > Your apps > Add Android app. Package name: `com.floorwars` (this is the `applicationId` in `app/android/app/build.gradle`). Register it.
-3. Download `google-services.json`. **Do not commit it.** Keep it for step 9.
-4. Project settings > Service accounts > Generate new private key. This downloads a JSON key.
-5. Do not enable any other Firebase product (no database, auth, analytics, crashlytics, hosting).
+From the repo root (`.sops.yaml` holds the age public key):
 
-Encrypt the key with SOPS (from the repo root, after the agents create `.sops.yaml` with your age public key):
-
-1. Encrypt straight from the download into the repo (needs sops 3.9 or newer, so the `.sops.yaml` rule for the target path applies): `sops --encrypt --filename-override infra/secrets/fcm-service-account.enc.json $HOME\Downloads\<key>.json > infra/secrets/fcm-service-account.enc.json`. Only `*.enc.*` files under `infra/secrets/` are tracked by git; plaintext there is ignored.
+1. Encrypt straight from the download into the repo (needs sops 3.9 or newer, so the `.sops.yaml` rule for the target path applies): `sops --encrypt --filename-override infra/secrets/<name>.enc.json <plain>.json > infra/secrets/<name>.enc.json`. Only `*.enc.*` files under `infra/secrets/` are tracked by git; plaintext there is ignored.
 2. Check the file shows `ENC[...]` values, then commit it. Delete the plaintext download from Downloads and the recycle bin.
 
 Other secrets (JWT keys, DB password, QR HMAC key, SMTP) follow the same pattern. The agents will list which ones are needed.
@@ -138,7 +131,7 @@ Other secrets (JWT keys, DB password, QR HMAC key, SMTP) follow the same pattern
 | What | How | Done when |
 |---|---|---|
 | `contracts/openapi.yaml` review | Open a PR or call, go through the 18 paths and the WebSocket events (`building_flipped`, `season_state`). Check the PR from the contract agent | Both approve |
-| `google-services.json` | Send privately (not in git, not in a public chat). Cristea places it at `app/android/app/google-services.json`, which must be git-ignored | Cristea confirms the build still works |
+| ~~`google-services.json`~~ | Dropped with Firebase: Cristea deletes any copy | Cristea confirms the build still works |
 | Fake-segment script and Prism config | Point Cristea to `Ionut/` notes and the agents' README section | Cristea mocks the API with Prism |
 | App on both phones | Cristea installs the release APK (`app/README.md`, `cristea/phone_tests.md`) | Both phones run it. Device entries in `docs/devices.md` |
 | Real traces | `cristea/phone_tests.md` real-phone work. Week 1 exit allows the 24 synthetic traces if real ones are not ready | Agreed in writing |
@@ -149,7 +142,6 @@ Other secrets (JWT keys, DB password, QR HMAC key, SMTP) follow the same pattern
 - [ ] `openapi.yaml` merged with both approvals
 - [ ] CI green on a PR, image visible in GHCR
 - [ ] Budget alert exists
-- [ ] Encrypted FCM key in repo, plaintext deleted
-- [ ] `google-services.json` sent to Cristea
+- [ ] No Firebase project, no FCM key, no `google-services.json` anywhere
 - [ ] App on both phones (Cristea)
 - [ ] 20+ labelled traces in the repo
