@@ -101,19 +101,11 @@ Tell the agents the domain name so Caddy gets `api.<domain>`.
 
 ## 6. ~~Firebase (FCM only)~~ dropped, SOPS only
 
-**2026-10-29: the course does not allow Firebase.** Do not create a Firebase project. If one exists, delete it (console, Project settings, General, Delete project). Notifications use our own channel (plan 7.2.1). The text below is kept only as an example of encrypting a JSON file with SOPS.
+**2026-10-29: the course does not allow Firebase.** Do not create a Firebase project. If one exists, delete it (console, Project settings, General, Delete project). Notifications use our own channel (plan 7.2.1). Example of encrypting any JSON secret with SOPS:
 
-Firebase console <https://console.firebase.google.com>:
+From the repo root (`.sops.yaml` holds the age public key):
 
-1. Add project `floorwars`. Disable Google Analytics.
-2. Project settings > Your apps > Add Android app. Package name: `com.floorwars` (this is the `applicationId` in `app/android/app/build.gradle`). Register it.
-3. Download `google-services.json`. **Do not commit it.** Keep it for step 9.
-4. Project settings > Service accounts > Generate new private key. This downloads a JSON key.
-5. Do not enable any other Firebase product (no database, auth, analytics, crashlytics, hosting).
-
-Encrypt the key with SOPS (from the repo root, after the agents create `.sops.yaml` with your age public key):
-
-1. Encrypt straight from the download into the repo (needs sops 3.9 or newer, so the `.sops.yaml` rule for the target path applies): `sops --encrypt --filename-override infra/secrets/fcm-service-account.enc.json $HOME\Downloads\<key>.json > infra/secrets/fcm-service-account.enc.json`. Only `*.enc.*` files under `infra/secrets/` are tracked by git; plaintext there is ignored.
+1. Encrypt straight from the download into the repo (needs sops 3.9 or newer, so the `.sops.yaml` rule for the target path applies): `sops --encrypt --filename-override infra/secrets/<name>.enc.json <plain>.json > infra/secrets/<name>.enc.json`. Only `*.enc.*` files under `infra/secrets/` are tracked by git; plaintext there is ignored.
 2. Check the file shows `ENC[...]` values, then commit it. Delete the plaintext download from Downloads and the recycle bin.
 
 Other secrets (JWT keys, DB password, QR HMAC key, SMTP) follow the same pattern. The agents will list which ones are needed.
