@@ -77,7 +77,7 @@ MVP (PDF, one semester; we deliver the subset marked in section 10):
 - Shareable 9:16 cards generated on the device: building standings, personal stats, "building flipped" moments.
 - Fallback for phones without a barometer: small QR stickers on stair landings ("scan at the stairs of building X") with rate limits.
 - Admin panel (web, team-only) to draw building footprints, manage seasons, and review fraud flags. No floor counts or heights.
-- Push notification to a team that lost a building (FCM sent directly by the backend, see 7.2.1).
+- Notification to a team that lost a building, delivered by our own channel (WebSocket from the sensing service, plus a polling fallback; no Firebase, see 7.2.1).
 
 Stretch (PDF): iOS client (Core Motion altimeter and pedometer), "raids" (one-hour team events with double points), achievements, Play Integrity attestation, on-device ML classifier v2 trained on pilot data, office-tower "corporate mode" with private leagues.
 
@@ -128,7 +128,7 @@ PostgreSQL 18 + PostGIS       Valkey: ZINCRBY leaderboards, PUBLISH building_fli
                                   |
                                   v
                           WS hub (inside api) -> phones
-                          Celery worker -> FCM HTTP v1 push to the losing team
+                          game_event table -> WS replay / GET /v1/me/events -> local notification
 ```
 
 ### 3.1 Climb-to-claim sequence
@@ -144,7 +144,7 @@ PostgreSQL 18 + PostGIS       Valkey: ZINCRBY leaderboards, PUBLISH building_fli
 9. `SELECT ... FROM building_claim WHERE season_id = $1 AND building_id = $2 FOR UPDATE`, then set the owner to the team with the highest score. Commit.
 10. `ZINCRBY` season leaderboards, `PUBLISH building_flipped`.
 11. Response `200 {accepted, rejected, flips}`.
-12. The WebSocket hub pushes `"AC took the Politehnica building"` to connected phones; a Celery job sends an FCM push to the losing team's devices.
+12. The WebSocket hub pushes `"AC took the Politehnica building"` to connected phones; the event is stored in `game_event`, so phones that were offline get it on reconnect or at their next poll and show a local notification (7.2.1).
 
 ### 3.2 Other data flows
 
@@ -199,10 +199,10 @@ Starting thresholds for the rules classifier (ours, all tune):
 | Hosting | One Azure VM, Docker Compose, Caddy 2 | Ours. PDF used an Oracle free VM. We keep the same self-managed model; the cloud only supplies infrastructure primitives. |
 | CI/CD | GitHub Actions, GHCR, SSH deploy script | See section 7. |
 | Monitoring | Prometheus, Grafana, Loki + Alloy, Alertmanager; custom metrics for segments accepted vs rejected and detection latency | Lets us show detection quality and fraud rates as live dashboards in the demo. |
-| Push | FCM HTTP v1, called directly by the Celery worker behind a `PushSender` interface | Needed to tell a team it lost a building. FCM is the only Firebase feature used (section 7.2.1). |
+| Notifications | Own channel: `game_event` table, WebSocket from the Kotlin sensing service with replay, WorkManager polling fallback, local Android notifications | Needed to tell a team it lost a building. No Firebase or managed push service (course rule, section 7.2.1). |
 | Cloud provider | Azure, infrastructure primitives only (section 7.2) | Ours. Replaces the PDF's Oracle VM. |
 
-Deliberately not used: Firebase as a platform (database, auth, analytics, crashlytics, hosting), Supabase, Appwrite, Back4App, Vercel, Netlify, Heroku, Render, Railway, and managed backend, auth or database services from Azure. Narrow external services that remain: FCM (push delivery only), an outbound e-mail service for one-time codes (Azure Communication Services or an SMTP relay; self-hosted mail has no sending reputation), and Blob Storage for backups.
+Deliberately not used: Firebase as a platform (database, auth, analytics, crashlytics, hosting), Supabase, Appwrite, Back4App, Vercel, Netlify, Heroku, Render, Railway, and managed backend, auth or database services from Azure. No Firebase in any form, including FCM (course rule, 2026-10-29). Narrow external services that remain: an outbound e-mail service for one-time codes (Azure Communication Services or an SMTP relay; self-hosted mail has no sending reputation), and Blob Storage for backups.
 
 ### 4.2 React Native libraries (ours)
 
@@ -217,7 +217,7 @@ Deliberately not used: Firebase as a platform (database, auth, analytics, crashl
 | Check-in location | `react-native-geolocation-service`, one-shot fix, never continuous |
 | Standings drawing and animation | `react-native-svg` + Reanimated |
 | Share cards | `react-native-view-shot` + `react-native-share` |
-| Push token | Minimal FCM messaging dependency, token only (`@react-native-firebase/messaging` or a native Kotlin snippet). No other Firebase modules. See 7.2.1. |
+| Notifications | No library: the Kotlin service posts Android notifications with `NotificationManager`; WorkManager for the polling fallback. No Firebase. See 7.2.1. |
 | Tests | Jest + React Native Testing Library; JUnit for Kotlin; pytest for the backend |
 
 ### 4.3 Why part of the client is Kotlin
@@ -253,7 +253,7 @@ Third normal form. The only derived data are `team_building_score` and `building
 | `building_claim` | `season_id`, `building_id` (composite PK), `team_id FK`, `claimed_at` | Derived. Current owner per season and building. |
 | `refresh_token` | `id uuid PK`, `user_id FK`, `token_hash bytea UNIQUE`, `family_id uuid`, `revoked_at` | |
 
-Our additions (not in the PDF ER diagram): a `config` table of versioned classifier thresholds, a season results table, and a QR token or signing-key record for rotating entrance codes.
+Our additions (not in the PDF ER diagram): a `config` table of versioned classifier thresholds, a season results table, a QR token or signing-key record for rotating entrance codes, and the append-only `game_event` table that feeds notifications (7.2.1).
 
 ### 5.2 Constraints
 
@@ -305,7 +305,7 @@ PDF-defined: `POST /v1/segments`, `GET /v1/buildings/{id}/standings` (was `/floo
 | `GET /v1/leaderboards` | Individual, team, building | Served from Valkey sorted sets |
 | `GET /v1/me/season-stats` | Personal stats, landmarks progress, share-card data | |
 | `GET /v1/me/segments` | Personal history | |
-| `POST /v1/devices/push-token` | Register the device push token | Stored per device; invalid tokens are deleted when FCM rejects them |
+| `GET /v1/me/events` | Game events for the player's team after a given id | Notification fallback and WebSocket replay (7.2.1); ordered by id, paged |
 | `POST /v1/landing-scans` | Barometer-less fallback scan on a stair landing | Strict rate limit |
 | `GET /v1/config` | Classifier thresholds (versioned) | Revert in seconds without a deploy |
 | `GET /v1/me/export`, `DELETE /v1/me` | GDPR export and delete | Delete cascades |
@@ -353,7 +353,7 @@ Containers: `caddy`, `api` (two replicas), `worker` (Celery), `scheduler` (Celer
 
 ### 7.2 Cloud provider: Azure (decided)
 
-Decision: Azure for the VM and supporting infrastructure, Firebase Cloud Messaging (FCM) for push only. Everything runs as Docker Compose on one Azure VM, so the app is not tied to Azure and could move to another host with a restore from backup.
+Decision: Azure for the VM and supporting infrastructure. Notifications use our own channel (7.2.1); no Firebase. Everything runs as Docker Compose on one Azure VM, so the app is not tied to Azure and could move to another host with a restore from backup.
 
 Rule carried over from the PDF: no managed backend platforms (no Firebase database or auth, Supabase, Entra External ID, App Service-style PaaS). We use Azure for infrastructure primitives only. If the course rules differ, check with the professor before using any managed database or cache.
 
@@ -370,7 +370,7 @@ Rule carried over from the PDF: no managed backend platforms (no Firebase databa
 | DNS | Azure DNS (optional), or the registrar's DNS | |
 | Credit | Azure for Students: USD 100, no credit card, via GitHub Student Developer Pack (verify current terms) | |
 
-Not used: Notification Hubs (push goes straight to FCM, see 7.2.1), Key Vault (SOPS and age cover secrets), managed PostgreSQL, managed Redis, App Service, Container Apps, AKS, Functions, Cosmos DB.
+Not used: Notification Hubs and FCM (own notification channel, see 7.2.1), Key Vault (SOPS and age cover secrets), managed PostgreSQL, managed Redis, App Service, Container Apps, AKS, Functions, Cosmos DB.
 
 Operating rules:
 
@@ -394,25 +394,26 @@ Running cost: the student credit should cover the course. The PDF assumed EUR 0 
 
 Why Valkey and not Redis: Redis left its BSD licence in 2024. Valkey is the Linux Foundation's BSD fork with the same protocol, so Celery and the client libraries work unchanged.
 
-### 7.2.1 Push notifications: FCM direct (decided)
+### 7.2.1 Notifications without Firebase: our own channel (decided 2026-10-29)
 
-Android delivers background push through Google's FCM transport, and nothing else reaches a sleeping phone reliably. We use FCM only as that transport. No Firebase database, auth, analytics, crash reporting, or hosting.
+Course rule (professor, 2026-10-29): no Firebase and no similar managed platforms. We do not use FCM, Firebase in any form, OneSignal, Pusher, Expo push, AWS SNS or Azure Notification Hubs (the managed ones also deliver through FCM on Android). Notifications are delivered by our own code over our own server.
 
 How it works:
 
-1. Create a free Firebase project and register the Android app (its package name). Download `google-services.json` into the app.
-2. Create a service account allowed to send messages. Store its JSON key in SOPS and mount it as a secret on the worker container.
-3. The app reads its device token with the minimal FCM messaging dependency and registers it with `POST /v1/devices/push-token`.
-4. When a building flips, the Celery worker calls the FCM HTTP v1 API for each device of the losing team.
-5. Behind a small `PushSender` interface, so the sender could change (for example to Notification Hubs) without touching game logic.
+1. Every event a player should hear about (`building_flipped`, `season_state`) is written as a row of the append-only `game_event` table (id is a `bigint` identity, so ids only grow) in the same transaction that changes the claim. After commit the API publishes it on Valkey, so both API replicas see it.
+2. While a play session runs, the Kotlin foreground service that already does the sensing (section 4.3) keeps one WebSocket open to `WS /v1/ws`, authenticated on connect. On connect it sends the last event id it has seen (`since`); the server first replays the missed events for the player's team, then streams new ones. Delivery is at least once: the app ignores ids it has already handled.
+3. When the player's team loses a building, the service posts a local Android notification ("AC took the Politehnica building"). Tapping it opens that building's screen. The service does this itself, so it works with the JS runtime closed.
+4. Connection handling: a ping every 30 s, reconnect with exponential backoff and jitter, close the socket when the session stops.
+5. Fallback when no session runs: a WorkManager job (every 15 minutes, the Android minimum; Doze can stretch it) calls `GET /v1/me/events?since=<id>` and shows the same notifications.
+6. The game screens use the same WebSocket while the app is open (Week 4 hook).
 
 Details:
 
-- Message content: short text such as "AC took the Politehnica building" plus `building_id` in the data payload, so a tap opens the right building screen.
-- Delete tokens that FCM reports as invalid or unregistered.
-- Rate limit pushes per user (for example at most one per building per 10 minutes) so a flip war does not spam players.
-- The in-app WebSocket still delivers live flips while the app is open. FCM covers the app being closed or in the background.
-- Privacy: the push payload contains no personal data beyond the team code and building.
+- Message content: short text plus `building_id`, no personal data beyond the team code and the building.
+- Rate limit notifications per user (for example at most one per building per 10 minutes) so a flip war does not spam players.
+- Known limit: with no session running and the phone in deep Doze, a notification can arrive late (at the next WorkManager window). We accept this and measure it.
+- Evaluation (section 11): notification delay (event to notification) with the service on and off, and the battery cost of the open socket, on both phones.
+- Considered and not chosen: UnifiedPush with a self-hosted ntfy server (real-time even without a session, but every tester must install a second app as the "distributor").
 
 ### 7.3 Container builds
 
@@ -546,7 +547,7 @@ About 85% of the work is independent. These are the moments that need both of yo
 | Week 1, end | App shell and API client handed over; fake-segment script shipped; cloud provider chosen | Cristea, Ionut, both | Ionut runs the shell; Cristea posts a segment with the script |
 | Week 2 | Staging URL live, so Cristea can switch from the mock to the real server | Ionut, then Cristea | Sign-in works on a phone against staging |
 | Week 3, Wednesday | First real end-to-end test: one real climb through the real service, API and database | Both | A real climb appears as `verified` and the building owner changes; ugly is fine |
-| Week 4 | Push setup (Firebase project, token registration, FCM send from the worker, tap to open) | Pair | Phone 2 gets a push when phone 1 flips a building |
+| Week 4 | Notifications (event feed and replay on the server, socket and local notification in the Kotlin service, tap to open) | Pair | Phone 2 gets a notification when phone 1 flips a building |
 | Any week | Contract change | Author, then the other reviews | `openapi.yaml` PR approved |
 | Weeks 5 and 6 | Threshold tuning loop: Cristea's trace results to Ionut's config table | Both | New thresholds live through `GET /v1/config` without a deploy |
 
@@ -580,7 +581,7 @@ Goal: both sides can build and run; contract frozen; first sensor traces recorde
 - GitHub Actions: lint and pytest on PR, multi-stage multi-arch (amd64 and arm64) Docker build, push to GHCR.
 - Set up the Azure budget alert first (7.2), then provision the VM, encrypted data disk and firewall rules, and harden it (7.1). Docker Compose with Caddy and TLS. Domain.
 - Ship the fake-segment script (posts valid segments with no phone) and a Prism mock config for Cristea.
-- Create the Firebase project for FCM only, register the Android package name, generate the service-account key, and put it in SOPS (7.2.1). Send `google-services.json` to Cristea.
+- ~~Create the Firebase project for FCM~~ Dropped on 2026-10-29: the course does not allow Firebase. Notifications use our own channel (7.2.1).
 
 Exit: `/healthz` answers over HTTPS; `openapi.yaml` merged; the app installs on both phones; at least 20 labelled traces in the repo.
 
@@ -647,12 +648,12 @@ Goal: the loop is visible and social.
 - Building standings screen (`react-native-svg`): team shares in team colours from `GET /v1/buildings/{id}/standings`, live updates from `building_flipped`, Reanimated colour-flip animation.
 - Leaderboards screen: individual, team, building tabs; season selector.
 - WebSocket hub in the API: auth on connect, Valkey pub/sub fan-out so two replicas share events.
-- Celery worker: push "AC took the Politehnica building" to the losing team through the `PushSender` interface (FCM HTTP v1 with the service-account key from SOPS). `POST /v1/devices/push-token`, invalid-token cleanup, per-user push rate limit. Pair with Cristea on the RN token registration and the notification tap that deep-links to the building screen.
+- Notifications (7.2.1): `game_event` table written in the claim transaction, replay of missed events on WebSocket connect (`since`), `GET /v1/me/events`, per-user notification rate limit. Pair with Cristea on the socket in the Kotlin service, the local notification and the tap that deep-links to the building screen.
 - Landmarks progress (Eiffel Tower style conversion) in `GET /v1/me/season-stats`.
 - `POST /v1/landing-scans` with strict rate limits.
 - Anti-cheat v2: per-device limits, repeated identical segment detection, impossible-sequence checks (climbs in two buildings too close in time), fraud flag reasons.
 
-Exit: two phones on different teams: phone 1 climbs, phone 2's building standings flip live and phone 2 gets a push. The barometer-less path works on a device or an emulator flag.
+Exit: two phones on different teams: phone 1 climbs, phone 2's building standings flip live and phone 2 gets a notification. The barometer-less path works on a device or an emulator flag.
 
 ### Week 5: Admin, share cards, monitoring, operability
 
@@ -694,7 +695,7 @@ Goal: real data from real users; numbers for the report; frozen release.
 - Evaluation: precision, recall and F1 per class, per device model, per placement; barometer coverage; battery cost; sessions-with-gaps rate. Write `/docs/evaluation.md` with the confusion matrix and charts.
 - Final threshold tuning with Ionut through the config table. Re-run all traces in CI.
 - Signed release APK, crash-free check, UX polish.
-- Demo script: check in, climb, faculty colour takes the building, rival gets a push.
+- Demo script: check in, climb, faculty colour takes the building, rival gets a notification.
 
 **Ionut**
 - Pilot operations: watch Grafana and Alertmanager, fix server issues, tune plausibility rules from real fraud flags.
@@ -713,7 +714,7 @@ Exit: signed APK on GitHub Releases; evaluation report with precision and recall
 | 1 | RN shell, native sensor logger, first traces | Schema v1, OpenAPI, CI, VM and TLS | `/healthz` over HTTPS; contract merged |
 | 2 | Segmenter v1, replay harness, auth and check-in UI | Auth, check-in, seed data, staging deploy | Sign up, then check in on a device |
 | 3 | Live service, outbox, sync | Segments API, plausibility, claim transaction, Valkey | Real climb becomes a verified claim |
-| 4 | WS manager, history, fallback, tuning 1 | Building standings and leaderboards UI, WS hub, FCM push, anti-cheat v2 | Two phones: live flip and push |
+| 4 | WS manager, history, fallback, tuning 1 | Building standings and leaderboards UI, WS hub, event feed and notifications, anti-cheat v2 | Two phones: live flip and notification |
 | 5 | Share cards, GDPR UI, offline states, battery tests | Admin panel, config table, monitoring, backups, k6 | Feature complete, operable |
 | 6 | Pilot ground truth, evaluation, release APK | Pilot ops, metrics, freeze, demo infra | Pilot done, final demo |
 
@@ -759,7 +760,7 @@ CI gate: the trace-replay suite fails the build if precision drops below the agr
 | Ethical / safety | Competition encourages running on stairs. | No speed rewards, hourly caps, safety copy in onboarding. |
 | Integrity | Cheating through emulators, modified clients or phones handed to friends. | Server-side plausibility, per-device limits, admin-reviewed fraud flags, Play Integrity as a stretch. |
 | Infra | Cloud credit runs out, or a forgotten resource drains it. | Budget alert on day one, `docs/cost.md`, delete unused resources, backups with tested restores so a move to another VM or provider is a restore. |
-| Infra | Push depends on Google's FCM service. | Keep it behind `PushSender`; WebSocket keeps live updates working while the app is open (7.2.1). |
+| Infra | Without Google's push service, notifications reach a phone only while its session runs or at its next poll. | Event feed with replay, so nothing is lost; measure the delay and report it (7.2.1). |
 
 ---
 
@@ -785,7 +786,7 @@ CI gate: the trace-replay suite fails the build if precision drops below the agr
 | 5 | Aggregated facility insights | Bundled with B2B | Facility managers | Building-level stair-use trends only, published when at least 20 users contribute; never individual data. |
 | 6 | Ads | n/a | n/a | Not recommended: low revenue at this scale and it erodes the healthy-campus brand. |
 
-Running cost: covered by the student cloud credit during the course (Azure VM, storage, outbound e-mail; FCM is free). After the credit ends, expect a small monthly bill; estimate it in `docs/cost.md` after Week 1. The PDF assumed EUR 0 on an Oracle free VM; that no longer holds. APK distribution through GitHub Releases during the course.
+Running cost: covered by the student cloud credit during the course (Azure VM, storage, outbound e-mail). After the credit ends, expect a small monthly bill; estimate it in `docs/cost.md` after Week 1. The PDF assumed EUR 0 on an Oracle free VM; that no longer holds. APK distribution through GitHub Releases during the course.
 
 ---
 
@@ -798,7 +799,7 @@ Running cost: covered by the student cloud credit during the course (Azure VM, s
 | 1 | FloorWars: take the stairs, take the building | A campus territory game powered by the barometer already in every phone. |
 | 2 | The problem nobody gamified | Stair challenges exist, but they rely on paper logs or NFC hardware; personal floor counters have no social pull. |
 | 3 | The insight: one floor is about 0.38 hPa | Phone sensors can tell stairs from elevators with no hardware installed in buildings. |
-| 4 | Demo storyboard | Check in, climb, your faculty's colour takes the building, the rival team gets a push notification. |
+| 4 | Demo storyboard | Check in, climb, your faculty's colour takes the building, the rival team gets a notification. |
 | 5 | Market and competitors | StepJockey, health apps, manual challenges: what each lacks and where FloorWars sits. |
 | 6 | Why this is academically solid | Sensor fusion under noise, a measurable classifier (precision and recall on labelled climbs), adversarial anti-cheat, background-execution constraints. A mobile systems problem, not a CRUD app. |
 | 7 | Engineering decisions | PostgreSQL 18 + PostGIS, monthly partitions, row locks for claims, pgBackRest PITR; Docker multi-stage builds, Caddy TLS, GitHub Actions, Prometheus and Grafana; rotating refresh tokens. |
