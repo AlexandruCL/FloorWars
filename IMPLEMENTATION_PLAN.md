@@ -509,18 +509,18 @@ Input validation at the API boundary (Pydantic v2 strict). Parameterised SQL onl
 
 ## 9. Team split and working rules
 
-| | **Cristea (Member A): Sensing and Mobile Core** | **Ionut (Member B): Backend, Infra and Game UI** |
+| | **Cristea (Member A): Sensing and Mobile Core** | **Ionut (Member B): Backend, Infra and Quality Pipeline** |
 |---|---|---|
-| Owns | RN app skeleton, Kotlin native module, foreground service, segmenter and classifier, Room outbox, sync, auth/check-in/fallback screens, privacy screens, evaluation | FastAPI, DB schema and migrations, scoring and claim transaction, Valkey, WebSocket, Celery/push, cloud setup, admin panel, deployment, monitoring, plus the game-facing RN screens (building standings, leaderboards) |
+| Owns | RN app skeleton, Kotlin native module, foreground service, segmenter and classifier, Room outbox, sync, all React Native UI (auth, check-in, fallback, home, history, building standings, leaderboards, share cards, privacy screens, offline states), classifier tuning | FastAPI, DB schema and migrations, scoring and claim transaction, Valkey, WebSocket, Celery/push, cloud setup, admin panel, deployment, monitoring, plus the release APK workflow, battery measurement runs and the evaluation charts and report tables |
 | Hardest risk | Reliable background sensing and classifier accuracy | Race-free claim transaction and operating the deployment |
 | Delivers to the other | App shell, sync client, labelled traces | Stable OpenAPI contract, staging URL, WS events |
 
-Why this split: Cristea carries the hardest mobile-systems work (native code, sensors, data labelling). Ionut carries all server and ops work and takes the game screens on the RN side so the mobile UI load is not all on Cristea.
+Why this split: Cristea carries the hardest mobile-systems work (native code, sensors, data labelling). Cristea also owns all RN UI, including the building standings and leaderboards screens. To balance that, Ionut carries all server and ops work plus the quality pipeline: the release APK workflow, the battery measurement runs and the evaluation charts. Ionut's admin panel is server-rendered (SQLAdmin), so it stays with Ionut.
 
 ### 9.1 Repository layout
 
 ```
-/app              React Native app (Cristea). Ionut owns /app/src/features/{building,leaderboard}
+/app              React Native app (Cristea, all of it including features/{building,leaderboard})
 /app/android      Kotlin native module and service (Cristea)
 /server           FastAPI, Alembic, Celery (Ionut)
 /infra            compose files, Caddy, monitoring, deploy.sh (Ionut)
@@ -567,7 +567,7 @@ Scope for 6 weeks (ours): the full climb-to-claim loop, live map, push, admin pa
 Goal: both sides can build and run; contract frozen; first sensor traces recorded.
 
 **Cristea**
-- Init RN (TypeScript) app: navigation shell (Auth and Main), lint, prettier, Jest, pre-commit hooks. Pin the RN version. By the end of the week: generate the TS API client from `openapi.yaml`, wire an auth stub, and hand Ionut a runnable shell.
+- Init RN (TypeScript) app: navigation shell (Auth and Main), lint, prettier, Jest, pre-commit hooks. Pin the RN version. By the end of the week: generate the TS API client from `openapi.yaml`, wire an auth stub, and hand Ionut a runnable shell (he runs it against staging).
 - Kotlin module `FloorSensors` skeleton: `startLogging(label)`, `stopLogging()`, event emitter, permission requests (`ACTIVITY_RECOGNITION`, notifications, `FOREGROUND_SERVICE_HEALTH`).
 - Foreground service (type `health`) with persistent notification, registering `TYPE_PRESSURE` and `TYPE_STEP_DETECTOR`.
 - Sensor logger screen: record labelled traces (`stairs_up`, `stairs_down`, `elevator_up`, `walk_flat`, `shake`, `blow`, plus placement `pocket`, `hand`, `bag`). Save as CSV or JSON with device model, `has_barometer`, timestamps. Export through the share sheet.
@@ -593,7 +593,7 @@ Goal: a user can sign in and check in; the segmenter detects climbs offline on r
 **Cristea**
 - Segmenter v1 in Kotlin (pure, no Android imports): pressure low-pass or median smoothing (window in seconds; real rates are 10 to 25 Hz, and step events can lag pressure by 300 ms), ascent-window detection (seconds to minutes), features `ascent_m`, `duration`, `vert_speed_mps`, `steps`, `steps_per_m`, and the pressure-steps match flag.
 - Rules classifier v1 (stairs, elevator, other) using the starting thresholds in 3.3. Reject shake and blow patterns.
-- JUnit trace-replay harness over `/traces` that prints a confusion matrix. Put baseline numbers in `/docs/evaluation.md`.
+- JUnit trace-replay harness over `/traces` that prints a confusion matrix. Put baseline numbers in `/docs/evaluation.md`, set the CI precision threshold, and wire the harness into GitHub Actions as the trace-replay gate.
 - Auth screens: e-mail, OTP entry, team choice. Keystore token storage, refresh interceptor with rotating refresh token. Generated TS API client wired in.
 - Check-in screen: QR scanner and the one-shot geolocation path.
 
@@ -633,12 +633,14 @@ Wednesday check: run one real climb through the real service, API and database a
 
 Exit: walk up real stairs with the phone in a pocket; the segment lands in the DB as `verified`; team score and `building_claim` update; a duplicate upload is a no-op.
 
-### Week 4: Live game UI, push, anti-cheat
+### Week 4: Live game UI, push, anti-cheat (all RN screens are Cristea's)
 
 Goal: the loop is visible and social.
 
 **Cristea**
-- WebSocket connection manager (auth, reconnect, resume) exposed as a hook for Ionut's screens.
+- WebSocket connection manager (auth, reconnect, resume) exposed as a hook for the game screens.
+- Building standings screen (`react-native-svg`): team shares in team colours from `GET /v1/buildings/{id}/standings`, live updates from `building_flipped`, Reanimated colour-flip animation.
+- Leaderboards screen: individual, team, building tabs; season selector.
 - Home screen: current check-in, today's stair steps and metres, pending-sync indicator.
 - Personal history screen with the reason for each rejected segment.
 - Barometer-less fallback: detect `has_barometer=false`, QR-sticker-on-landing flow ("scan at the stairs of building X") with local rate limit.
@@ -646,8 +648,6 @@ Goal: the loop is visible and social.
 - Classifier tuning pass 1 with new real-world traces (pocket, bag, hand, going down, flat walking). Record new precision and recall.
 
 **Ionut**
-- Building standings screen (`react-native-svg`): team shares in team colours from `GET /v1/buildings/{id}/standings`, live updates from `building_flipped`, Reanimated colour-flip animation.
-- Leaderboards screen: individual, team, building tabs; season selector.
 - WebSocket hub in the API: auth on connect, Valkey pub/sub fan-out so two replicas share events.
 - Notifications (7.2.1): `game_event` table written in the claim transaction, replay of missed events on WebSocket connect (`since`), `GET /v1/me/events`, per-user notification rate limit. Pair with Cristea on the socket in the Kotlin service, the local notification and the tap that deep-links to the building screen.
 - Landmarks progress (Eiffel Tower style conversion) in `GET /v1/me/season-stats`.
@@ -661,17 +661,17 @@ Exit: two phones on different teams: phone 1 climbs, phone 2's building standing
 Goal: feature complete and operable.
 
 **Cristea**
-- Share cards (9:16): building standings, personal stats, "building flipped" moment. Rendered with `react-native-view-shot`, sent via the Android share sheet. Ionut provides the standings component.
+- Share cards (9:16): building standings, personal stats, "building flipped" moment. Rendered with `react-native-view-shot`, sent via the Android share sheet. Reuses the standings component from Week 4.
 - Season results screen and a "season paused" banner when the server switch is on.
 - Offline and error states everywhere: no network, expired token, 5xx, camera denied, missing sensor.
 - Accessible contribution mode behind a flag and non-shaming elevator wording (agree rules with Ionut).
 - GDPR: in-app privacy notice, export my data, delete my account, under-18 gate.
-- Battery measurement: drain per hour over 3 hours, service on vs off, on both devices. Record in `/docs/evaluation.md`.
 - Classifier tuning pass 2. Thresholds move into a structure that the server `config` table can override via `GET /v1/config`.
 
 **Ionut**
 - Admin panel (SQLAdmin, IP-allowlisted through Caddy `remote_ip`, admin JWT role): edit building footprints (GeoJSON), create seasons, assign teams, review and resolve fraud flags, "season paused" switch.
 - Versioned classifier-threshold `config` table and `GET /v1/config`.
+- Battery measurement runs (moved from Cristea): drain per hour over 3 hours, service on vs off, on both devices, using Cristea's build with the service toggle. Record in `/docs/evaluation.md`.
 - Season close transaction with results snapshot. Celery scheduled jobs: season rollover, partition creation, digests.
 - `GET /v1/me/export` and `DELETE /v1/me` (cascade). Retention job that drops partitions older than 12 months.
 - Caddy rate limits. Security review: CORS, validation bounds, secrets, dependency scan, Trivy gate.
@@ -693,16 +693,18 @@ Goal: real data from real users; numbers for the report; frozen release.
 
 **Cristea**
 - Pilot ground truth: a short in-app "was this a stair climb?" prompt on a sample, plus labelled walks with volunteers.
-- Evaluation: precision, recall and F1 per class, per device model, per placement; barometer coverage; battery cost; sessions-with-gaps rate. Write `/docs/evaluation.md` with the confusion matrix and charts.
+- Evaluation analysis: precision, recall and F1 per class, per device model, per placement; barometer coverage; sessions-with-gaps rate. Write the interpretation in `/docs/evaluation.md`; Ionut produces the charts and tables.
 - Final threshold tuning with Ionut through the config table. Re-run all traces in CI.
-- Signed release APK, crash-free check, UX polish.
+- Crash-free check, UX polish, and a release candidate APK for Ionut's release workflow.
 - Demo script: check in, climb, faculty colour takes the building, rival gets a notification.
 
 **Ionut**
 - Pilot operations: watch Grafana and Alertmanager, fix server issues, tune plausibility rules from real fraud flags.
+- Signed release APK workflow (moved from Cristea): keystore as an encrypted secret, build, attach to GitHub Releases, tag `v1.0`.
+- Evaluation charts and tables (moved from Cristea): confusion matrices, per-device and per-placement charts and the battery results, generated from Cristea's trace-replay output and labels.
 - Metrics queries for the report: users, climbs, stair steps, flips per building, accepted vs rejected, WebSocket uptime.
 - Freeze production, verify backups, rehearse `deploy.sh rollback`.
-- Live Grafana dashboards and a wall-screen view of the building standings for the demo.
+- Live Grafana dashboards and the data feed for a wall-screen view of the building standings (Cristea builds the view from the standings component).
 - Report sections: architecture, DB design, deployment, security and privacy, monitoring.
 - Rehearse the demo twice with a failure plan (pre-recorded video, local fallback server).
 
@@ -715,9 +717,9 @@ Exit: signed APK on GitHub Releases; evaluation report with precision and recall
 | 1 | RN shell, native sensor logger, first traces | Schema v1, OpenAPI, CI, VM and TLS | `/healthz` over HTTPS; contract merged |
 | 2 | Segmenter v1, replay harness, auth and check-in UI | Auth, check-in, seed data, staging deploy | Sign up, then check in on a device |
 | 3 | Live service, outbox, sync | Segments API, plausibility, claim transaction, Valkey | Real climb becomes a verified claim |
-| 4 | WS manager, history, fallback, tuning 1 | Building standings and leaderboards UI, WS hub, event feed and notifications, anti-cheat v2 | Two phones: live flip and notification |
-| 5 | Share cards, GDPR UI, offline states, battery tests | Admin panel, config table, monitoring, backups, k6 | Feature complete, operable |
-| 6 | Pilot ground truth, evaluation, release APK | Pilot ops, metrics, freeze, demo infra | Pilot done, final demo |
+| 4 | WS manager, building standings and leaderboards UI, history, fallback, tuning 1 | WS hub, event feed and notifications, anti-cheat v2 | Two phones: live flip and notification |
+| 5 | Share cards, GDPR UI, offline states, tuning 2 | Admin panel, config table, battery runs, monitoring, backups, k6 | Feature complete, operable |
+| 6 | Pilot ground truth, evaluation analysis, UX polish | Pilot ops, metrics, release APK workflow, evaluation charts, freeze, demo infra | Pilot done, final demo |
 
 ---
 
@@ -727,10 +729,10 @@ The project produces measurable results rather than screenshots. These numbers g
 
 | Metric | How | Owner |
 |---|---|---|
-| Classifier precision, recall, F1 per class (stairs, elevator, other) | Hand-labelled traces and pilot ground truth; confusion matrix | Cristea |
+| Classifier precision, recall, F1 per class (stairs, elevator, other) | Hand-labelled traces and pilot ground truth; confusion matrix | Cristea (analysis), Ionut (charts) |
 | Same, split by device model and by phone placement | Same data, grouped | Cristea |
 | Barometer coverage | Share of pilot devices with `has_barometer = true` | Cristea |
-| Battery cost per hour | 3-hour runs with service on vs off on both test phones | Cristea |
+| Battery cost per hour | 3-hour runs with service on vs off on both test phones | Ionut |
 | Sessions with gaps | Fraction of check-in windows where the service was killed | Cristea |
 | Upload latency | Segment `started_at` to server accept | Ionut |
 | Accepted vs rejected segments, fraud flags by rule | Prometheus counters and `fraud_flag` | Ionut |
