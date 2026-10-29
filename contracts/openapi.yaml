@@ -26,8 +26,8 @@ info:
     5xx and network errors with exponential backoff and jitter (connect timeout 10 s, read timeout 20 s).
     Raw pressure or step streams never appear in any request.
 servers:
-  - url: https://api.example.invalid/v1
-    description: Placeholder host. The real host is set when the server is deployed.
+  - url: https://api.floorwars.me/v1
+    description: Production host (domain floorwars.me, Azure VM). Use the Prism mock or a local server while the VM is stopped.
 security:
   - bearerAuth: []
 tags:

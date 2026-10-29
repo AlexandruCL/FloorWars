@@ -15,7 +15,7 @@ The full project reference and six-week plan is [`IMPLEMENTATION_PLAN.md`](IMPLE
 | Week 1, real phones | Done 2026-10-29: 21 real traces in `/traces` (SM-S918B, SM-G985F, all six labels), phone checks passed, checker 20 PASS and 1 reviewed FAIL. |
 | Building territory | Plan, scoring rule, floor-equivalent helper and contract 0.2.0-draft (`GET /buildings/{id}/standings`, `building_flipped`) merged and reviewed by both members |
 | Backend, week 1 | Done: FastAPI skeleton (`/healthz`, `/metrics` stub, JSON logs), Alembic baseline with 7 tables (`user`, `device`, `team`, `season`, `team_membership`, `building`, `refresh_token`), server tests. API endpoints start in week 2 |
-| Infra, week 1 | Done: deployed on the Azure VM `floorwars-vm` (Sweden Central, B2als_v2, hardened) with Docker Compose, Caddy and Let's Encrypt. `/healthz` answers over HTTPS at `https://api.4.223.83.29.sslip.io/healthz`. Real domain pending (`floorwars.me` claim with Namecheap) |
+| Infra, week 1 | Done: deployed on the Azure VM `floorwars-vm` (Sweden Central, B2als_v2, hardened) with Docker Compose, Caddy and Let's Encrypt. `/healthz` answered over HTTPS at `https://api.4.223.83.29.sslip.io/healthz`. The domain `floorwars.me` is registered and `api.floorwars.me` points at the VM; the server switches to that name at its next start (see open work) |
 | CI, week 1 | Done: `server` workflow (ruff, mypy, pytest with PostGIS on pull requests, multi-arch image pushed to GHCR for every commit on `main`). Deploy from CI is week 2 |
 | Notifications | No Firebase (course rule, 2026-10-29). Own channel planned for week 4: `game_event` feed, WebSocket replay from the Kotlin sensing service, polling fallback, local notifications (plan 7.2.1) |
 | Fakes and mock | Done: `tools/fake_segments/` and a Prism mock config (`contracts/prism/`) |
@@ -49,7 +49,8 @@ Dates are when the decision was made. The rule that is in force is in the plan a
 | 2026-10-25 | Production VM in Sweden Central (the student subscription only allows a short list of EU regions; West Europe is blocked). Size B2als_v2 (2 vCPU, 4 GiB, about $28 a month), no availability zone, separate 32 GiB encrypted data disk. | `docs/cost.md`, `docs/runbook.md` |
 | 2026-10-25 | The VM pulls the repo with a read-only GitHub deploy key and pulls the public GHCR image `ghcr.io/alexandrucl/floorwars-api`. | `docs/runbook.md` |
 | 2026-10-25 | CI builds an image for every commit on `main`, because `deploy.sh` pulls the image tagged with the deployed commit. Pull requests keep the path filter. | `.github/workflows/server.yml` |
-| 2026-10-25 | Until the real domain is ready the API name is `api.4.223.83.29.sslip.io` (resolves to the VM, certificate from Let's Encrypt). Switching is one line in `infra/.env`. | `infra/.env.example` |
+| 2026-10-25 | Until the real domain is ready the API name is `api.4.223.83.29.sslip.io` (resolves to the VM, certificate from Let's Encrypt). Switching is one line in `infra/.env`. Replaced on 2026-10-29 by `api.floorwars.me`. | `infra/.env.example` |
+| 2026-10-29 | The API address is `https://api.floorwars.me` (domain `floorwars.me` from the GitHub Student Pack, DNS `A api -> 4.223.83.29`, no other records). | `contracts/openapi.yaml`, `cristea/vm_guide.md` |
 | 2026-10-25 | ~~Firebase project for FCM only~~ Replaced on 2026-10-29, see the next row. | |
 | 2026-10-29 | No Firebase or managed push service (professor's rule). Notifications use our own channel: `game_event` table, WebSocket replay from the Kotlin sensing service, WorkManager polling fallback, local Android notifications. The FCM key and the Firebase project are deleted. | Plan section 7.2.1 |
 
@@ -90,7 +91,7 @@ Starting values are ours and tunable from real data: 1 point per verified step, 
 
 - Real-phone tests and real recordings: see `cristea/phone_tests.md`.
 - Backend and database (weeks 2 to 5): see the plan. First in line for week 2: auth, check-in, a separate database role for migrations, and an async DB session before the first `/v1` route (see `server/docs/er_review.md`).
-- Domain: finish the `floorwars.me` claim with Namecheap, add the `A` record `api` for `4.223.83.29`, set `DOMAIN` in `infra/.env` on the VM and redeploy. Until then the API name is the `sslip.io` stopgap.
+- Domain: DNS is done. When the VM runs again (Azure had a VM allocation outage in Sweden Central on 2026-10-29), set `DOMAIN=api.floorwars.me` in `/srv/floorwars/repo/infra/.env` and redeploy; Caddy then gets the certificate for the new name. If the VM moves to another region, update the `A` record to the new IP.
 - Infra: CI deploy (GitHub runners have changing IPs, the NSG allows team IPs only), a systemd unit that re-runs `deploy.sh` after a reboot (decrypted secrets live on tmpfs), Trivy gate and Caddy rate limiting (week 5), second team-held age recipient in `.sops.yaml`.
 - Auth: replace the stub and remove the dev skip flag (T7 follow-up). Sign release APKs with a real keystore instead of the debug key.
 - CI: the app has no workflow yet. The contract test runs under `npm test` locally. Use `uv sync --locked` in the server workflow.
