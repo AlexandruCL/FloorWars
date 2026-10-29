@@ -20,7 +20,7 @@ You are implementing Cristea's part of Week 2 in `D:\FloorWars`. Work in one ses
 - `app/android/app/src/main/java/com/floorwars/floorsensors/segmenter/Segmenter.kt` and `classifier/Classifier.kt` are 4-line stubs. `classifier/StepScoring.kt` already has the steps-per-metre scoring rule and its thresholds. Do not duplicate it.
 - `TraceCsv.kt` and `SensorEventBuffer.kt` already hold the sample and event types. Reuse them. Do not invent parallel types.
 - Auth is a stub: `app/src/auth/authStub.ts` (Keychain, dummy token) and `DEV_SKIP_SIGN_IN` in `app/src/config/devFlags.ts`. `app/src/api/client.ts` and `schema.ts` exist. Sign-in and check-in screens are placeholders in `app/src/screens/PlaceholderScreens.tsx`.
-- Trace folder: the spec says `/traces`, the repo uses `fixtures/`. Use `fixtures/synthetic/` and `traces/` until Cristea decides otherwise. Do not move files.
+- Trace folders: real traces in `traces/` (with `labels.csv`), synthetic in `fixtures/synthetic/`. Do not move files.
 - `docs/evaluation.md` does not exist yet. You create it in W2-3.
 
 ## 2. Documents to read (and only these)
