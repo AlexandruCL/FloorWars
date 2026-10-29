@@ -135,7 +135,7 @@ Phone checks done 2026-10-29: the service keeps logging for 60 s with the screen
 **Plan ref:** 10 (Cristea, last bullet), 9 (test devices)
 
 **Scope**
-- Write `/docs/devices.md`: exact manufacturer, model, Android version, barometer yes or no, battery-optimisation setting, and any manufacturer-specific behaviour seen during recording.
+- Write `/docs/devices.md`: exact manufacturer, model, barometer yes or no, and any manufacturer-specific behaviour seen during recording.
 
 **Done when**
 - Both devices are listed with exact model strings.

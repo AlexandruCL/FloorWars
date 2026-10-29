@@ -70,7 +70,7 @@ Record the results per phone in `docs/devices.md`.
 | 8 | Open the CSV in a spreadsheet app | Opens; header matches the phone, label and placement |
 | 9 | Pressure rows | Present if `has_barometer` is true, about 50 per second, with timestamps |
 | 10 | Step rows | Present if the phone has a step detector, during walking or stairs |
-| 11 | Record the phone | Exact `device_model` string, Android version, `has_barometer`, step detector yes/no, battery setting, anything phone-specific |
+| 11 | Record the phone | Exact `device_model` string, `has_barometer`, step detector yes/no, anything phone-specific |
 
 Also record T3's open decision on the partial wake lock and the base `FOREGROUND_SERVICE` permission: check 5 tells us whether the wake lock is needed on this phone.
 
@@ -112,7 +112,7 @@ Save each recording as the app exports it. Don't edit the CSV.
 - **T4 phone checks:** step rows; CSV opened in a spreadsheet; share sheet on a device.
 - **T5 real recordings:** the data collection in section 3 above.
 - **Validate the synthetic traces** against real data: `docs/trace_format.md` section 6.
-- **T6 phone details:** exact manufacturer, model, Android version, barometer and battery settings for both phones.
+- **T6 phone details:** exact manufacturer, model and barometer for both phones.
 - **T8 device test:** install, skip, logger, 30 s recording, share, CSV contents on a device.
 - **Exit check:** the app installs on both phones, and there are 20 real traces.
 
