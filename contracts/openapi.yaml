@@ -1,11 +1,14 @@
 openapi: 3.1.0
 info:
   title: FloorWars API
-  version: 0.2.0-draft
+  version: 0.3.0-draft
   description: |
     Approved by both members on 2026-10-21. Every later change is a PR reviewed by the other member.
 
     Changelog:
+    - 0.3.0-draft (2026-10-29): no Firebase (course rule, plan 7.2.1). POST /devices/push-token and
+      PushTokenRequest removed. Added GET /me/events (notification feed), event_id on WebSocket events,
+      and since on WS /ws to replay missed events on connect.
     - 0.2.0-draft (2026-10-22): building territory (plan sections 2, 3.3, 5, 6). Territory is per
       building and points are verified stair steps; floors are no longer a game unit.
       GET /buildings/{id}/floors replaced by GET /buildings/{id}/standings; Building drops floor_count;
@@ -35,7 +38,6 @@ tags:
   - name: buildings
   - name: leaderboards
   - name: me
-  - name: devices
   - name: config
   - name: realtime
 
@@ -342,22 +344,33 @@ paths:
               schema: { $ref: '#/components/schemas/SegmentPage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  /devices/push-token:
-    post:
-      tags: [devices]
-      operationId: registerPushToken
-      summary: Register the device push token
-      description: Stored per device. Tokens that FCM rejects are deleted.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/PushTokenRequest' }
+  /me/events:
+    get:
+      tags: [me]
+      operationId: listMyEvents
+      summary: Game events for the player's team after a given id (notification feed)
+      description: |
+        Plan 7.2.1. Fallback for notifications when no WebSocket is open (WorkManager polls it), and
+        the same feed the WebSocket replays on connect. Events are ordered by event_id ascending.
+        The client stores the highest event_id it has handled and passes it as since.
+      parameters:
+        - name: since
+          in: query
+          required: false
+          description: 'Inferred: return events with event_id greater than this. 0 returns the oldest kept events.'
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          required: false
+          description: 'Inferred.'
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
-        '204':
-          description: Stored.
+        '200':
+          description: Events after since, oldest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GameEventPage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
 
   /landing-scans:
     post:
@@ -437,8 +450,15 @@ paths:
         OpenAPI cannot describe WebSocket messages, so this documents the upgrade request only.
         The connection is authenticated on connect. Server-to-client messages are WsEvent:
         building_flipped {building_id, from_team, to_team, at} when a building changes owner, and
-        season_state {paused, ends_at}; see x-websocket-events.
+        season_state {paused, ends_at}; see x-websocket-events. Plan 7.2.1: on connect the server first
+        replays the events after since for the player's team, then streams new ones (at least once;
+        the client ignores event_id values it has handled).
       parameters:
+        - name: since
+          in: query
+          required: false
+          description: 'Inferred: replay events with event_id greater than this before live events.'
+          schema: { type: integer, minimum: 0 }
         - name: access_token
           in: query
           required: false
@@ -949,23 +969,20 @@ components:
           type: [string, 'null']
           description: 'Inferred: cursor pagination; null on the last page.'
 
-    PushTokenRequest:
+    GameEventPage:
       type: object
-      required: [device_id, token]
+      required: [items, last_event_id]
       properties:
-        device_id:
-          type: string
-          format: uuid
-          description: 'Inferred: how the server knows which device the token belongs to.'
-        token:
-          type: string
-          description: FCM registration token.
-        platform:
-          type: string
-          enum: [android]
-          default: android
-          description: 'Inferred: Android only for now.'
-      additionalProperties: false
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WsEvent' }
+        last_event_id:
+          type: integer
+          minimum: 0
+          description: 'Inferred: highest event_id in items, or the since value when items is empty. Pass it as since next time.'
+        has_more:
+          type: boolean
+          description: 'Inferred: true when more events follow; call again with since=last_event_id.'
 
     LandingScanRequest:
       type: object
@@ -1038,6 +1055,10 @@ components:
           required: [type]
           properties:
             type: { type: string, const: building_flipped }
+            event_id:
+              type: integer
+              minimum: 1
+              description: 'Inferred: id of the stored game event (plan 7.2.1); grows over time; used for since.'
         - $ref: '#/components/schemas/BuildingFlip'
 
     SeasonStateEvent:
@@ -1046,6 +1067,10 @@ components:
       required: [type, paused, ends_at]
       properties:
         type: { type: string, const: season_state }
+        event_id:
+          type: integer
+          minimum: 1
+          description: 'Inferred: id of the stored game event (plan 7.2.1); grows over time; used for since.'
         paused: { type: boolean }
         ends_at: { type: string, format: date-time }
 
