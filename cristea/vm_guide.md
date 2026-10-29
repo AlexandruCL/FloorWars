@@ -6,8 +6,8 @@ How to start the backend server, check it, and stop it again from your own compu
 |---|---|
 | VM | `floorwars-vm` in resource group `floorwars-rg`, Azure subscription "Azure for Students" (Ionut's), region Sweden Central |
 | Public IP | `4.223.83.29` (static, does not change when the VM stops) |
-| API address | `https://api.4.223.83.29.sslip.io` (temporary name until the real domain works) |
-| Health check | `https://api.4.223.83.29.sslip.io/healthz` returns `{"status":"ok"}` |
+| API address | `https://api.floorwars.me` (DNS `A api` points at the VM IP; the server switches to this name when the VM next starts. Until then `https://api.4.223.83.29.sslip.io` works) |
+| Health check | `https://api.floorwars.me/healthz` returns `{"status":"ok"}` |
 
 The VM is **stopped most of the time** to save the student credit. Start it when you need the server, stop it when you are done.
 
@@ -77,15 +77,15 @@ It takes about 40 seconds and ends with `deploy of <sha> done`.
 From your computer:
 
 ```powershell
-curl.exe -i https://api.4.223.83.29.sslip.io/healthz
+curl.exe -i https://api.floorwars.me/healthz
 ```
 
 Expected: `HTTP/1.1 200 OK` and `{"status":"ok"}`.
 
-If you get a certificate error, your network's DNS may be answering for the `sslip.io` name (this happened on Ionut's home network). Test past it with:
+If you get a certificate error, your network's DNS may be answering for the name (this happened on Ionut's home network with the old `sslip.io` name). Test past it with:
 
 ```powershell
-curl.exe -i --resolve api.4.223.83.29.sslip.io:443:4.223.83.29 https://api.4.223.83.29.sslip.io/healthz
+curl.exe -i --resolve api.floorwars.me:443:4.223.83.29 https://api.floorwars.me/healthz
 ```
 
 or set your computer's DNS to `1.1.1.1`. Phones on mobile data are not affected.
@@ -102,7 +102,7 @@ Always use `sudo -E` with `docker compose`, otherwise it complains that `API_TAG
 
 ### 5. Point the app at the server
 
-In the app, the API base URL is a placeholder (`app/src/api/client.ts`). For tests against the real server use `https://api.4.223.83.29.sslip.io/v1`. In week 1 only `/healthz` exists; the `/v1` endpoints come from week 2 on. Until then, use the Prism mock (`contracts/prism/README.md`).
+In the app, the API base URL is a placeholder (`app/src/api/client.ts`). For tests against the real server use `https://api.floorwars.me/v1`. In week 1 only `/healthz` exists; the `/v1` endpoints come from week 2 on. Until then, use the Prism mock (`contracts/prism/README.md`).
 
 ### 6. Stop the VM when you are done
 
