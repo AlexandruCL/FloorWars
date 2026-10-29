@@ -140,7 +140,7 @@ services:
 
 networks:
   edge: {} # Caddy only; the one network with published ports
-  app: {} # api (and later workers); outbound internet for FCM/e-mail
+  app: {} # api (and later workers); outbound internet for e-mail
   data:
     internal: true # postgres and valkey: no route to the internet, no published ports
   monitoring: {} # exporters (Week 5)

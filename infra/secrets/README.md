@@ -44,7 +44,6 @@ Postgres and Valkey read their own files (`postgres_password`, `valkey_password`
 | `jwt_signing_key` | api | Week 2 | EdDSA/ES256 private key, rotated each semester (plan 7.9). PEM is multi-line: store as `.enc.yaml`/`.enc.json` or extend `deploy.sh` before adding it |
 | `qr_hmac_key` | api | Week 2 | 32 random bytes, hex |
 | `smtp_*` / ACS e-mail credentials | api / worker | Week 2 | Azure Communication Services Email or an SMTP relay |
-| `fcm-service-account.json` | worker | Week 4 | From `fcm-service-account.enc.json` (plan 7.2.1) |
 | `migration_database_url` | `deploy.sh` migrations | Week 2 | Role with DDL rights; the app role has none (plan 7.7) |
 
 Week 1 suggestion: keep the four Week 1 values in one `app.enc.env`:
@@ -67,8 +66,8 @@ Needs `sops` 3.9 or newer and `age`. Run from the repo root. `.sops.yaml` matche
 ```sh
 # new secret file from a plaintext file outside the repo
 sops --encrypt --filename-override infra/secrets/app.enc.env ~/tmp/app.env > infra/secrets/app.enc.env
-sops --encrypt --filename-override infra/secrets/fcm-service-account.enc.json \
-  ~/Downloads/<key>.json > infra/secrets/fcm-service-account.enc.json
+sops --encrypt --filename-override infra/secrets/<name>.enc.json \
+  ~/Downloads/<key>.json > infra/secrets/<name>.enc.json
 
 # edit in place (opens $EDITOR on the decrypted content, re-encrypts on save)
 sops infra/secrets/app.enc.env

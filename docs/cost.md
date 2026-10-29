@@ -27,7 +27,7 @@ over time: verify in the Azure pricing calculator
 
 Not included (free or not used): Azure DNS (optional, ~0.5 per zone), Communication Services
 Email (pay per message, cents for our volume), Application Insights availability test (free
-tier), GHCR and GitHub Actions (Student Pack), FCM (free), Let's Encrypt (free).
+tier), GHCR and GitHub Actions (Student Pack), Let's Encrypt (free). No Firebase or managed push service (plan 7.2.1).
 
 ## What the credit covers
 
