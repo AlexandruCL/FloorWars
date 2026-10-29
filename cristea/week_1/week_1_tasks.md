@@ -19,10 +19,10 @@ Updated after each Worker report. A box is ticked only when the report shows the
 - [x] T3. Foreground service with sensor registration (branch `feat/t3-foreground-service`, 3 commits; emulator checks pass; phone checks deferred until real phones are available)
 - [x] T4. Sensor logger screen (merged to `main` via PR #4; emulator checks pass; step rows and phone checks deferred until real phones are available)
 - [x] T5. Record labelled traces and commit them (PR #7 synthetic set; 21 real traces in `/traces` with `labels.csv`, recorded 2026-10-25 to 2026-10-29 on SM-S918B and SM-G985F, all six labels; checker 20 PASS, 1 FAIL reviewed and accepted, see `docs/trace_format.md` section 7)
-- [x] T6. Document test devices (PR #8; `docs/devices.md` now lists both phones. Android version and battery setting not recorded)
+- [x] T6. Document test devices (PR #8; `docs/devices.md` now lists both phones)
 - [x] T7. Generate TS API client and auth stub (PR #9, stacked on #5 contract and #6 T8; Ionut ran the shell and confirmed it starts; contract test runs under `npm test`, no CI yet)
 
-Phone checks done 2026-10-29: the service keeps logging for 60 s with the screen locked, the share sheet works, the CSV opens. Open for later: compare the synthetic generator with the real numbers (10 Hz on the SM-G985F, 6.7 to 8.7 steps per metre in the pocket); Android version and battery setting for both phones.
+Phone checks done 2026-10-29: the service keeps logging for 60 s with the screen locked, the share sheet works, the CSV opens. Open for later: compare the synthetic generator with the real numbers (10 Hz on the SM-G985F, 6.7 to 8.7 steps per metre in the pocket).
 
 ---
 

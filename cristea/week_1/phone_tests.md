@@ -4,7 +4,7 @@ Last updated: 2026-10-22. Source of truth for the task list: `cristea/week_1_tas
 
 ## Summary
 
-All week 1 tasks are implemented in code (T1 to T7), and the test build for a friend's phone is ready. Update 2026-10-29: 21 real traces are in `/traces` with `labels.csv`, from two phones. Checker: 20 PASS, 1 FAIL (check 5, a pause, accepted). The 60 s screen-off run, share sheet and CSV export were checked on the phones and work. Sections below that list this as open are done, except the Android version and battery setting in `docs/devices.md`.
+All week 1 tasks are implemented in code (T1 to T7), and the test build for a friend's phone is ready. Update 2026-10-29: 21 real traces are in `/traces` with `labels.csv`, from two phones. Checker: 20 PASS, 1 FAIL (check 5, a pause, accepted). The 60 s screen-off run, share sheet and CSV export were checked on the phones and work. Sections below that list this as open are done.
 
 ## Tasks
 
@@ -15,10 +15,10 @@ All week 1 tasks are implemented in code (T1 to T7), and the test build for a fr
 | T3 Foreground service | Done, merged | #3 (`bdeff89`) | Phone checks passed 2026-10-29 (notification, `has_barometer`, 60 s with screen locked) |
 | T4 Sensor logger screen | Done, merged | #4 (`1b83082`) | CSV export and share sheet verified on emulator. Step rows, CSV and share sheet verified on both phones 2026-10-29 |
 | T5 Labelled traces | Done | #7 | 24 synthetic traces plus 21 real traces in `/traces` with `labels.csv`; checker 20 PASS, 1 reviewed FAIL |
-| T6 Test devices doc | Done | #8 | `docs/devices.md` lists both phones; Android version and battery setting not recorded |
+| T6 Test devices doc | Done | #8 | `docs/devices.md` lists both phones |
 | T7 TS API client and auth stub | Done. Ionut confirmed the shell starts | #9 | Stacked on the contract (#5) and T8 (#6). Contract test runs under `npm test` (no CI yet) |
 | Contract `openapi.yaml` | Approved by both | #5 | Inferred fields marked in the file |
-| T8 Release test build | Done, device test not run | #6 | `DEV_SKIP_SIGN_IN` flag, release APK built, static checks only |
+| T8 Release test build | Done | #6 | `DEV_SKIP_SIGN_IN` flag, release APK built, installed and tested on both phones |
 
 Merge order: #5 (contract), #6 (T8), #7 (T5), #8 (T6), #9 (T7).
 
@@ -39,7 +39,7 @@ Decided 2026-10-22, reviewed by Ionut. Source of truth: `IMPLEMENTATION_PLAN.md`
 ## Verification
 
 - Checks passed on the emulator or in Jest, as listed in each PR.
-- The release APK (T8) has not run on a device. Emulator was skipped for memory.
+- The release APK (T8) was installed and tested on both phones.
 - The T7 keychain flow is covered by Jest with a mock only.
 - Trace checker: 24/24 synthetic traces pass (checks 1 to 9).
 
@@ -127,7 +127,7 @@ Save each recording as the app exports it. Don't edit the CSV.
 
 ## Friend test workflow
 
-Status: the release APK is built (T8), but has not run on a device and has not been sent. Use the steps in "Real-phone work, 1. Install the app" and the check table above.
+Status: the release APK (T8) was installed and tested on both phones. Use the steps in "Real-phone work, 1. Install the app" and the check table above.
 
 On the friend's phone, the test flow is:
 1. Open FloorWars, tap **Skip sign-in (dev)**, then **Sensor logger** on Home.

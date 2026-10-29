@@ -12,7 +12,7 @@ The full project reference and six-week plan is [`IMPLEMENTATION_PLAN.md`](IMPLE
 |---|---|
 | Week 1, code | Done: app shell, Kotlin sensor module, foreground service, sensor logger, API client and auth stub, contract, release test build |
 | Week 1, synthetic data | Done: 24 labelled synthetic traces, generator, checker, trace spec |
-| Week 1, real phones | Done 2026-10-29: 21 real traces in `/traces` (SM-S918B, SM-G985F, all six labels), phone checks passed, checker 20 PASS and 1 reviewed FAIL. Android version and battery setting for both phones still to note in `docs/devices.md` |
+| Week 1, real phones | Done 2026-10-29: 21 real traces in `/traces` (SM-S918B, SM-G985F, all six labels), phone checks passed, checker 20 PASS and 1 reviewed FAIL. |
 | Building territory | Plan, scoring rule, floor-equivalent helper and contract 0.2.0-draft (`GET /buildings/{id}/standings`, `building_flipped`) merged and reviewed by both members |
 | Backend, week 1 | Done: FastAPI skeleton (`/healthz`, `/metrics` stub, JSON logs), Alembic baseline with 7 tables (`user`, `device`, `team`, `season`, `team_membership`, `building`, `refresh_token`), server tests. API endpoints start in week 2 |
 | Infra, week 1 | Done: deployed on the Azure VM `floorwars-vm` (Sweden Central, B2als_v2, hardened) with Docker Compose, Caddy and Let's Encrypt. `/healthz` answers over HTTPS at `https://api.4.223.83.29.sslip.io/healthz`. Real domain pending (`floorwars.me` claim with Namecheap) |
