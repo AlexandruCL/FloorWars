@@ -39,14 +39,14 @@ class StepScoringTest {
     @Test
     fun boundsAreInclusive() {
         assertEquals(8, stepsScored(steps = 8, ascentM = 2.0))
-        assertEquals(16, stepsScored(steps = 16, ascentM = 2.0))
+        assertEquals(20, stepsScored(steps = 20, ascentM = 2.0))
         assertEquals(480, stepsScored(steps = 480, ascentM = 120.0))
     }
 
     @Test
     fun justOutsideTheBoundsScoresZero() {
         assertEquals(0, stepsScored(steps = 7, ascentM = 2.0))
-        assertEquals(0, stepsScored(steps = 17, ascentM = 2.0))
+        assertEquals(0, stepsScored(steps = 21, ascentM = 2.0))
         assertEquals(0, stepsScored(steps = 10, ascentM = 1.99))
         assertEquals(0, stepsScored(steps = 500, ascentM = 120.1))
         assertEquals(0, stepsScored(steps = 10, ascentM = Double.NaN))

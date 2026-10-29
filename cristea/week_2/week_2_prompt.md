@@ -16,11 +16,11 @@ You are implementing Cristea's part of Week 2 in `D:\FloorWars`. Work in one ses
 
 ## 1. Current state (checked 2026-10-27)
 
-- Week 1 is done on code and synthetic data. Real-phone checks and real labelled traces are **not done** (`cristea/week_1/phone_tests.md`). `fixtures/real_data/` holds 4 real CSVs (stairs_up, stairs_down, elevator_up, blow, all hand placement) as of 2026-10-27. They are untracked, so not committed. Week 1 exit needs 20 across all six labels and two phones.
+- Week 1 is validated and complete (2026-10-29). `traces/` holds 21 real, committed CSVs with `labels.csv`: all six labels, placements hand, pocket and bag, phones SM-S918B (about 25 Hz pressure) and SM-G985F (10 Hz pressure, step events up to 240 ms behind pressure). Real stairs give 4.3 to 8.7 steps per metre (pocket highest), so the stairs band is 4 to 10. Elevator traces exist only for the SM-S918B. Do not assume a pressure rate or a strict event order: size smoothing windows in seconds, not samples, and tolerate out-of-order step events.
 - `app/android/app/src/main/java/com/floorwars/floorsensors/segmenter/Segmenter.kt` and `classifier/Classifier.kt` are 4-line stubs. `classifier/StepScoring.kt` already has the steps-per-metre scoring rule and its thresholds. Do not duplicate it.
 - `TraceCsv.kt` and `SensorEventBuffer.kt` already hold the sample and event types. Reuse them. Do not invent parallel types.
 - Auth is a stub: `app/src/auth/authStub.ts` (Keychain, dummy token) and `DEV_SKIP_SIGN_IN` in `app/src/config/devFlags.ts`. `app/src/api/client.ts` and `schema.ts` exist. Sign-in and check-in screens are placeholders in `app/src/screens/PlaceholderScreens.tsx`.
-- Trace folder: the spec says `/traces`, the repo uses `fixtures/`. Use `fixtures/synthetic/` and `fixtures/real_data/` until Cristea decides otherwise. Do not move files.
+- Trace folder: the spec says `/traces`, the repo uses `fixtures/`. Use `fixtures/synthetic/` and `traces/` until Cristea decides otherwise. Do not move files.
 - `docs/evaluation.md` does not exist yet. You create it in W2-3.
 
 ## 2. Documents to read (and only these)
@@ -142,7 +142,7 @@ Do not run `git checkout` in `D:\FloorWars`. Check `git worktree list` after eac
 
 *Delegate: `w2-replay-harness` (same worktree, after W2-2 is committed). It also runs W2-4.*
 
-- [ ] JUnit harness that runs the segmenter and classifier on every CSV in `fixtures/synthetic/` (and `fixtures/real_data/` if it has files). Read the label and placement from the CSV header and `labels.csv`.
+- [ ] JUnit harness that runs the segmenter and classifier on every CSV in `fixtures/synthetic/` (and `traces/` if it has files). Read the label and placement from the CSV header and `labels.csv`.
 - [ ] Print a confusion matrix (counts per label and per predicted class) and the file count. The harness never writes to `fixtures/`.
 - [ ] Create `docs/evaluation.md` with three sections: "Confusion matrix", "Baseline", "Validation log". Baseline states that numbers come from synthetic data unless the real set is present. Synthetic numbers are not evaluation (`fixtures/synthetic/README.md`).
 - [ ] Record the commit SHA and the data folder used in the Baseline section.
@@ -153,9 +153,9 @@ Do not run `git checkout` in `D:\FloorWars`. Check `git worktree list` after eac
 
 *Delegate: `w2-replay-harness`, as the last step of its run.*
 
-- [ ] Check `fixtures/real_data/` and `labels.csv`. Count the traces per label and per phone.
+- [ ] Check `traces/` and `labels.csv`. Count the traces per label and per phone.
 - [ ] If there are fewer than 20 real labelled traces, or any label is missing, write that in the Baseline section and under "Blocked" in section 4. Do not tune thresholds on synthetic data alone.
-- [ ] If real traces exist: run `python tools/validate_traces/validate.py fixtures/real_data` and log the result in the validation log of `docs/trace_format.md` section 7. Tune a threshold only with logged evidence, and only in the constants block.
+- [ ] If real traces exist: run `python tools/validate_traces/validate.py traces` and log the result in the validation log of `docs/trace_format.md` section 7. Tune a threshold only with logged evidence, and only in the constants block.
 - Done when: the gate status is written down, with the counts.
 
 ### W2-5 Auth screens, token storage, refresh (Track B, React Native)

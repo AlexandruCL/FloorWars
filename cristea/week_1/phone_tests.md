@@ -4,7 +4,7 @@ Last updated: 2026-10-22. Source of truth for the task list: `cristea/week_1_tas
 
 ## Summary
 
-All week 1 tasks are implemented in code (T1 to T7), and the test build for a friend's phone is ready. Week 1 is complete on code and synthetic data, as agreed. Real-phone validation and real recordings are the next work, described below.
+All week 1 tasks are implemented in code (T1 to T7), and the test build for a friend's phone is ready. Update 2026-10-29: 21 real traces are in `/traces` with `labels.csv`, from two phones. Checker: 20 PASS, 1 FAIL (check 5, a pause, accepted). The 60 s screen-off run, share sheet and CSV export were checked on the phones and work. Sections below that list this as open are done, except the Android version and battery setting in `docs/devices.md`.
 
 ## Tasks
 
@@ -118,7 +118,7 @@ Save each recording as the app exports it. Don't edit the CSV.
 
 ## Open (decisions)
 
-- **Real data folder:** `fixtures/real_data` (as the user proposed) versus `/traces` (the T5 spec). Decide, then update the spec.
+- **Real data folder:** decided 2026-10-29: `/traces`.
 - **Committing real CSVs:** they contain device details and timings. Keep them outside the repo, or commit them? Read each header before committing either way.
 - **Dev skip sign-in:** `DEV_SKIP_SIGN_IN` stays on for the friend test build. Remove or set to false when the real auth replaces the stub (later week).
 - **TypeScript override:** `openapi-typescript` 7.13.0 uses a scoped override for TypeScript 6. Remove when a release accepts TypeScript 6. Alternative: pin 6.7.6 and change the client types.

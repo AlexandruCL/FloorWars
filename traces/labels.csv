@@ -1,0 +1,22 @@
+file,label,placement,device,floor_range,notes
+blow_hand_20261025T125435Z.csv,blow,hand,samsung SM-S918B,n/a,real
+blow_hand_20261028T214650Z.csv,blow,hand,samsung SM-G985F,n/a,real
+blow_hand_20261029T120838Z.csv,blow,hand,samsung SM-G985F,n/a,real
+elevator_up_hand_20261026T083914Z.csv,elevator_up,hand,samsung SM-S918B,n/a,real
+elevator_up_pocket_20261029T121310Z.csv,elevator_up,pocket,samsung SM-S918B,n/a,real
+shake_hand_20261025T124730Z.csv,shake,hand,samsung SM-S918B,n/a,real
+shake_hand_20261028T215219Z.csv,shake,hand,samsung SM-G985F,n/a,real
+shake_hand_20261029T120938Z.csv,shake,hand,samsung SM-G985F,n/a,real
+stairs_down_hand_20261025T163706Z.csv,stairs_down,hand,samsung SM-S918B,n/a,real
+stairs_down_hand_20261028T215742Z.csv,stairs_down,hand,samsung SM-G985F,n/a,real
+stairs_down_pocket_20261029T101737Z.csv,stairs_down,pocket,samsung SM-G985F,n/a,check 1 tolerance widened: step 240 ms behind pressure; 8.6 steps/m
+stairs_down_pocket_20261029T103144Z.csv,stairs_down,pocket,samsung SM-G985F,n/a,real
+stairs_up_hand_20261025T164024Z.csv,stairs_up,hand,samsung SM-S918B,n/a,real
+stairs_up_hand_20261028T215838Z.csv,stairs_up,hand,samsung SM-G985F,n/a,real
+stairs_up_pocket_20261029T103032Z.csv,stairs_up,pocket,samsung SM-G985F,n/a,real
+walk_flat_bag_20261029T102519Z.csv,walk_flat,bag,samsung SM-G985F,n/a,real
+walk_flat_bag_20261029T102901Z.csv,walk_flat,bag,samsung SM-G985F,n/a,real
+walk_flat_hand_20261025T124514Z.csv,walk_flat,hand,samsung SM-S918B,n/a,real
+walk_flat_hand_20261028T215936Z.csv,walk_flat,hand,samsung SM-G985F,n/a,"check 5 fails (0.32 Hz): pause or stop before saving, reviewed and accepted"
+walk_flat_pocket_20261029T101947Z.csv,walk_flat,pocket,samsung SM-G985F,n/a,real
+walk_flat_pocket_20261029T102717Z.csv,walk_flat,pocket,samsung SM-G985F,n/a,real

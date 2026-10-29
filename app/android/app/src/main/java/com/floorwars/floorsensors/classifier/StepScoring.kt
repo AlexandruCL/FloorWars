@@ -3,7 +3,7 @@ package com.floorwars.floorsensors.classifier
 // Thresholds from IMPLEMENTATION_PLAN.md 3.3 and 5.2. Tunable after real recordings.
 object ScoringThresholds {
     const val MIN_STEPS_PER_METRE = 4.0
-    const val MAX_STEPS_PER_METRE = 8.0
+    const val MAX_STEPS_PER_METRE = 10.0
     const val MIN_ASCENT_M = 2.0
     const val MAX_ASCENT_M = 120.0
 }

@@ -17,16 +17,16 @@ from pathlib import Path
 MIN_PRESSURE_S = 10.0  # check 2: span of pressure readings
 MIN_PRESSURE_S_SHORT = 4.0  # check 2: same, for shake and blow (short by nature)
 MAX_PRESSURE_GAP_S = 1.0  # check 2: longest allowed gap between pressure readings
-PRESSURE_HZ = (20.0, 100.0)  # check 3
+PRESSURE_HZ = (5.0, 100.0)  # check 3: SM-G985F delivers 10 Hz at SENSOR_DELAY_GAME
 PRESSURE_HPA = (800.0, 1100.0)  # check 4
 STEP_HZ = (1.0, 3.0)  # check 5: (steps - 1) / (last step - first step), so needs 2+ steps
 STAIRS_NET_HPA = (0.3, 3.0)  # check 6: size of the net change; up falls, down rises
 ELEVATOR_NET_HPA = (1.0, 4.0)  # check 7: size of the net change; elevator_up falls
 NET_WINDOW_S = 1.0  # checks 6, 7, 9: net change compares the first and last second (section 3)
-BACKWARDS_TOLERANCE_NS = 2_000_000  # check 1: pressure and step events from two sensors can arrive <2 ms out of order
+BACKWARDS_TOLERANCE_NS = 300_000_000  # check 1: step events can arrive up to 240 ms behind pressure on the SM-G985F (10 Hz pressure)
 ELAPSED_TOLERANCE_S = 0.0015  # check 1: elapsed_s is rounded to 3 decimals
 HPA_PER_M = 0.12  # check 9: net pressure change to metres of height (plan 3.3)
-STAIRS_STEPS_PER_M = (4.0, 8.0)  # check 9: stairs_up/down, steps per metre of net height change
+STAIRS_STEPS_PER_M = (4.0, 10.0)  # check 9: stairs_up/down, steps per metre of net height change
 ELEVATOR_MAX_STEPS_PER_M = 1.0  # check 9: elevator_up must stay strictly below this
 FLAT_MAX_ASCENT_M = 2.0  # check 9: walk_flat and shake net ascent must stay under this
 

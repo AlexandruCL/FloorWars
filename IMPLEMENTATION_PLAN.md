@@ -161,6 +161,7 @@ PostgreSQL 18 + PostGIS       Valkey: ZINCRBY leaderboards, PUBLISH building_fli
 - Car rides on hills are excluded by GPS speed and the absence of steps.
 - Shaking the phone produces steps without ascent. Blowing on the sensor produces pressure spikes without steps.
 - **Points need a matching pressure change.** A segment scores only if its steps and its pressure change agree: stairs need both a rise in metres and steps at about 6 per metre. Steps with no ascent (shaking, flat walking) score nothing. Ascent with no steps (elevator, or a lift-like rise) scores nothing.
+- Real traces so far (21, two Samsung phones, 2026-10-29): pressure arrives at about 25 Hz (SM-S918B) or 10 Hz (SM-G985F) at `SENSOR_DELAY_GAME`; step events can lag pressure by up to 240 ms; stairs gave 4.3 to 8.7 steps per metre (hand 4.3 to 6.8, pocket 6.7 to 8.7). Segmenter windows must be in seconds, not samples, and must tolerate out-of-order events.
 - Exact thresholds are tuned on labelled pilot data and on the synthetic and real traces (`docs/trace_format.md`). Precision and recall against hand-labelled climbs go into the final report.
 - Server-side checks repeat the plausibility rules, because a modified client cannot be trusted.
 
@@ -169,7 +170,7 @@ Starting thresholds for the rules classifier (ours, all tune):
 | Feature | Stairs | Elevator | Other |
 |---|---|---|---|
 | Vertical speed | 0.1 to 0.9 m/s | above 1.0 m/s | outside both |
-| Steps per metre of ascent | 4 to 8 | below 1 | steps without ascent, or ascent without steps |
+| Steps per metre of ascent | 4 to 10 | below 1 | steps without ascent, or ascent without steps |
 | Window length | 5 s to 3 min | any | any |
 | Points awarded | steps in the window, if both features match | none | none |
 
@@ -589,7 +590,7 @@ Exit: `/healthz` answers over HTTPS; `openapi.yaml` merged; the app installs on 
 Goal: a user can sign in and check in; the segmenter detects climbs offline on recorded traces.
 
 **Cristea**
-- Segmenter v1 in Kotlin (pure, no Android imports): pressure low-pass or median smoothing, ascent-window detection (seconds to minutes), features `ascent_m`, `duration`, `vert_speed_mps`, `steps`, `steps_per_m`, and the pressure-steps match flag.
+- Segmenter v1 in Kotlin (pure, no Android imports): pressure low-pass or median smoothing (window in seconds; real rates are 10 to 25 Hz, and step events can lag pressure by 300 ms), ascent-window detection (seconds to minutes), features `ascent_m`, `duration`, `vert_speed_mps`, `steps`, `steps_per_m`, and the pressure-steps match flag.
 - Rules classifier v1 (stairs, elevator, other) using the starting thresholds in 3.3. Reject shake and blow patterns.
 - JUnit trace-replay harness over `/traces` that prints a confusion matrix. Put baseline numbers in `/docs/evaluation.md`.
 - Auth screens: e-mail, OTP entry, team choice. Keystore token storage, refresh interceptor with rotating refresh token. Generated TS API client wired in.

@@ -17,31 +17,31 @@ adb shell dumpsys deviceidle whitelist | grep com.floorwars
 
 ## Phone 1
 
-Status: pending. The owner does not have the phone yet.
+Status: tested. 6 traces recorded. Fields marked "not recorded" were not captured during the traces; fill them from the phone.
 
 | Field | Value |
 |---|---|
-| Manufacturer (`ro.product.manufacturer`) | pending |
-| Model (`ro.product.model`) | pending |
-| Android version (release / API level) | pending |
-| Barometer | pending |
-| Step detector | pending |
-| Battery-optimisation setting for FloorWars | pending |
-| Manufacturer-specific behaviour seen while recording | pending |
+| Manufacturer (`ro.product.manufacturer`) | samsung |
+| Model (`ro.product.model`) | SM-S918B (Galaxy S23 Ultra) |
+| Android version (release / API level) | not recorded |
+| Barometer | Yes. Pressure rows in every trace, about 25 Hz at `SENSOR_DELAY_GAME` |
+| Step detector | Yes. Step rows in the stairs and walk traces |
+| Battery-optimisation setting for FloorWars | not recorded |
+| Manufacturer-specific behaviour seen while recording | Service kept logging with the screen locked for 60 s. Share sheet and CSV export work.  |
 
 ## Phone 2
 
-Status: pending. The owner does not have the phone yet.
+Status: tested. 15 traces recorded. Fields marked "not recorded" were not captured during the traces; fill them from the phone.
 
 | Field | Value |
 |---|---|
-| Manufacturer (`ro.product.manufacturer`) | pending |
-| Model (`ro.product.model`) | pending |
-| Android version (release / API level) | pending |
-| Barometer | pending |
-| Step detector | pending |
-| Battery-optimisation setting for FloorWars | pending |
-| Manufacturer-specific behaviour seen while recording | pending |
+| Manufacturer (`ro.product.manufacturer`) | samsung |
+| Model (`ro.product.model`) | SM-G985F (Galaxy S20) |
+| Android version (release / API level) | not recorded |
+| Barometer | Yes. Pressure rows in every trace, about 10 Hz at `SENSOR_DELAY_GAME` |
+| Step detector | Yes. Step rows in the stairs and walk traces |
+| Battery-optimisation setting for FloorWars | not recorded |
+| Manufacturer-specific behaviour seen while recording | Service kept logging with the screen locked for 60 s. Share sheet and CSV export work. Pressure arrives at only 10 Hz, and the step detector can lag pressure by up to 240 ms (trace_format.md section 7). |
 
 ## Emulator (not a test device)
 

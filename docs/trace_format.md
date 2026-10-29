@@ -25,7 +25,7 @@ Rules:
 - `label` is one of `stairs_up`, `stairs_down`, `elevator_up`, `walk_flat`, `shake`, `blow`.
 - `placement` is one of `pocket`, `hand`, `bag`.
 - `sensor` is `pressure` or `step`. No other values.
-- `timestamp_ns` is the sensor event time from `SensorEvent.timestamp` (elapsed realtime, nanoseconds). It is non-decreasing within the file, except that pressure and step events from the two sensors may arrive up to 2 ms out of order.
+- `timestamp_ns` is the sensor event time from `SensorEvent.timestamp` (elapsed realtime, nanoseconds). It is non-decreasing within the file, except that pressure and step events from the two sensors may arrive out of order, by up to 300 ms (the SM-G985F step detector lags its 10 Hz pressure stream by up to 240 ms).
 - `elapsed_s` is seconds since the session start (the T4 export writes `(timestamp_ns - session start) / 1e9`), to 3 decimal places. The first row is therefore small but not 0. Checks use differences of `timestamp_ns`, not `elapsed_s` alone.
 - `value` for `pressure` is the reading in hPa. For `step` the value is `1`, written as `1.0` by the app.
 - No names, locations, or other personal data in any field.
@@ -38,7 +38,7 @@ Rules:
 | Pressure per metre of height | ~0.12 hPa/m near sea level | Standard atmosphere (about 12 Pa/m) | Fixed |
 | Storey height | ~3–3.5 m | Building norm. Used only for the floor-equivalent display estimate (20 steps = 1 floor), never for scoring | TO VALIDATE from real stair climbs |
 | Pressure change per storey | ~0.36–0.42 hPa | Storey height × 0.12 hPa/m | Follows from the two rows above |
-| Pressure sampling rate | ~50 Hz on the emulator, ~25 Hz on the Samsung SM-S918B at SENSOR_DELAY_GAME | T3 emulator: 285 events in 5.7 s; S918B real recordings | Validated on one phone; devices may deliver slower or faster |
+| Pressure sampling rate | ~50 Hz on the emulator, ~25 Hz on the Samsung SM-S918B and 10 Hz on the Samsung SM-G985F at SENSOR_DELAY_GAME | T3 emulator: 285 events in 5.7 s; S918B real recordings | Validated on two phones; devices may deliver slower or faster |
 | Step rate while walking | ~1.4–2.1 Hz | Typical adult gait | TO VALIDATE per person |
 | Recording length | ~30 s | T4 spec | Fixed |
 | Sensor noise (`hand`, `pocket`, `bag`) | ~0.01–0.02 hPa std | Assumption from the synthetic model | TO VALIDATE; likely varies by phone |
@@ -65,13 +65,13 @@ A trace is usable when all of these pass:
 
 1. Format and metadata as in section 1.
 2. At least 10 s of pressure readings (4 s for `shake` and `blow`), and no gaps longer than 1 s.
-3. Pressure sampling rate between 20 and 100 Hz.
+3. Pressure sampling rate between 5 and 100 Hz.
 4. Every pressure value between 800 and 1100 hPa.
 5. For `stairs_*` and `walk_flat`: at least one step event, and step rate between 1 and 3 Hz.
 6. For `stairs_up` and `stairs_down`: net pressure change of the expected sign and between 0.3 and 3 hPa (one storey measured about 0.41 hPa).
 7. For `elevator_up`: net change of the expected sign and between 1 and 4 hPa.
 8. `has_barometer` agrees with the pressure rows: `true` if there are pressure rows, `false` if there are none.
-9. Pressure-steps match (plan section 3.3, the scoring rule). For `stairs_up` and `stairs_down`: steps per metre of net ascent between 4 and 8. For `elevator_up`: below 1 step per metre. For `walk_flat` and `shake`: net ascent under 2.0 m, so no points. Points are awarded only when the rule matches. Thresholds are TO VALIDATE from real climbs.
+9. Pressure-steps match (plan section 3.3, the scoring rule). For `stairs_up` and `stairs_down`: steps per metre of net ascent between 4 and 10. For `elevator_up`: below 1 step per metre. For `walk_flat` and `shake`: net ascent under 2.0 m, so no points. Points are awarded only when the rule matches. Measured on 7 real climbs: 4.3–8.7 steps per metre (see section 7).
 
 Check 9 is the anti-cheat rule. A trace that fails it is not a climb, even if the steps and pressure look plausible on their own.
 
@@ -84,7 +84,7 @@ Failed checks don't delete a trace. They mark it for review.
 ## 5. Synthetic vs real
 
 - Synthetic traces (under `fixtures/synthetic/`) follow sections 1–4 and must pass the checker. They prove the format and the checker work. They do not prove the sensor model.
-- Real traces (under `/traces`) are the only ones that count toward T5 and the exit check.
+- Real traces (under `/traces`, with `labels.csv`) are the only ones that count toward T5 and the exit check.
 - After the first phone recordings: compare real values with section 2. For every row marked TO VALIDATE, record the measured value and update this doc. Change the synthetic generator only if the real numbers differ.
 
 ## 6. Validation plan
@@ -100,4 +100,9 @@ Add a row each time a phone recording or an app change tests a claim in this doc
 
 | Date | Source (device or build) | Claim tested | Measured | Change made to this doc or the app |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-10-29 | SM-S918B, SM-G985F; 21 traces in `/traces` | Sampling rate 20–100 Hz (check 3) | S918B ~25 Hz, G985F 10.0 Hz in every file | Check 3 lower bound 20 → 5 Hz |
+| 2026-10-29 | SM-G985F, `stairs_down_pocket_20261029T101737Z` | Out-of-order events within 2 ms (check 1) | Step 240 ms behind pressure; others under 2 ms | Check 1 tolerance 2 → 300 ms |
+| 2026-10-29 | 7 stairs traces, both phones | 4–8 steps per metre (check 9) | hand 4.3–6.8; pocket 6.7–8.7 | Upper bound 8 → 10 in the checker, `StepScoring.kt`, plan 3.3 |
+| 2026-10-29 | 2 elevator traces (S918B only) | Net change 1–4 hPa; no steps | -1.32 and -1.34 hPa over about 21 s (about 11 m, 3 to 4 storeys) in a 21 s recording; ramp duration not measured | None. Elevator speed row: 9–21 s range holds only loosely, one lift |
+| 2026-10-29 | 6 walk_flat traces | Net ascent under 2.0 m; step rate 1–3 Hz | Net 0.0–1.8 m (`walk_flat_bag_20261029T102901Z` at 1.8 m, close to the limit). `walk_flat_hand_20261028T215936Z` 0.32 Hz: steps come in bursts with 10 s+ pauses | None. Check 5 failure on that file reviewed and accepted (pause before saving) |
+| 2026-10-29 | Both phones | Pressure noise 0.01–0.02 hPa std | Flat walk and blow traces 0.013–0.045 hPa std | None |
