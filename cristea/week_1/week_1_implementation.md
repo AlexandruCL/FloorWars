@@ -27,7 +27,7 @@ What does not exist yet: the backend, real auth, uploads, the classifier and seg
 | `contracts/openapi.yaml` | API contract (OpenAPI 3.1), approved |
 | `cristea/` | Cristea's week 1 files: tasks, this implementation note, phone tests |
 | `docs/trace_format.md` | What a trace file must look like and which values are still to validate |
-| `docs/devices.md` | Test device log (emulator entry, phones pending) |
+| `docs/devices.md` | Test device log (both phones and the emulator) |
 | `fixtures/synthetic/` | 24 labelled synthetic traces and `labels.csv`. Not real data |
 | `tools/synthetic_traces/generate.py` | Seeded generator for the synthetic traces |
 | `tools/validate_traces/validate.py` | Checker for trace files, checks 1 to 9 from `docs/trace_format.md` |

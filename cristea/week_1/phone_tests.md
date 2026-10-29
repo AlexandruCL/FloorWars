@@ -12,10 +12,10 @@ All week 1 tasks are implemented in code (T1 to T7), and the test build for a fr
 |---|---|---|---|
 | T1 Init RN app | Done, merged | #1 (`71c08e7`) | Lint, test, tsc pass. Debug APK installed on emulator |
 | T2 Kotlin `FloorSensors` skeleton | Done, merged | #2 (`ad6e8a3`) | ktlint, JUnit, start and stop verified on emulator |
-| T3 Foreground service | Done, merged | #3 (`bdeff89`) | Phone checks pending (section "Real-phone work") |
-| T4 Sensor logger screen | Done, merged | #4 (`1b83082`) | CSV export and share sheet verified on emulator. Step rows and phone checks pending |
-| T5 Labelled traces | Done on synthetic data | #7 | 24 synthetic traces, generator, checker (checks 1 to 9), trace spec. Real recordings pending |
-| T6 Test devices doc | Done, phone entries pending | #8 | `docs/devices.md` with emulator entry and pending phones |
+| T3 Foreground service | Done, merged | #3 (`bdeff89`) | Phone checks passed 2026-10-29 (notification, `has_barometer`, 60 s with screen locked) |
+| T4 Sensor logger screen | Done, merged | #4 (`1b83082`) | CSV export and share sheet verified on emulator. Step rows, CSV and share sheet verified on both phones 2026-10-29 |
+| T5 Labelled traces | Done | #7 | 24 synthetic traces plus 21 real traces in `/traces` with `labels.csv`; checker 20 PASS, 1 reviewed FAIL |
+| T6 Test devices doc | Done | #8 | `docs/devices.md` lists both phones; Android version and battery setting not recorded |
 | T7 TS API client and auth stub | Done. Ionut confirmed the shell starts | #9 | Stacked on the contract (#5) and T8 (#6). Contract test runs under `npm test` (no CI yet) |
 | Contract `openapi.yaml` | Approved by both | #5 | Inferred fields marked in the file |
 | T8 Release test build | Done, device test not run | #6 | `DEV_SKIP_SIGN_IN` flag, release APK built, static checks only |
@@ -43,7 +43,7 @@ Decided 2026-10-22, reviewed by Ionut. Source of truth: `IMPLEMENTATION_PLAN.md`
 - The T7 keychain flow is covered by Jest with a mock only.
 - Trace checker: 24/24 synthetic traces pass (checks 1 to 9).
 
-## Real-phone work (not done)
+## Real-phone work (done 2026-10-29, kept as the procedure)
 
 Everything below needs real Android phones with a barometer. Two phones are the target for week 1 exit.
 
@@ -105,7 +105,7 @@ Save each recording as the app exports it. Don't edit the CSV.
 - At least 20 real labelled traces, all six labels, two phones, with a `labels.csv` row per file. Synthetic traces don't count.
 - Checks 9 and the T3 and T4 phone checks pass, or the failure is logged and understood.
 
-## Open (needs real phones, later)
+## Closed 2026-10-29 (was open; kept for the record)
 
 - **T3 phone checks:** notification on a real device; `has_barometer` correct on both phones; service survives 60 s with the screen off.
 - **T3 decision:** keep or drop the partial wake lock and the base `FOREGROUND_SERVICE` permission, after the phone checks.
