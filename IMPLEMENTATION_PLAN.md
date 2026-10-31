@@ -241,7 +241,7 @@ Third normal form. The only derived data are `team_building_score` and `building
 
 | Table | Columns (key ones) | Notes |
 |---|---|---|
-| `user` | `id uuid PK`, `email citext UNIQUE`, `display_name text`, `created_at timestamptz` | |
+| `user` | `id uuid PK`, `email citext UNIQUE`, `display_name text`, `created_at timestamptz`, `terms_accepted_at timestamptz`, `age_confirmed_at timestamptz` | The two timestamps are set at sign-up (contract 0.4.0: `accept_terms`, `confirm_adult`). |
 | `device` | `id uuid PK`, `user_id FK`, `model text`, `has_barometer bool`, `last_seen_at` | One user, several devices. |
 | `team` | `id int PK`, `code text UNIQUE` (e.g. AC, ETC, MEC), `color_hex text` | A faculty. |
 | `season` | `id int PK`, `active_during tstzrange` with EXCLUDE (no overlap) | Seasons never overlap. |
@@ -253,6 +253,7 @@ Third normal form. The only derived data are `team_building_score` and `building
 | `team_building_score` | `season_id`, `building_id`, `team_id` (composite PK), `points int` | Derived. |
 | `building_claim` | `season_id`, `building_id` (composite PK), `team_id FK`, `claimed_at` | Derived. Current owner per season and building. |
 | `refresh_token` | `id uuid PK`, `user_id FK`, `token_hash bytea UNIQUE`, `family_id uuid`, `revoked_at` | |
+| `otp_challenge` | `id uuid PK`, `email citext`, `code_hash bytea` (`sha256(salt \|\| code)`), `salt bytea`, `attempts smallint CHECK 0..5`, `expires_at`, `consumed_at`, `created_at` | Ours (7.9). Unique partial index on `email WHERE consumed_at IS NULL`: one active code per e-mail; a new request supersedes the old one. |
 
 Our additions (not in the PDF ER diagram): a `config` table of versioned classifier thresholds, a season results table, a QR token or signing-key record for rotating entrance codes, and the append-only `game_event` table that feeds notifications (7.2.1).
 

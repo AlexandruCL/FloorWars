@@ -1,8 +1,23 @@
 # FloorWars server
 
-FastAPI backend (plan sections 4.1, 6 and 7). Current state: scaffold with `/healthz`,
-a stub `/metrics`, settings, structured JSON logging and the baseline database schema
-(Alembic). API routes will live under `/v1`.
+FastAPI backend (plan sections 4.1, 6 and 7). Current state: `/healthz`, a stub `/metrics`,
+settings, structured JSON logging, the database schema (Alembic `0001_baseline`, `0002_auth`) and
+the `/v1/auth/*` sign-in endpoints (contract 0.4.0-draft).
+
+## Code layout (for new features)
+
+| Module | What it gives |
+|---|---|
+| `app/api/v1/__init__.py` | The `/v1` router. A feature adds `app/api/v1/<feature>.py` with its own `router` and lists it in `_FEATURE_ROUTERS`. |
+| `app/api/deps.py` | `CurrentUser` (signed-in `User` from the Bearer access token, else 401 Problem), `DbSession` (sync SQLAlchemy session, no autocommit), `AppSettings`. |
+| `app/api/problems.py` | RFC 9457 errors: raise `ProblemError(status, title, detail, type_=..., headers=..., **ext)` or `unauthorized`, `forbidden`, `not_found`, `conflict`, `too_many_requests`, `service_unavailable`; `problem_doc("...")` documents a problem response in OpenAPI. Validation errors are 422 problems with an `errors` list (no echoed input). |
+| `app/auth/` | Sign-in: `tokens` (EdDSA JWTs), `otp`, `ratelimit` (Valkey token buckets), `repository` (all SQL), `service` (flows), `schemas`. |
+| `app/mail.py` | `MailSender` with `acs`, `log` and `fake` backends. |
+| `app/valkey.py` | Minimal RESP client used by the rate limiter. |
+
+Handlers are plain `def` (FastAPI runs them in its thread pool) on the sync session; SQL lives in
+small repository functions so a later move to async touches one layer. Tests get an access token
+with `tests.auth.helpers.auth_headers(app, user_id)` (wraps `app.state.access_tokens.issue`).
 
 ## Run
 
@@ -46,31 +61,38 @@ build context. Secrets are never baked in; they are mounted at `/run/secrets` (p
 `server/`, `contracts/` or the workflow itself:
 
 - `lint-test`: `uv sync --frozen`, OpenAPI validation of `contracts/openapi.yaml`,
-  `ruff check`, `ruff format --check`, `mypy app` and `pytest -q`. A `postgis/postgis:18-3.6`
-  service container is started and `FLOORWARS_TEST_DATABASE_URL` is set, so database and
-  migration tests run in CI (they are skipped locally when the variable is unset).
+  `ruff check`, `ruff format --check`, `mypy app` and `pytest -q`. `postgis/postgis:18-3.6` and
+  `valkey/valkey:8` service containers are started and `FLOORWARS_TEST_DATABASE_URL` and
+  `FLOORWARS_TEST_VALKEY_URL` are set, so database, migration and auth tests run in CI (they are
+  skipped locally when the variables are unset).
 - `image`: builds `linux/amd64` and `linux/arm64` with Buildx (GitHub Actions cache). Pull
   requests only build. Pushes to `main` publish `ghcr.io/<owner>/floorwars-api:<git sha>` and
   `:main` to GHCR using the workflow's `GITHUB_TOKEN`. Trivy scanning is added in Week 5.
 
 `tests/test_migrations.py` is skipped unless `FLOORWARS_TEST_DATABASE_URL` points at a
 PostgreSQL + PostGIS database. It migrates that database to head and back to base, so use a
-throwaway one:
+throwaway one. `tests/auth` also needs `FLOORWARS_TEST_VALKEY_URL` (it truncates the auth tables
+and flushes that Valkey database); the signature and token unit tests there run without either:
 
 ```sh
 docker run -d --rm --name fw-db -e POSTGRES_PASSWORD=test -e POSTGRES_DB=floorwars \
   -p 55432:5432 postgis/postgis:18-3.6
+docker run -d --rm --name fw-valkey -p 56379:6379 valkey/valkey:8
 export FLOORWARS_TEST_DATABASE_URL=postgresql+psycopg://postgres:test@localhost:55432/floorwars
-python -m pytest -q tests/test_migrations.py
-docker stop fw-db
+export FLOORWARS_TEST_VALKEY_URL=redis://localhost:56379/0
+python -m pytest -q tests/test_migrations.py tests/auth
+docker stop fw-db fw-valkey
 ```
 
 ## Database and migrations
 
 Schema: `app/db/models.py` (SQLAlchemy 2.0, GeoAlchemy2), migrations in `migrations/versions/`.
 The baseline `0001_baseline` creates `user`, `device`, `team`, `season`, `team_membership`,
-`building` and `refresh_token`, and enables the `postgis` and `citext` extensions. Review notes
-and schema decisions: [`docs/er_review.md`](docs/er_review.md).
+`building` and `refresh_token`, and enables the `postgis` and `citext` extensions. `0002_auth`
+(expand-only) adds `otp_challenge` (hashed sign-in codes, `attempts` CHECK 0..5, a unique partial
+index `ix_otp_challenge_email` for one active challenge per e-mail) and the nullable
+`user.terms_accepted_at` and `user.age_confirmed_at`. Review notes and schema decisions:
+[`docs/er_review.md`](docs/er_review.md).
 
 From `server/`, with `FLOORWARS_DATABASE_URL` set:
 
@@ -87,8 +109,8 @@ Notes:
 - The migration connection pins `search_path=public`, because the `postgis/postgis` image adds
   the `tiger` and `topology` schemas to it and Alembic would otherwise report their tables.
 - Downgrading drops tables only; the `postgis` and `citext` extensions stay.
-- `app/db/session.py` has a sync engine for now: the async engine needs `greenlet`
-  (`sqlalchemy[asyncio]`), which is not a declared dependency yet.
+- `app/db/session.py` has a sync engine (decision 2026-10-31): handlers are plain `def`, and an
+  async engine would need `greenlet` (`sqlalchemy[asyncio]`), which is not a dependency.
 
 ## Endpoints
 
@@ -96,6 +118,19 @@ Notes:
 |---|---|
 | `GET /healthz` | Liveness probe, returns `{"status": "ok"}`. No auth, no database access. |
 | `GET /metrics` | Prometheus text format. **Stub** (`floorwars_up 1`) until Week 5 (plan 7.8). |
+| `POST /v1/auth/otp` | Sends a 6-digit code to an allow-listed e-mail. 202, no body. 403 wrong domain, 429 rate limit (`Retry-After`), 503 mail or Valkey down (fails closed). |
+| `POST /v1/auth/verify` | Code, device and (new accounts) `accept_terms` + `confirm_adult` for a token pair. 401 wrong/expired, 403 confirmations missing (challenge stays usable), 429 after 5 attempts. |
+| `POST /v1/auth/refresh` | Rotates the refresh token. 401 unknown, expired or reused; reuse revokes the whole family. |
+
+Auth details (plan 7.9): codes are `sha256(salt || code)` with a 16-byte salt, compared in
+constant time, attempts counted under a row lock before comparing; a new request supersedes the
+previous unused code. Access tokens are EdDSA JWTs (`kid` = first 16 hex of SHA-256 of the public
+key, `aud` checked, 15 minutes). Refresh tokens are 256-bit random values stored as SHA-256, each
+rotation renews the 30-day lifetime. Codes and tokens are never logged.
+
+Client IP for the per-IP limit: `request.client.host`. Behind Caddy, uvicorn only trusts
+`X-Forwarded-For` from `--forwarded-allow-ips` (default `127.0.0.1`), so the deployment must set
+`FORWARDED_ALLOW_IPS` to Caddy's address, or every request counts against Caddy's IP.
 
 ## Configuration
 
