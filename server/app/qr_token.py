@@ -28,6 +28,7 @@ PREFIX = "fwq1."
 VERSION = 1
 KEY_BYTES = 32
 MAX_TOKEN_LEN = 512
+_HEX_KEY = re.compile(r"[0-9a-fA-F]{64}")
 _B64_ALPHABET = re.compile(r"[A-Za-z0-9_-]*")
 
 
@@ -67,13 +68,15 @@ class QrClaims:
 
 def key_from_hex(value: str) -> bytes:
     """Parse a 64-hex-character key into 32 bytes. Raises ValueError (message never has the key)."""
-    try:
-        key = bytes.fromhex(value.strip())
-    except ValueError:
-        raise ValueError("QR key must be 64 hexadecimal characters") from None
-    if len(key) != KEY_BYTES:
+    text = value.strip()
+    if not _HEX_KEY.fullmatch(text):
         raise ValueError("QR key must be 64 hexadecimal characters")
-    return key
+    return bytes.fromhex(text)
+
+
+def _check_key(key: bytes) -> None:
+    if len(key) != KEY_BYTES:
+        raise ValueError(f"QR key must be {KEY_BYTES} bytes")
 
 
 def key_id(key: bytes) -> str:
@@ -104,8 +107,9 @@ def _mac(key: bytes, payload: bytes) -> bytes:
 
 def sign(building_id: int, key: bytes, nbf: int, exp: int) -> str:
     """Create a token for ``building_id`` valid from ``nbf`` to ``exp`` (unix seconds)."""
-    if exp < nbf:
-        raise ValueError("exp must not be before nbf")
+    _check_key(key)
+    if isinstance(building_id, bool) or building_id < 0 or nbf < 0 or exp < nbf:
+        raise ValueError("building_id and nbf must be non-negative and exp must not precede nbf")
     claims = {"v": VERSION, "b": building_id, "nbf": nbf, "exp": exp, "kid": key_id(key)}
     payload = json.dumps(claims, separators=(",", ":"), sort_keys=True).encode("ascii")
     return f"{PREFIX}{_b64e(payload)}.{_b64e(_mac(key, payload))}"
@@ -124,6 +128,7 @@ def verify(token: str, key: bytes, now: int) -> QrClaims:
     Raises QrMalformedError, QrWrongKeyError, QrBadSignatureError, QrNotYetValidError or
     QrExpiredError (all subclasses of QrTokenError).
     """
+    _check_key(key)
     if len(token) > MAX_TOKEN_LEN:
         raise QrMalformedError("token too long")
     if not token.startswith(PREFIX):
@@ -137,7 +142,7 @@ def verify(token: str, key: bytes, now: int) -> QrClaims:
         data = json.loads(payload)
     except (ValueError, RecursionError):
         raise QrMalformedError("payload is not JSON") from None
-    if not isinstance(data, dict) or data.get("v") != VERSION:
+    if not isinstance(data, dict) or _claim_int(data, "v") != VERSION:
         raise QrMalformedError("unsupported payload")
     building = _claim_int(data, "b")
     nbf = _claim_int(data, "nbf")
@@ -145,6 +150,8 @@ def verify(token: str, key: bytes, now: int) -> QrClaims:
     kid = data.get("kid")
     if not isinstance(kid, str):
         raise QrMalformedError("bad claim types")
+    if building < 0 or nbf < 0 or exp < nbf:
+        raise QrMalformedError("bad claim values")
     if kid != key_id(key):
         raise QrWrongKeyError("key id mismatch")
     if not hmac.compare_digest(signature, _mac(key, payload)):

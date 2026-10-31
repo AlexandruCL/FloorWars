@@ -1,6 +1,8 @@
 """Tests for the signed entrance QR token."""
 
 import base64
+import hashlib
+import hmac
 import json
 
 import pytest
@@ -173,6 +175,56 @@ def test_deeply_nested_payload_is_malformed(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(qr_token, "MAX_TOKEN_LEN", 100_000)
     with pytest.raises(QrMalformedError, match="not JSON"):
         verify(token, KEY, NOW)
+
+
+def _signed(claims: dict[str, object], key: bytes = KEY) -> str:
+    """A token with arbitrary claims and a valid MAC for ``key``."""
+    payload = json.dumps(claims, separators=(",", ":"), sort_keys=True).encode()
+    return f"fwq1.{_b64(payload)}.{_b64(hmac.new(key, payload, hashlib.sha256).digest())}"
+
+
+def _claims(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {"v": 1, "b": 7, "nbf": NBF, "exp": EXP, "kid": key_id(KEY)}
+    return {**base, **overrides}
+
+
+def test_signed_helper_matches_sign() -> None:
+    assert _signed(_claims(b=42)) == sign(42, KEY, NBF, EXP)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"v": True},
+        {"v": 1.0},
+        {"b": True},
+        {"b": -1},
+        {"nbf": -5},
+        {"exp": NBF - 1},
+        {"nbf": 1.5},
+    ],
+)
+def test_strict_claims_with_valid_mac_are_malformed(overrides: dict[str, object]) -> None:
+    with pytest.raises(QrMalformedError):
+        verify(_signed(_claims(**overrides)), KEY, NOW)
+
+
+def test_tampered_kid_is_wrong_key_even_with_valid_mac() -> None:
+    with pytest.raises(QrWrongKeyError):
+        verify(_signed(_claims(kid="deadbeef")), KEY, NOW)
+
+
+def test_bad_key_length_is_value_error() -> None:
+    with pytest.raises(ValueError, match="32 bytes"):
+        sign(1, b"short", NBF, EXP)
+    with pytest.raises(ValueError, match="32 bytes"):
+        verify(sign(1, KEY, NBF, EXP), b"short", NOW)
+
+
+def test_sign_rejects_negative_values() -> None:
+    for building_id, nbf in ((-1, NBF), (1, -1), (True, NBF)):
+        with pytest.raises(ValueError):
+            sign(building_id, KEY, nbf, EXP)
 
 
 def test_oversized_token_is_malformed() -> None:
