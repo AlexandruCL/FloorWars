@@ -96,8 +96,10 @@ The baseline `0001_baseline` creates `user`, `device`, `team`, `season`, `team_m
 `building` and `refresh_token`, and enables the `postgis` and `citext` extensions. `0002_auth`
 (expand-only) adds `otp_challenge` (hashed sign-in codes, `attempts` CHECK 0..5, a unique partial
 index `ix_otp_challenge_email` for one active challenge per e-mail) and the nullable
-`user.terms_accepted_at` and `user.age_confirmed_at`. Review notes and schema decisions:
-[`docs/er_review.md`](docs/er_review.md).
+`user.terms_accepted_at` and `user.age_confirmed_at`. `0003_checkin` (expand-only) enables
+`btree_gist` and adds `checkin` (see [Check-in](#check-in)) and the functional GiST index
+`ix_building_footprint_geog` on `building ((footprint::geography))`. Review notes and schema
+decisions: [`docs/er_review.md`](docs/er_review.md).
 
 From `server/`, with `FLOORWARS_DATABASE_URL` set:
 
@@ -113,7 +115,9 @@ Notes:
 - `user` is a reserved word in PostgreSQL; quote it (`"user"`) in hand-written SQL.
 - The migration connection pins `search_path=public`, because the `postgis/postgis` image adds
   the `tiger` and `topology` schemas to it and Alembic would otherwise report their tables.
-- Downgrading drops tables only; the `postgis` and `citext` extensions stay.
+- Downgrading drops tables only; the `postgis`, `citext` and `btree_gist` extensions stay. On the
+  VM `btree_gist` is created by hand as `postgres` before `0003_checkin` runs (the migrator role
+  cannot create extensions); the migration's `CREATE EXTENSION IF NOT EXISTS` is then a no-op.
 - `app/db/session.py` has a sync engine (decision 2026-10-31): handlers are plain `def`, and an
   async engine would need `greenlet` (`sqlalchemy[asyncio]`), which is not a dependency.
 
@@ -126,6 +130,7 @@ Notes:
 | `POST /v1/auth/otp` | Sends a 6-digit code to an allow-listed e-mail. 202, no body. 403 wrong domain, 429 rate limit (`Retry-After`), 503 mail or Valkey down (fails closed). |
 | `POST /v1/auth/verify` | Code, device and (new accounts) `accept_terms` + `confirm_adult` for a token pair. 401 wrong/expired, 403 confirmations missing (challenge stays usable), 429 after 5 attempts. |
 | `POST /v1/auth/refresh` | Rotates the refresh token. 401 unknown, expired or reused; reuse revokes the whole family. |
+| `POST /v1/checkins` | Bearer. Check in by entrance QR token or geofence. 201 `Checkin`, 401, 403 (see [Check-in](#check-in)), 422, 503 no QR key. |
 
 Auth details (plan 7.9): codes are `sha256(salt || code)` with a 16-byte salt, compared in
 constant time, attempts counted under a row lock before comparing; a new request supersedes the
@@ -136,6 +141,40 @@ rotation renews the 30-day lifetime. Codes and tokens are never logged.
 Client IP for the per-IP limit: `request.client.host`. Behind Caddy, uvicorn only trusts
 `X-Forwarded-For` from `--forwarded-allow-ips` (default `127.0.0.1`), so the deployment must set
 `FORWARDED_ALLOW_IPS` to Caddy's address, or every request counts against Caddy's IP.
+
+## Check-in
+
+`POST /v1/checkins` (plan 3.2) with `{"method": "qr", "qr_token": "fwq1...."}` or
+`{"method": "geofence", "latitude": ..., "longitude": ..., "accuracy_m": ...}` (`accuracy_m`
+optional). The answer is `201 {id, building_id, method, valid_from, valid_until}`, a 90-minute
+range (`FLOORWARS_CHECKIN_TTL_S`). Code: `app/api/v1/checkins.py` (route and schemas),
+`app/checkins/service.py` (flows), `geofence.py`, `repository.py`.
+
+- QR: the token is verified with `app.qr_token.verify` against `FLOORWARS_QR_HMAC_KEY` at the
+  server clock. Its building must exist.
+- Geofence: a fix with `accuracy_m` above `FLOORWARS_GEOFENCE_MAX_ACCURACY_M` is refused; otherwise
+  the nearest building whose footprint is within `FLOORWARS_GEOFENCE_RADIUS_M` metres
+  (`ST_DWithin` on `footprint::geography`, served by `ix_building_footprint_geog`) is chosen.
+- One transaction per check-in: `SELECT ... FROM "user" ... FOR UPDATE` serialises one user's
+  check-ins, `clock_timestamp()` is read once after the lock, the active check-in (if any) ends at
+  that instant and the new one is `[now, now + ttl)`. The exclusion constraint
+  `excl_checkin_user_overlap` (`user_id WITH =, valid_during WITH &&`) guarantees one active
+  check-in per user even without the lock.
+- Privacy (plan 8): coordinates are used for the lookup only. They are never stored, logged or
+  returned; neither is the QR token. Log records carry user id, building id and method.
+
+Problem types (`urn:floorwars:problem:<slug>`):
+
+| Status | Type | When |
+|---|---|---|
+| 403 | `qr-malformed` | Not a well-formed `fwq1` token (prefix, parts, base64url, JSON, claims, over 512 characters). |
+| 403 | `qr-invalid` | Wrong key or bad signature (one type for both, no hint which). |
+| 403 | `qr-expired` | Now is after the token's `exp`. |
+| 403 | `qr-not-yet-valid` | Now is before the token's `nbf`. |
+| 403 | `building-unknown` | Valid token for a building id that does not exist. |
+| 503 | `qr-unavailable` | `FLOORWARS_QR_HMAC_KEY` is not configured. |
+| 403 | `location-inaccurate` | `accuracy_m` above `FLOORWARS_GEOFENCE_MAX_ACCURACY_M`. |
+| 403 | `outside-geofence` | No building footprint within `FLOORWARS_GEOFENCE_RADIUS_M`. |
 
 ## Configuration
 
@@ -166,7 +205,10 @@ the host files to these names, see `infra/secrets/README.md`.
 | `FLOORWARS_OTP_MAX_ATTEMPTS` | `5` | Wrong codes allowed per challenge, 1 to 5 (the database CHECK caps it at 5). |
 | `FLOORWARS_OTP_RATE_PER_EMAIL_PER_HOUR` | `5` | Token bucket size and hourly refill for code requests per e-mail. |
 | `FLOORWARS_OTP_RATE_PER_IP_PER_HOUR` | `60` | Same, per client IP. Students behind the campus NAT share one IP, so keep it generous. |
-| `FLOORWARS_QR_HMAC_KEY` | unset | 32-byte HMAC key for entrance QR codes, hex. Secret. Checked by the check-in feature where it is used. |
+| `FLOORWARS_QR_HMAC_KEY` | unset | 32-byte HMAC key for entrance QR codes, hex. Secret. Without it QR check-ins answer 503 `qr-unavailable`. |
+| `FLOORWARS_CHECKIN_TTL_S` | `5400` | Check-in validity (plan 3.2: 90 minutes), 60 s to 1 day. |
+| `FLOORWARS_GEOFENCE_RADIUS_M` | `30` | Geofence check-in: maximum distance in metres from a building footprint, 1 to 1000. |
+| `FLOORWARS_GEOFENCE_MAX_ACCURACY_M` | `50` | Geofence check-in: largest accepted `accuracy_m` of the fix, 1 to 1000. |
 
 All settings except `FLOORWARS_DATABASE_URL` are optional when `Settings` loads, because the
 migration container receives only the database URL. Given values are format-checked (hex keys,
