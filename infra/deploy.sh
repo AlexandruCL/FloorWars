@@ -31,9 +31,9 @@ main() {
   export DATA_DIR="${DATA_DIR:-$ROOT/data}"
   export SECRETS_DIR="${SECRETS_DIR:-/run/secrets/floorwars}"
   export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-/etc/floorwars/age.key}"
-  # Keep in sync with the top-level `secrets:` in docker-compose.yml.
-  readonly REQUIRED_SECRETS=(database_url valkey_url postgres_password valkey_password
-    jwt_signing_key qr_hmac_key acs_access_key migration_database_url)
+  # The required secrets are the top-level `secrets:` of the CHECKED-OUT tree's
+  # docker-compose.yml (required_secrets below), not a list in this reviewed script, so a
+  # rollback to an older tree needs only that tree's secrets.
 
   local request
   request=$(parse_request "$@")
@@ -217,11 +217,25 @@ decrypt_secrets() {
   log "secrets decrypted into $SECRETS_DIR"
 }
 
+# Prints the secret names the checked-out docker-compose.yml defines (top-level `secrets:`
+# keys, two-space indent), one per line. Fails closed: no names found is an error.
+required_secrets() {
+  local names
+  names=$(awk '
+    /^secrets:/ { in_s = 1; next }
+    in_s && /^[^ #]/ { in_s = 0 }
+    in_s && /^  [a-z0-9_]+:/ { sub(/^  /, ""); sub(/:.*/, ""); print }
+  ' "$INFRA_DIR/docker-compose.yml") || return 1
+  [[ -n "$names" ]] || { log "no top-level secrets found in $INFRA_DIR/docker-compose.yml"; return 1; }
+  printf '%s\n' "$names"
+}
+
 #   .enc.env         one file per KEY=value line, named after the lower-cased key
 #   .enc.json/.yaml  the whole decrypted document as <name>.json / <name>.yaml
 fill_secrets() {
   local dir="$1" f base name ext plain line key value s
   local files=()
+  local -A seen=()
   shopt -s nullglob
   files=("$INFRA_DIR"/secrets/*.enc.*)
   shopt -u nullglob
@@ -240,10 +254,14 @@ fill_secrets() {
           value=${line#*=}
           key=${key,,}
           [[ "$key" =~ ^[a-z0-9_]+$ ]] || { log "invalid key name in $base"; return 1; }
+          [[ -z "${seen[$key]:-}" ]] || { log "secret $key defined twice (in $base and ${seen[$key]})"; return 1; }
+          seen[$key]=$base
           write_secret "$dir" "$key" "$value" || return 1
         done <<<"$plain"
         ;;
       json | yaml)
+        [[ -z "${seen[$name.$ext]:-}" ]] || { log "secret $name.$ext defined twice"; return 1; }
+        seen[$name.$ext]=$base
         write_secret "$dir" "$name.$ext" "$plain" || return 1
         ;;
       *)
@@ -253,7 +271,9 @@ fill_secrets() {
     esac
   done
 
-  for s in "${REQUIRED_SECRETS[@]}"; do
+  local required
+  required=$(required_secrets) || return 1
+  for s in $required; do
     [[ -s "$dir/$s" ]] || { log "missing secret $s (required; see infra/secrets/README.md)"; return 1; }
   done
 }
