@@ -24,8 +24,15 @@ def database_url() -> str:
 
 
 def make_engine(url: str) -> Engine:
-    """Engine with ``pool_pre_ping`` so connections dropped by a database restart are replaced."""
-    return create_engine(url, pool_pre_ping=True)
+    """Engine for the API.
+
+    ``pool_pre_ping`` replaces connections dropped by a database restart. ``hide_parameters``
+    keeps bound values (e-mails, code hashes, salts, token hashes) out of exception messages and
+    therefore out of logs. The pool is sized for the thread pool that runs the handlers.
+    """
+    return create_engine(
+        url, pool_pre_ping=True, hide_parameters=True, pool_size=10, max_overflow=10
+    )
 
 
 def make_sessionmaker(engine: Engine) -> sessionmaker[Session]:

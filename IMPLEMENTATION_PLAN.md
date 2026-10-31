@@ -242,7 +242,7 @@ Third normal form. The only derived data are `team_building_score` and `building
 | Table | Columns (key ones) | Notes |
 |---|---|---|
 | `user` | `id uuid PK`, `email citext UNIQUE`, `display_name text`, `created_at timestamptz`, `terms_accepted_at timestamptz`, `age_confirmed_at timestamptz` | The two timestamps are set at sign-up (contract 0.4.0: `accept_terms`, `confirm_adult`). |
-| `device` | `id uuid PK`, `user_id FK`, `model text`, `has_barometer bool`, `last_seen_at` | One user, several devices. |
+| `device` | `(user_id FK, id uuid)` composite PK, `model text`, `has_barometer bool`, `last_seen_at` | One user, several devices. The app generates `id`; it is unique per user only (0002_auth), so a device is never moved between users. |
 | `team` | `id int PK`, `code text UNIQUE` (e.g. AC, ETC, MEC), `color_hex text` | A faculty. |
 | `season` | `id int PK`, `active_during tstzrange` with EXCLUDE (no overlap) | Seasons never overlap. |
 | `team_membership` | `user_id PK/FK`, `season_id PK/FK`, `team_id FK` | Composite PK gives exactly one team per user per season. |

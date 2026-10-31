@@ -17,6 +17,7 @@ Usage from any route or service::
 in the route's docstring. Never put secrets, codes or tokens in ``detail``.
 """
 
+import logging
 from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Any, cast
@@ -25,7 +26,10 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+logger = logging.getLogger("floorwars.api")
 
 PROBLEM_JSON = "application/problem+json"
 ABOUT_BLANK = "about:blank"
@@ -151,7 +155,29 @@ async def _http_error_handler(_: Request, exc: Exception) -> JSONResponse:
     return problem_response(exc.status_code, detail=detail, headers=exc.headers)
 
 
-async def _unhandled_error_handler(_: Request, __: Exception) -> JSONResponse:
+async def _database_error_handler(_: Request, exc: Exception) -> JSONResponse:
+    # Never log the message or traceback: PostgreSQL's DETAIL ("Failing row contains (...)")
+    # repeats row values (e-mails, hashes) even with hide_parameters. Log the error class,
+    # SQLSTATE and the constraint/table names only. Handled here, not in the catch-all, so the
+    # server does not log the exception again.
+    err = cast(DBAPIError, exc)
+    diag = getattr(err.orig, "diag", None)
+    logger.error(
+        "database error",
+        extra={
+            "error": type(err.orig).__name__,
+            "sqlstate": getattr(err.orig, "sqlstate", None),
+            "constraint": getattr(diag, "constraint_name", None),
+            "table": getattr(diag, "table_name", None),
+        },
+    )
+    unavailable = isinstance(err, OperationalError | InterfaceError)
+    return problem_response(503 if unavailable else 500)
+
+
+async def _unhandled_error_handler(_: Request, exc: Exception) -> JSONResponse:
+    # The server also logs the traceback of these (the exception is re-raised after this).
+    logger.error("unhandled error", extra={"error": type(exc).__name__})
     return problem_response(500)
 
 
@@ -160,4 +186,5 @@ def install_problem_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ProblemError, _problem_error_handler)
     app.add_exception_handler(RequestValidationError, _validation_error_handler)
     app.add_exception_handler(StarletteHTTPException, _http_error_handler)
+    app.add_exception_handler(DBAPIError, _database_error_handler)
     app.add_exception_handler(Exception, _unhandled_error_handler)

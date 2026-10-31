@@ -66,13 +66,6 @@ def add_user(db: Session, email: str, display_name: str, now: datetime) -> User:
     return user
 
 
-def lock_device_owner(db: Session, device_id: uuid.UUID) -> uuid.UUID | None:
-    """Current owner of the device (row-locked), or None for a new device."""
-    return db.scalars(
-        select(Device.user_id).where(Device.id == device_id).with_for_update()
-    ).one_or_none()
-
-
 def upsert_device(
     db: Session,
     device_id: uuid.UUID,
@@ -81,12 +74,10 @@ def upsert_device(
     has_barometer: bool,
     now: datetime,
 ) -> None:
-    """Register the device for ``user_id`` (moving it if another user had it)."""
-    values = {"user_id": user_id, "model": model, "has_barometer": has_barometer}
-    stmt = insert(Device).values(id=device_id, last_seen_at=now, **values)
-    db.execute(
-        stmt.on_conflict_do_update(index_elements=[Device.id], set_={**values, "last_seen_at": now})
-    )
+    """Register or refresh the device ``(user_id, device_id)``; other users' rows are untouched."""
+    values = {"model": model, "has_barometer": has_barometer, "last_seen_at": now}
+    stmt = insert(Device).values(user_id=user_id, id=device_id, **values)
+    db.execute(stmt.on_conflict_do_update(index_elements=[Device.user_id, Device.id], set_=values))
 
 
 # Refresh tokens.

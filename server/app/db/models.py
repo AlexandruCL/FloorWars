@@ -52,11 +52,19 @@ class User(Base):
 
 
 class Device(Base):
+    """A phone of a user. The id comes from the app; it is unique per user only.
+
+    Composite primary key ``(user_id, id)`` (0002_auth): the same device id signed in by two
+    users gives two rows, so one user can never take over another user's device row.
+    """
+
     __tablename__ = "device"
 
-    id: Mapped[uuid.UUID] = _uuid_pk()
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("user.id", ondelete="CASCADE"), index=True
+        ForeignKey("user.id", ondelete="CASCADE"), primary_key=True
+    )
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=GEN_UUID
     )
     model: Mapped[str] = mapped_column(Text)
     has_barometer: Mapped[bool] = mapped_column(Boolean)

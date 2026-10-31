@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.api.problems import ProblemError, forbidden, service_unavailable, too_many_requests
 from app.auth import otp, repository
-from app.auth.ratelimit import RateLimiter, hashed_subject
+from app.auth.ratelimit import RateLimiter, client_bucket, hashed_subject
 from app.auth.schemas import OtpVerifyRequest, TokenPair
 from app.auth.tokens import AccessTokens
 from app.config import Settings
@@ -59,23 +59,18 @@ def _hash_refresh(raw: str) -> bytes:
 # POST /v1/auth/otp
 
 
-def _check_rate_limits(
-    limiter: RateLimiter | None, settings: Settings, email: str, ip: str
-) -> None:
+def _enforce_limits(limiter: RateLimiter | None, checks: list[tuple[str, str, int]]) -> None:
+    """Take one token from each ``(name, subject, per_hour)`` bucket, in order; 429 on the first
+    empty one. Fails closed: no limiter, or Valkey unavailable, gives 503."""
     if limiter is None:
         raise service_unavailable("Sign-in is temporarily unavailable.")
-    checks = (
-        ("otp:email", hashed_subject(email), settings.otp_rate_per_email_per_hour),
-        ("otp:ip", ip, settings.otp_rate_per_ip_per_hour),
-    )
     try:
         for name, subject, capacity in checks:
             decision = limiter.hit(name, subject, capacity, HOUR_S)
             if not decision.allowed:
-                logger.info("otp rate limited", extra={"limit": name})
-                raise too_many_requests("Too many code requests.", decision.retry_after_s)
+                logger.info("rate limited", extra={"limit": name})
+                raise too_many_requests("Too many requests.", decision.retry_after_s)
     except ValkeyError:
-        # Fail closed: without the limiter anyone could make us send unlimited mail.
         logger.error("rate limiter unavailable")
         raise service_unavailable("Sign-in is temporarily unavailable.") from None
 
@@ -116,7 +111,13 @@ def request_otp(
     domain = email.rsplit("@", 1)[1]
     if domain not in settings.allowed_email_domains:
         raise forbidden("This e-mail domain cannot sign in.", type_=DOMAIN_NOT_ALLOWED)
-    _check_rate_limits(limiter, settings, email, client_ip)
+    _enforce_limits(
+        limiter,
+        [
+            ("otp:ip", client_bucket(client_ip), settings.otp_rate_per_ip_per_hour),
+            ("otp:email", hashed_subject(email), settings.otp_rate_per_email_per_hour),
+        ],
+    )
 
     code = otp.new_code()
     _store_challenge(db, settings, email, code)
@@ -157,9 +158,17 @@ def _issue_pair(
 
 
 def verify_otp(
-    db: Session, settings: Settings, tokens: AccessTokens, body: OtpVerifyRequest
+    db: Session,
+    settings: Settings,
+    tokens: AccessTokens,
+    limiter: RateLimiter | None,
+    body: OtpVerifyRequest,
+    client_ip: str,
 ) -> TokenPair:
     """Check the code; on success sign in (creating the account if new) and register the device."""
+    _enforce_limits(
+        limiter, [("verify:ip", client_bucket(client_ip), settings.verify_rate_per_ip_per_hour)]
+    )
     now = _now()
     challenge = repository.lock_active_challenge(db, body.email)
     if challenge is None:
@@ -195,16 +204,6 @@ def verify_otp(
     challenge.consumed_at = now
 
     device = body.device
-    previous_owner = repository.lock_device_owner(db, device.id)
-    if previous_owner is not None and previous_owner != user.id:
-        logger.warning(
-            "device moved to another user",
-            extra={
-                "device_id": str(device.id),
-                "from_user_id": str(previous_owner),
-                "to_user_id": str(user.id),
-            },
-        )
     repository.upsert_device(db, device.id, user.id, device.model, device.has_barometer, now)
 
     pair = _issue_pair(db, settings, tokens, user.id, uuid.uuid4(), now)
@@ -216,8 +215,18 @@ def verify_otp(
 # POST /v1/auth/refresh
 
 
-def refresh(db: Session, settings: Settings, tokens: AccessTokens, raw_token: str) -> TokenPair:
+def refresh(
+    db: Session,
+    settings: Settings,
+    tokens: AccessTokens,
+    limiter: RateLimiter | None,
+    raw_token: str,
+    client_ip: str,
+) -> TokenPair:
     """Rotate a refresh token. Presenting a revoked (already rotated) one revokes its family."""
+    _enforce_limits(
+        limiter, [("refresh:ip", client_bucket(client_ip), settings.refresh_rate_per_ip_per_hour)]
+    )
     now = _now()
     row = repository.lock_refresh_token(db, _hash_refresh(raw_token))
     if row is None:

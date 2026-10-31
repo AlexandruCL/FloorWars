@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     # Valkey token buckets for POST /v1/auth/otp (plan 3.4, 7.11).
     otp_rate_per_email_per_hour: int = Field(default=5, ge=1, le=1000)
     otp_rate_per_ip_per_hour: int = Field(default=60, ge=1, le=100_000)
+    # Per client IP (IPv6 per /64) on /auth/verify and /auth/refresh, checked before any database
+    # work. Generous: the campus NAT puts many students behind one address.
+    verify_rate_per_ip_per_hour: int = Field(default=300, ge=1, le=100_000)
+    refresh_rate_per_ip_per_hour: int = Field(default=1200, ge=1, le=100_000)
 
     # Entrance QR signatures (HMAC-SHA256, 32 bytes as hex). Used by the check-in feature.
     qr_hmac_key: SecretStr | None = None

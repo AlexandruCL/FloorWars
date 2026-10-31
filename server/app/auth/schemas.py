@@ -10,14 +10,15 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, StringConstraints
 
 # Pragmatic address check (the contract says ``format: email``); the domain allow-list is the
-# real gate. Normalised to lower case: university mailboxes are case-insensitive.
+# real gate. Normalised to lower case: university mailboxes are case-insensitive. No ``+`` in
+# the local part: sub-addresses would turn one mailbox into many accounts and rate-limit buckets.
 Email = Annotated[
     StrictStr,
     StringConstraints(
         strip_whitespace=True,
         to_lower=True,
         max_length=254,
-        pattern=r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$",
+        pattern=r"^[A-Za-z0-9._%-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$",
     ),
 ]
 

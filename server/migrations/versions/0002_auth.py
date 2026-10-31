@@ -1,8 +1,11 @@
 """Auth: otp_challenge table, user terms and age confirmation timestamps.
 
-Expand-only (plan 7.7): one new table and two nullable columns, nothing dropped or rewritten.
-The device registration fields the contract needs (``model``, ``has_barometer``,
-``last_seen_at``) already exist in 0001_baseline.
+Mostly expand-only (plan 7.7): one new table and nullable columns. One reshaping change, made
+before 0002 was ever deployed (the VM runs 0001 with no devices): ``device`` gets the composite
+primary key ``(user_id, id)`` so a device id is unique per user only and sign-in never moves a
+device between users; the separate ``ix_device_user_id`` index becomes redundant (the key leads
+with ``user_id``) and is dropped. The device registration fields the contract needs (``model``,
+``has_barometer``, ``last_seen_at``) already exist in 0001_baseline.
 
 Revision ID: 0002_auth
 Revises: 0001_baseline
@@ -22,6 +25,10 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    op.drop_constraint("pk_device", "device", type_="primary")
+    op.create_primary_key("pk_device", "device", ["user_id", "id"])
+    op.drop_index("ix_device_user_id", table_name="device")
+
     op.add_column("user", sa.Column("terms_accepted_at", sa.DateTime(timezone=True)))
     op.add_column("user", sa.Column("age_confirmed_at", sa.DateTime(timezone=True)))
 
@@ -59,5 +66,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("otp_challenge")
+    # Fails if two users registered the same device id; delete the duplicates first.
+    op.create_index("ix_device_user_id", "device", ["user_id"])
+    op.drop_constraint("pk_device", "device", type_="primary")
+    op.create_primary_key("pk_device", "device", ["id"])
     op.drop_column("user", "age_confirmed_at")
     op.drop_column("user", "terms_accepted_at")
