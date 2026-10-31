@@ -118,6 +118,15 @@ Agents do not talk to each other. You route their blockers: if an agent reports 
 
 Record here, with the item ID and the question. Do not guess.
 
+## Decisions taken (Ionut, 2026-10-31)
+
+1. Production e-mail: **Azure Communication Services** (approved by the professor), called through its REST API with our own client (`httpx`, our own HMAC-SHA256 request signing with the ACS access key). No Azure SDK. Tests use an in-memory fake sender; local runs log "mail sent" without the code. Ionut creates the ACS resources by hand.
+2. Seed buildings: **hexagonal placeholder footprints**, clearly marked as placeholders, near UPT.
+3. Check-ins: **no overlap.** A new check-in ends the user's previous one in the same transaction, and an exclusion constraint (`user_id WITH =`, `valid_during WITH &&`, needs `btree_gist`) enforces it.
+4. Geofence: **GiST index on `(footprint::geography)`**, so `ST_DWithin(..., 30)` uses it.
+5. Dependencies approved: `cryptography` 50.0.2 and `qrcode` 8.2.
+6. Contract gaps found: `OtpVerifyRequest` has no device, age or terms fields, and there is no way to read the active season. A contract PR (0.4.0-draft) adds them and goes to Cristea first. W2-1 and W2-2 code against it only after Cristea approves; until then they build the parts that do not depend on it (migrations, OTP, tokens, team list).
+
 ## 6. Order and checks
 
 1. Ask Ionut the section 2 decisions. Wait.
