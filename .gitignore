@@ -21,6 +21,10 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+# Generated entrance QR codes and their token files (bearer tokens, never commit)
+tools/qr/out/
+*.token.txt
+
 # Local-only secrets folder (keys, service-account JSON, google-services.json). Never committed.
 .secrets/
 
