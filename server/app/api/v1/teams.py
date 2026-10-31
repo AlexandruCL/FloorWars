@@ -55,7 +55,8 @@ def get_active_season(db: DbSession) -> SeasonOut:
     """The season that is running now."""
     season = service.active_season(db)
     rng = season.active_during
-    assert rng.lower is not None and rng.upper is not None
+    if rng.lower is None or rng.upper is None:
+        raise RuntimeError("season range must be bounded")
     return SeasonOut(id=season.id, starts_at=rng.lower, ends_at=rng.upper)
 
 
