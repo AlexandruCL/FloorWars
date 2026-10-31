@@ -40,8 +40,8 @@ def test_second_checkin_ends_the_first(ctx: Ctx) -> None:
     assert rows[0][2] == rows[1][1]
     # API and database agree on the instants.
     assert datetime.fromisoformat(second.json()["valid_from"]) == rows[1][1]
-    assert datetime.fromisoformat(first.json()["valid_until"]) == rows[0][2]
-    assert first.json()["valid_until"] == second.json()["valid_from"]
+    # The first response reported the planned end; the stored range was cut at the second start.
+    assert datetime.fromisoformat(first.json()["valid_until"]) > rows[0][2]
 
 
 def test_exclusion_constraint_rejects_manual_overlap(ctx: Ctx) -> None:

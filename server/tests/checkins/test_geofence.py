@@ -3,7 +3,9 @@
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.dialects import postgresql
 
+from app.checkins.repository import nearest_building_stmt
 from tests.checkins.conftest import (
     CENTRE_LAT,
     CENTRE_LON,
@@ -94,18 +96,11 @@ def test_explain_uses_footprint_geography_index(ctx: Ctx) -> None:
     """The geofence predicate must be able to use ix_building_footprint_geog."""
     with ctx.client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
         db.execute(text("SET LOCAL enable_seqscan = off"))
-        lines = (
-            db.execute(
-                text(
-                    "EXPLAIN SELECT id FROM building WHERE ST_DWithin("
-                    "footprint::geography, "
-                    "ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 30)"
-                ),
-                {"lat": CENTRE_LAT, "lon": CENTRE_LON},
-            )
-            .scalars()
-            .all()
+        stmt = nearest_building_stmt(CENTRE_LAT, CENTRE_LON, 30)
+        sql = str(
+            stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
         )
+        lines = db.execute(text("EXPLAIN " + sql.replace(":", "\\:"))).scalars().all()
     plan = "\n".join(lines)
     print(plan)
     assert "ix_building_footprint_geog" in plan
