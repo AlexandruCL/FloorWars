@@ -11,7 +11,7 @@ from app.api.deps import AppSettings, DbSession, get_access_tokens
 from app.api.problems import problem_doc
 from app.auth import service
 from app.auth.ratelimit import RateLimiter
-from app.auth.schemas import OtpRequest
+from app.auth.schemas import OtpRequest, OtpVerifyRequest, TokenPair
 from app.auth.tokens import AccessTokens
 from app.mail import MailSender
 
@@ -59,3 +59,22 @@ def request_otp(
     client_ip = request.client.host if request.client else "unknown"
     service.request_otp(db, settings, limiter, mail, body.email, client_ip)
     return Response(status_code=202)
+
+
+@router.post(
+    "/verify",
+    response_model=TokenPair,
+    responses={
+        401: problem_doc("Wrong or expired code."),
+        403: problem_doc("A new account needs accept_terms and confirm_adult both true."),
+        422: problem_doc("The body does not match the schema."),
+        429: problem_doc("Too many attempts for this code (more than 5)."),
+    },
+    operation_id="verifyOtp",
+)
+def verify_otp(
+    body: OtpVerifyRequest, response: Response, db: DbSession, settings: AppSettings, tokens: Tokens
+) -> TokenPair:
+    """Exchange e-mail and code for tokens; registers the device."""
+    response.headers.update(NO_STORE)
+    return service.verify_otp(db, settings, tokens, body)

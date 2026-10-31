@@ -4,12 +4,14 @@ No commits here: the service decides transaction boundaries. Functions that lock
 ``SELECT ... FOR UPDATE``, so the lock lasts until the service commits or rolls back.
 """
 
+import uuid
 from datetime import datetime
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.db.models import OtpChallenge
+from app.db.models import Device, OtpChallenge, RefreshToken, User
 
 # One-time codes.
 
@@ -53,4 +55,53 @@ def lock_active_challenge(db: Session, email: str) -> OtpChallenge | None:
 # Users and devices.
 
 
+def get_user_by_email(db: Session, email: str) -> User | None:
+    return db.scalars(select(User).where(User.email == email)).one_or_none()
+
+
+def add_user(db: Session, email: str, display_name: str, now: datetime) -> User:
+    user = User(email=email, display_name=display_name, terms_accepted_at=now, age_confirmed_at=now)
+    db.add(user)
+    db.flush()
+    return user
+
+
+def lock_device_owner(db: Session, device_id: uuid.UUID) -> uuid.UUID | None:
+    """Current owner of the device (row-locked), or None for a new device."""
+    return db.scalars(
+        select(Device.user_id).where(Device.id == device_id).with_for_update()
+    ).one_or_none()
+
+
+def upsert_device(
+    db: Session,
+    device_id: uuid.UUID,
+    user_id: uuid.UUID,
+    model: str,
+    has_barometer: bool,
+    now: datetime,
+) -> None:
+    """Register the device for ``user_id`` (moving it if another user had it)."""
+    values = {"user_id": user_id, "model": model, "has_barometer": has_barometer}
+    stmt = insert(Device).values(id=device_id, last_seen_at=now, **values)
+    db.execute(
+        stmt.on_conflict_do_update(index_elements=[Device.id], set_={**values, "last_seen_at": now})
+    )
+
+
 # Refresh tokens.
+
+
+def add_refresh_token(
+    db: Session,
+    user_id: uuid.UUID,
+    token_hash: bytes,
+    family_id: uuid.UUID,
+    expires_at: datetime,
+) -> None:
+    db.add(
+        RefreshToken(
+            user_id=user_id, token_hash=token_hash, family_id=family_id, expires_at=expires_at
+        )
+    )
+    db.flush()

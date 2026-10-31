@@ -11,15 +11,20 @@ Problem types (``type`` member) a client can act on:
   ``accept_terms`` and ``confirm_adult``; the challenge stays usable, so the app can resend).
 """
 
+import hashlib
 import logging
+import secrets
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.problems import forbidden, service_unavailable, too_many_requests
+from app.api.problems import ProblemError, forbidden, service_unavailable, too_many_requests
 from app.auth import otp, repository
 from app.auth.ratelimit import RateLimiter, hashed_subject
+from app.auth.schemas import OtpVerifyRequest, TokenPair
+from app.auth.tokens import AccessTokens
 from app.config import Settings
 from app.mail import MailError, MailSender
 from app.valkey import ValkeyError
@@ -37,6 +42,14 @@ TERMS_REQUIRED = "urn:floorwars:problem:terms-required"
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _wrong_code() -> ProblemError:
+    return ProblemError(401, detail="Wrong or expired code.")
+
+
+def _hash_refresh(raw: str) -> bytes:
+    return hashlib.sha256(raw.encode("utf-8")).digest()
 
 
 # POST /v1/auth/otp
@@ -112,7 +125,88 @@ def request_otp(
 # Token pairs.
 
 
+def _issue_pair(
+    db: Session,
+    settings: Settings,
+    tokens: AccessTokens,
+    user_id: uuid.UUID,
+    family_id: uuid.UUID,
+    now: datetime,
+) -> TokenPair:
+    raw = secrets.token_urlsafe(32)  # 256 bits
+    repository.add_refresh_token(
+        db,
+        user_id,
+        _hash_refresh(raw),
+        family_id,
+        now + timedelta(seconds=settings.refresh_token_ttl_s),
+    )
+    return TokenPair(
+        access_token=tokens.issue(user_id),
+        refresh_token=raw,
+        expires_in=tokens.ttl_s,
+        refresh_expires_in=settings.refresh_token_ttl_s,
+    )
+
+
 # POST /v1/auth/verify
+
+
+def verify_otp(
+    db: Session, settings: Settings, tokens: AccessTokens, body: OtpVerifyRequest
+) -> TokenPair:
+    """Check the code; on success sign in (creating the account if new) and register the device."""
+    now = _now()
+    challenge = repository.lock_active_challenge(db, body.email)
+    if challenge is None:
+        db.rollback()
+        raise _wrong_code()
+    if challenge.attempts >= settings.otp_max_attempts:
+        db.rollback()
+        raise ProblemError(429, detail="Too many attempts for this code. Request a new one.")
+    if challenge.expires_at <= now:
+        db.rollback()
+        raise _wrong_code()
+
+    # Count the attempt before comparing, under the row lock, so parallel guesses cannot
+    # exceed the limit.
+    challenge.attempts += 1
+    db.flush()
+    if not otp.code_matches(challenge.salt, body.code, challenge.code_hash):
+        db.commit()
+        raise _wrong_code()
+
+    user = repository.get_user_by_email(db, body.email)
+    if user is None:
+        if not (body.accept_terms and body.confirm_adult):
+            db.commit()  # keep the counted attempt; the challenge stays active
+            raise forbidden(
+                "A new account must accept the terms and confirm being 18 or older.",
+                type_=TERMS_REQUIRED,
+            )
+        local_part = body.email.split("@", 1)[0]
+        user = repository.add_user(db, body.email, local_part[:DISPLAY_NAME_MAX], now)
+        logger.info("user created", extra={"user_id": str(user.id)})
+
+    challenge.consumed_at = now
+
+    device = body.device
+    previous_owner = repository.lock_device_owner(db, device.id)
+    if previous_owner is not None and previous_owner != user.id:
+        logger.warning(
+            "device moved to another user",
+            extra={
+                "device_id": str(device.id),
+                "from_user_id": str(previous_owner),
+                "to_user_id": str(user.id),
+            },
+        )
+    repository.upsert_device(db, device.id, user.id, device.model, device.has_barometer, now)
+
+    pair = _issue_pair(db, settings, tokens, user.id, uuid.uuid4(), now)
+    db.commit()
+    logger.info("signed in", extra={"user_id": str(user.id)})
+    return pair
 
 
 # POST /v1/auth/refresh
