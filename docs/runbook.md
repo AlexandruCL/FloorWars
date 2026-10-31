@@ -166,8 +166,8 @@ ssh -i ~/.ssh/floorwars_deploy deploy@<VM_IP> <SHA>
 ```
 
 What it does: lock; check out `<SHA>`; decrypt secrets to `/run/secrets/floorwars` (tmpfs, 0400);
-pull images; start postgres and valkey; `alembic upgrade head` (expand-only; skipped while the
-image has no `alembic.ini`); `docker compose up -d --wait` with a 90 s limit; record
+pull images; start postgres and valkey; `alembic upgrade head` through the `migrate` service with
+the migration role (expand-only; skipped while the image has no `alembic.ini`); `docker compose up -d --wait` with a 90 s limit; record
 `current`. If health fails it re-pins the previous tag and exits 1.
 
 ## 8. Check health
@@ -206,6 +206,86 @@ sudo /srv/floorwars/deploy.sh "$(cat /srv/floorwars/current)"
 ```
 
 Later (open item): a systemd unit that runs this at boot.
+
+## 11. Week 2: new secrets and database roles
+
+One-time steps before the first deploy of the Week 2 release. Until they are done,
+`deploy.sh` stops before touching the running stack with `missing secret <name>`. Never paste a
+password or key into a chat, an issue or a shell history you share.
+
+New secrets (host file name = decrypted name; the API reads each as `/run/secrets/floorwars_<name>`):
+
+| Secret | Used by | What |
+|---|---|---|
+| `jwt_signing_key`, `qr_hmac_key` | api | Hex keys, already in `infra/secrets/auth.enc.env` (from the auth work) |
+| `acs_access_key` | api | Azure Communication Services access key, added by Ionut (step 4) |
+| `migration_database_url` | `migrate` service | URL of the migration role (DDL rights) |
+| `database_url` | api | Changes to the URL of the app role (no DDL) |
+
+Non-secret settings go in `infra/.env` on the VM: `FLOORWARS_MAIL_BACKEND=acs`,
+`FLOORWARS_ACS_ENDPOINT`, `FLOORWARS_MAIL_FROM`, `FLOORWARS_ALLOWED_EMAIL_DOMAINS=student.upt.ro`
+(see `infra/.env.example`).
+
+**1. Pull the release onto the VM and create the roles.** The stack must be running (postgres up
+and the Week 1 schema applied by migration `0001`). Passwords are generated here, shown to nobody:
+
+```sh
+cd /srv/floorwars/repo && sudo git fetch origin main && sudo git checkout --detach <SHA>
+APP_PW=$(openssl rand -hex 24); MIG_PW=$(openssl rand -hex 24)
+# plain `docker exec`: `docker compose` would need every new secret file to exist already
+docker exec -i floorwars-postgres-1 psql -U postgres -d floorwars -v ON_ERROR_STOP=1 \
+  -v app_password="$APP_PW" -v migrator_password="$MIG_PW" < infra/sql/roles.sql
+```
+
+(The deploy in step 5 checks out the release again; this checkout only makes `sql/roles.sql` available.)
+`sql/roles.sql` is idempotent (re-running rotates the two passwords). It creates
+`floorwars_migrator` (owns the schema, runs DDL) and `floorwars_app` (SELECT/INSERT/UPDATE/DELETE and
+sequence USAGE only), moves the existing tables and `alembic_version` to the migrator, and sets
+default privileges so tables created by later migrations get the app grants. Keep `APP_PW` and
+`MIG_PW` in the shell until step 2. The script was tested locally with `sql/check_roles.sh`.
+
+**2. Encrypt the two database URLs** into a SOPS file, on your PC, from the two passwords
+(`@postgres:5432/floorwars` is the compose host name):
+
+```sh
+sops infra/secrets/app.enc.env      # opens the decrypted file in $EDITOR, re-encrypts on save
+#   database_url=postgresql+psycopg://floorwars_app:<APP_PW>@postgres:5432/floorwars   (replace the line)
+#   migration_database_url=postgresql+psycopg://floorwars_migrator:<MIG_PW>@postgres:5432/floorwars   (new line)
+git diff infra/secrets/             # must show only ENC[...] values
+```
+
+Do not define a key in two files. Commit on a branch and merge; the VM reads the files from the repo.
+
+**3. Check after the deploy:** `docker exec floorwars-postgres-1 psql -U postgres -d floorwars -c '\du floorwars_*'`
+lists both roles, and the API log shows no `permission denied`.
+
+**4. Add `acs_access_key`.** Create the Communication Services resource and an Email Communication
+Service with a verified (or Azure-managed) sender domain, copy a key from Keys, then
+`sops infra/secrets/auth.enc.env` and add `acs_access_key=<key>` (one line). Fill
+`FLOORWARS_ACS_ENDPOINT` and `FLOORWARS_MAIL_FROM` in `/srv/floorwars/repo/infra/.env`.
+
+**5. Redeploy.** `sudo /srv/floorwars/deploy.sh <SHA>` (re-install the reviewed copy first, since
+`deploy.sh` changed: see section 6). The deploy now runs `alembic upgrade head` through the
+`migrate` service (migration role) and starts the API with the app role. A rollback still never migrates.
+
+If `migrate` cannot start with only its one secret (the API settings require another), the log
+names the missing setting: report it, do not widen the mount by hand.
+
+## 12. Staging
+
+Decision (2026-10-31): **staging is the same VM and the same compose project as production, for now.**
+`https://api.floorwars.me` is staging until the first real users exist; there is no second stack, no
+second database and no separate `infra/.env`. Reason: one VM on student credit (about $28 a month,
+`docs/cost.md`); a second VM or a second Postgres and Valkey would double the cost and the
+upkeep for a team of two with no users yet. Consequences to keep in mind:
+
+- A staging deploy is a production deploy. Expand-only migrations (plan 7.7) and the automatic
+  re-pin on a failed health check are the safety net; there is no place to rehearse a risky migration.
+- Test accounts and the seed data live in the same database that real users will use. Clear them
+  before the first real users.
+- Revisit when real users exist or a migration needs a rehearsal: a second compose project
+  (`-p floorwars-staging`, own data directory, own secrets, hostname `staging.floorwars.me`)
+  or a second small VM (plan 7.1, 9.2).
 
 ## Cost hygiene
 

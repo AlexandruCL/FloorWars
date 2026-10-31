@@ -3,11 +3,11 @@
 -- Run ONCE per database by a person, as the postgres superuser, and again after any change to
 -- this file (it is idempotent). Passwords are psql variables, never literals in this file:
 --
---   docker compose exec -T postgres psql -U postgres -d floorwars -v ON_ERROR_STOP=1 \
---     -v app_password="$(openssl rand -hex 24)" -v migrator_password="$(openssl rand -hex 24)" \
---     -f - < infra/sql/roles.sql
+--   docker exec -i floorwars-postgres-1 psql -U postgres -d floorwars -v ON_ERROR_STOP=1 \
+--     -v app_password="$APP_PW" -v migrator_password="$MIG_PW" < infra/sql/roles.sql
 --
--- (keep the two generated passwords: they go into the SOPS URLs, see docs/runbook.md.)
+-- (generate the two passwords with openssl rand -hex 24 and keep them: they go into the SOPS
+-- URLs, see docs/runbook.md section 11.)
 --
 --   floorwars_migrator  LOGIN, owns every schema object, may run DDL (alembic upgrade head).
 --   floorwars_app       LOGIN, no DDL: SELECT/INSERT/UPDATE/DELETE on tables, USAGE on sequences.
