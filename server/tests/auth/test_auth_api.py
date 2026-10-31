@@ -365,7 +365,12 @@ ACS = {
 }
 
 
-def test_prod_without_acs_refuses_to_start() -> None:
+def test_prod_without_acs_refuses_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Settings also read the process environment; a FLOORWARS_DATABASE_URL exported in the
+    # developer's shell would otherwise fill in the "missing" values below.
+    for name in list(os.environ):
+        if name.upper().startswith("FLOORWARS_"):
+            monkeypatch.delenv(name)
     with pytest.raises(ConfigError, match="MAIL_BACKEND=acs") as exc:
         create_app(Settings(env="prod", mail_backend="log", jwt_signing_key=TEST_JWT_KEY))
     assert TEST_JWT_KEY not in str(exc.value)
