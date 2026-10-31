@@ -26,6 +26,12 @@ services:
     environment:
       FLOORWARS_ENV: dev
       FLOORWARS_LOG_LEVEL: ${FLOORWARS_LOG_LEVEL:-INFO}
+      FLOORWARS_MAIL_BACKEND: log # codes are not sent; the log shows "mail sent" only
+      FLOORWARS_ACS_ENDPOINT: ""
+      FLOORWARS_MAIL_FROM: ""
+
+  migrate:
+    image: floorwars-api:local
 
   postgres:
     volumes: !override
@@ -43,3 +49,11 @@ secrets:
     file: ./local-secrets/postgres_password
   valkey_password:
     file: ./local-secrets/valkey_password
+  jwt_signing_key:
+    file: ./local-secrets/jwt_signing_key
+  qr_hmac_key:
+    file: ./local-secrets/qr_hmac_key
+  acs_access_key:
+    file: ./local-secrets/acs_access_key
+  migration_database_url:
+    file: ./local-secrets/migration_database_url

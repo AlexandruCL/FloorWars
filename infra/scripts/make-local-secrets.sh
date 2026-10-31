@@ -13,7 +13,7 @@ force=false
 
 if [[ ! -f "${infra_dir}/.env" ]]; then
   printf '%s\n' "# Local dev only (written by make-local-secrets.sh). Not for the VM." \
-    "API_TAG=local" "FLOORWARS_ENV=dev" "FLOORWARS_LOG_LEVEL=INFO" >"${infra_dir}/.env"
+    "API_TAG=local" "FLOORWARS_ENV=dev" "FLOORWARS_LOG_LEVEL=INFO" "FLOORWARS_MAIL_BACKEND=log" >"${infra_dir}/.env"
   echo "wrote infra/.env for local use"
 fi
 
@@ -37,6 +37,11 @@ printf '%s' "$pg_pw" >"$out_dir/postgres_password"
 printf '%s' "$vk_pw" >"$out_dir/valkey_password"
 printf '%s' "postgresql+psycopg://postgres:${pg_pw}@postgres:5432/floorwars" >"$out_dir/database_url"
 printf '%s' "redis://:${vk_pw}@valkey:6379/0" >"$out_dir/valkey_url"
+# Locally the app and the migrations both use the superuser (roles.sql is for the VM).
+printf '%s' "postgresql+psycopg://postgres:${pg_pw}@postgres:5432/floorwars" >"$out_dir/migration_database_url"
+printf '%s' "$(rand_hex)$(rand_hex)" >"$out_dir/jwt_signing_key"
+printf '%s' "$(rand_hex)$(rand_hex)" >"$out_dir/qr_hmac_key"
+printf '%s' "local-placeholder-not-a-real-key" >"$out_dir/acs_access_key"
 
 echo "wrote dummy secrets to infra/local-secrets/"
 echo "note: --force after a first run also needs 'docker compose ... down -v' (postgres keeps the old password)"
