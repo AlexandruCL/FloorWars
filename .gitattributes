@@ -1,0 +1,3 @@
+# SOPS-encrypted secrets must keep LF line endings on every platform: sops cannot parse its
+# metadata with CRLF, so a Windows checkout with core.autocrlf=true would break decryption.
+infra/secrets/*.enc.* text eol=lf
