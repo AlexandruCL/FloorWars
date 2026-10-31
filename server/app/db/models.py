@@ -1,6 +1,6 @@
-"""SQLAlchemy models for the baseline schema (plan section 5.1).
+"""SQLAlchemy models (plan section 5.1).
 
-Must match ``migrations/versions/0001_baseline.py`` exactly; ``alembic check`` enforces that.
+Must match the migrations in ``migrations/versions/`` exactly; ``alembic check`` enforces that.
 See ``docs/er_review.md`` for the decisions behind nullability, PK types and delete rules.
 """
 
@@ -16,6 +16,7 @@ from sqlalchemy import (
     Identity,
     Index,
     Integer,
+    SmallInteger,
     Text,
     func,
     text,
@@ -44,6 +45,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(CITEXT(), unique=True)
     display_name: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = _created_at()
+    # Set at sign-up from OtpVerifyRequest.accept_terms / confirm_adult (0002_auth). NULL only
+    # for rows created before 0002; the API never creates a user without them.
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    age_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Device(Base):
@@ -114,3 +119,36 @@ class RefreshToken(Base):
     created_at: Mapped[datetime] = _created_at()
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# Highest value of otp_challenge.attempts (plan 7.9: five attempts per code). The CHECK below and
+# the Settings bound on ``otp_max_attempts`` both use it.
+OTP_MAX_ATTEMPTS = 5
+
+
+class OtpChallenge(Base):
+    """A sign-in code sent by e-mail (plan 7.9). Only ``sha256(salt || code)`` is stored.
+
+    At most one *active* (``consumed_at IS NULL``) challenge per e-mail: a new request sets
+    ``consumed_at`` on the previous one (superseded), a successful verify sets it too.
+    """
+
+    __tablename__ = "otp_challenge"
+    __table_args__ = (
+        CheckConstraint(f"attempts BETWEEN 0 AND {OTP_MAX_ATTEMPTS}", name="attempts_range"),
+        Index(
+            "ix_otp_challenge_email",
+            "email",
+            unique=True,
+            postgresql_where=text("consumed_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    email: Mapped[str] = mapped_column(CITEXT())
+    code_hash: Mapped[bytes] = mapped_column(BYTEA())
+    salt: Mapped[bytes] = mapped_column(BYTEA())
+    attempts: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
