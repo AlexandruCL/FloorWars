@@ -41,10 +41,21 @@ Postgres and Valkey read their own files (`postgres_password`, `valkey_password`
 | `postgres_password` | postgres (`POSTGRES_PASSWORD_FILE`) | Week 1 | Used only on first start (initdb); changing it later needs `ALTER ROLE` |
 | `valkey_password` | valkey (`requirepass`) | Week 1 | Hex only (`openssl rand -hex 32`); it is written into a quoted config line |
 | `valkey_url` | api (`floorwars_valkey_url`) | Week 1 | `redis://:<valkey_password>@valkey:6379/0` |
-| `jwt_signing_key` | api (`floorwars_jwt_signing_key`) | Week 2 | Hex key in `auth.enc.env`, rotated each semester (plan 7.9) |
-| `qr_hmac_key` | api (`floorwars_qr_hmac_key`) | Week 2 | 32 random bytes, hex, in `auth.enc.env` |
-| `acs_access_key` | api (`floorwars_acs_access_key`) | Week 2 | Azure Communication Services access key (e-mail codes); the endpoint and sender are in `infra/.env` |
+| `jwt_signing_key` | api (`floorwars_jwt_signing_key`) | Week 2 | In `auth.enc.env`. Hex of a 32-byte Ed25519 seed (64 hex characters, one line), **not a PEM**, so the `.enc.env` line split works. Rotated each semester (plan 7.5, 7.9); the previous public key goes in the non-secret setting `FLOORWARS_JWT_PREVIOUS_PUBLIC_KEYS` |
+| `qr_hmac_key` | api (`floorwars_qr_hmac_key`) | Week 2 | In `auth.enc.env`. 32 random bytes, hex (64 characters) |
+| `acs_access_key` | api (`floorwars_acs_access_key`) | Week 2 | In `acs.enc.env`. Azure Communication Services access key for the sign-in e-mails. The endpoint and the sender are not secret: `FLOORWARS_ACS_ENDPOINT` and `FLOORWARS_MAIL_FROM` in `infra/.env` |
 | `migration_database_url` | `migrate` service (`floorwars_database_url`) | Week 2 | `postgresql+psycopg://floorwars_migrator:...`; DDL rights, created by `infra/sql/roles.sql` (plan 7.7) |
+
+Week 2 auth secrets are in `auth.enc.env` (generated with Python's `secrets`, 32 bytes each):
+
+```
+jwt_signing_key=<64 hex characters>
+qr_hmac_key=<64 hex characters>
+```
+
+Generate a replacement with `python -c "import secrets; print(secrets.token_hex(32))"` into a
+plaintext file outside the repo, encrypt it as shown below, delete the plaintext. The API refuses
+to start in `staging`/`prod` without `jwt_signing_key`; see `server/README.md` ("Configuration").
 
 Week 1 suggestion: keep the four Week 1 values in one `app.enc.env`:
 

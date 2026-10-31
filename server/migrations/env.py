@@ -2,7 +2,8 @@
 
 The URL comes from ``config.attributes["database_url"]`` when set programmatically (tests),
 otherwise from settings (``FLOORWARS_DATABASE_URL`` or ``/run/secrets/database_url``).
-Migrations run with a synchronous psycopg engine; the app itself uses the async engine.
+Migrations run with their own synchronous psycopg engine (``NullPool``); the app uses the sync
+engine from ``app/db/session.py``.
 """
 
 from logging.config import fileConfig

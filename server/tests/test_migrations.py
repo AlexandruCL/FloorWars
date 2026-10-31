@@ -1,7 +1,8 @@
 """Migration tests against a real PostgreSQL + PostGIS database.
 
-Skipped unless ``FLOORWARS_TEST_DATABASE_URL`` is set. The database is migrated to head and
-back to base, so point it at a throwaway database, never at one holding data.
+Skipped unless ``FLOORWARS_TEST_DATABASE_URL`` is set. The database is migrated to head, back
+to base and to head again (always left at head), so point it at a throwaway database, never at
+one holding data.
 """
 
 import os
@@ -28,6 +29,7 @@ TABLES = {
     "team_membership",
     "building",
     "refresh_token",
+    "otp_challenge",
 }
 
 
@@ -52,7 +54,8 @@ def engine() -> Iterator[Engine]:
         yield eng
     finally:
         eng.dispose()
-        command.downgrade(cfg, "base")
+        # Leave the database at head so other test modules can run in any order.
+        command.upgrade(cfg, "head")
 
 
 @pytest.fixture
@@ -168,9 +171,37 @@ def test_building_footprint_accepts_polygon(conn: Connection) -> None:
     assert contains is True
 
 
+def _insert_challenge(conn: Connection, email: str, attempts: int = 0) -> None:
+    conn.execute(
+        text(
+            "INSERT INTO otp_challenge (email, code_hash, salt, attempts, expires_at) "
+            "VALUES (:e, :h, :s, :a, now() + interval '10 minutes')"
+        ),
+        {"e": email, "h": bytes(32), "s": bytes(16), "a": attempts},
+    )
+
+
+def test_otp_attempts_capped_at_five(conn: Connection) -> None:
+    _insert_challenge(conn, "five@example.com", attempts=5)
+    with pytest.raises(IntegrityError, match="ck_otp_challenge_attempts_range"):
+        _insert_challenge(conn, "six@example.com", attempts=6)
+
+
+def test_one_active_otp_challenge_per_email(conn: Connection) -> None:
+    _insert_challenge(conn, "one@example.com")
+    conn.execute(
+        text("UPDATE otp_challenge SET consumed_at = now() WHERE email = 'one@example.com'")
+    )
+    _insert_challenge(conn, "one@example.com")  # the consumed one does not count
+    with pytest.raises(IntegrityError, match="ix_otp_challenge_email"):
+        _insert_challenge(conn, "ONE@example.com")
+
+
 def test_downgrade_and_upgrade_roundtrip(engine: Engine) -> None:
     cfg = _alembic_config()
-    command.downgrade(cfg, "base")
-    assert not (_public_tables(engine) & TABLES)
-    command.upgrade(cfg, "head")
+    try:
+        command.downgrade(cfg, "base")
+        assert not (_public_tables(engine) & TABLES)
+    finally:
+        command.upgrade(cfg, "head")  # restore head even if the downgrade check failed
     assert _public_tables(engine) >= TABLES
