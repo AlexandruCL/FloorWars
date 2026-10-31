@@ -41,10 +41,21 @@ Postgres and Valkey read their own files (`postgres_password`, `valkey_password`
 | `postgres_password` | postgres (`POSTGRES_PASSWORD_FILE`) | Week 1 | Used only on first start (initdb); changing it later needs `ALTER ROLE` |
 | `valkey_password` | valkey (`requirepass`) | Week 1 | Hex only (`openssl rand -hex 32`); it is written into a quoted config line |
 | `valkey_url` | api (`floorwars_valkey_url`) | Week 1 | `redis://:<valkey_password>@valkey:6379/0` |
-| `jwt_signing_key` | api | Week 2 | EdDSA/ES256 private key, rotated each semester (plan 7.9). PEM is multi-line: store as `.enc.yaml`/`.enc.json` or extend `deploy.sh` before adding it |
-| `qr_hmac_key` | api | Week 2 | 32 random bytes, hex |
-| `smtp_*` / ACS e-mail credentials | api / worker | Week 2 | Azure Communication Services Email or an SMTP relay |
+| `jwt_signing_key` | api (`floorwars_jwt_signing_key`) | Week 2 | In `auth.enc.env`. Hex of a 32-byte Ed25519 seed (64 hex characters, one line), **not a PEM**, so the `.enc.env` line split works. Rotated each semester (plan 7.5, 7.9) |
+| `qr_hmac_key` | api (`floorwars_qr_hmac_key`) | Week 2 | In `auth.enc.env`. 32 random bytes, hex (64 characters) |
+| `acs_access_key` | api (`floorwars_acs_access_key`) | Week 2 | Azure Communication Services access key (base64), created by Ionut. Not added yet. `mail_from` and `acs_endpoint` are not secret and can be plain settings |
 | `migration_database_url` | `deploy.sh` migrations | Week 2 | Role with DDL rights; the app role has none (plan 7.7) |
+
+Week 2 auth secrets are in `auth.enc.env` (generated with Python's `secrets`, 32 bytes each):
+
+```
+jwt_signing_key=<64 hex characters>
+qr_hmac_key=<64 hex characters>
+```
+
+Generate a replacement with `python -c "import secrets; print(secrets.token_hex(32))"` into a
+plaintext file outside the repo, encrypt it as shown below, delete the plaintext. The API refuses
+to start in `staging`/`prod` without `jwt_signing_key`; see `server/README.md` ("Configuration").
 
 Week 1 suggestion: keep the four Week 1 values in one `app.enc.env`:
 
