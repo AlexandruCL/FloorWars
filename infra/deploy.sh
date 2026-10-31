@@ -32,7 +32,8 @@ main() {
   export SECRETS_DIR="${SECRETS_DIR:-/run/secrets/floorwars}"
   export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-/etc/floorwars/age.key}"
   # Keep in sync with the top-level `secrets:` in docker-compose.yml.
-  readonly REQUIRED_SECRETS=(database_url valkey_url postgres_password valkey_password)
+  readonly REQUIRED_SECRETS=(database_url valkey_url postgres_password valkey_password
+    jwt_signing_key qr_hmac_key acs_access_key migration_database_url)
 
   local request
   request=$(parse_request "$@")
@@ -150,8 +151,8 @@ release() {
 
   if [[ "$mode" == "migrate" ]]; then
     # Expand-only migrations (plan 7.7). Skipped while the image has no alembic.ini yet.
-    # TODO (Week 2): run with a separate migration role/secret once the app role has no DDL.
-    compose run --rm --no-deps -T api sh -c \
+    # Runs as the `migrate` service: same image, but with the migration role's database URL.
+    compose --profile tools run --rm --no-deps -T migrate sh -c \
       'if [ -f alembic.ini ]; then exec alembic upgrade head; else echo "no alembic.ini, skipping migrations"; fi' ||
       { log "migrations failed; the running api was not touched"; return 1; }
   fi
@@ -253,7 +254,7 @@ fill_secrets() {
   done
 
   for s in "${REQUIRED_SECRETS[@]}"; do
-    [[ -s "$dir/$s" ]] || { log "required secret '$s' missing (see infra/secrets/README.md)"; return 1; }
+    [[ -s "$dir/$s" ]] || { log "missing secret $s (required; see infra/secrets/README.md)"; return 1; }
   done
 }
 
