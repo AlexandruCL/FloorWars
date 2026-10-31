@@ -136,6 +136,9 @@ Notes:
 | `POST /v1/auth/otp` | Sends a 6-digit code to an allow-listed e-mail (no `+` sub-addresses: 422). 202, no body. 403 wrong domain, 429 rate limit (`Retry-After`; IP bucket first, then e-mail), 503 mail or Valkey down (fails closed). |
 | `POST /v1/auth/verify` | Code, device and (new accounts) `accept_terms` + `confirm_adult` for a token pair. 401 wrong/expired, 403 confirmations missing (challenge stays usable), 429 after 5 attempts or per-IP limit, 503 Valkey down. |
 | `POST /v1/auth/refresh` | Rotates the refresh token. 401 unknown, expired or reused; reuse revokes the whole family. 429 per-IP limit, 503 Valkey down. |
+| `GET /v1/teams` | Public. All teams `{id, code, color_hex}` ordered by `code`. |
+| `GET /v1/seasons/active` | Public. The running season `{id, starts_at, ends_at}`; 404 `no-active-season`. |
+| `POST /v1/seasons/{id}/join` | Body `{team_id}`, 201 `{season_id, team_id}`. 404 `season-not-found`, 422 `team-not-found`, 409 `season-not-active` or `already-joined` (the primary key `(user_id, season_id)` decides, so concurrent joins give one 201). |
 
 Auth details (plan 7.9): codes are `sha256(salt || code)` with a 16-byte salt, compared in
 constant time, attempts counted under a row lock before comparing; a new request supersedes the
