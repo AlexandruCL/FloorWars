@@ -37,14 +37,14 @@ Postgres and Valkey read their own files (`postgres_password`, `valkey_password`
 
 | Secret (decrypted name) | Used by | Needed from | Notes |
 |---|---|---|---|
-| `database_url` | api (`floorwars_database_url`) | Week 1 | `postgresql+psycopg://postgres:<postgres_password>@postgres:5432/floorwars`; switches to the least-privilege app role in Week 2 |
+| `database_url` | api (`floorwars_database_url`) | Week 1 | `postgresql+psycopg://postgres:<postgres_password>@postgres:5432/floorwars`; from Week 2 it uses the least-privilege app role `floorwars_app` (`postgresql+psycopg://floorwars_app:...`) |
 | `postgres_password` | postgres (`POSTGRES_PASSWORD_FILE`) | Week 1 | Used only on first start (initdb); changing it later needs `ALTER ROLE` |
 | `valkey_password` | valkey (`requirepass`) | Week 1 | Hex only (`openssl rand -hex 32`); it is written into a quoted config line |
 | `valkey_url` | api (`floorwars_valkey_url`) | Week 1 | `redis://:<valkey_password>@valkey:6379/0` |
-| `jwt_signing_key` | api | Week 2 | EdDSA/ES256 private key, rotated each semester (plan 7.9). PEM is multi-line: store as `.enc.yaml`/`.enc.json` or extend `deploy.sh` before adding it |
-| `qr_hmac_key` | api | Week 2 | 32 random bytes, hex |
-| `smtp_*` / ACS e-mail credentials | api / worker | Week 2 | Azure Communication Services Email or an SMTP relay |
-| `migration_database_url` | `deploy.sh` migrations | Week 2 | Role with DDL rights; the app role has none (plan 7.7) |
+| `jwt_signing_key` | api (`floorwars_jwt_signing_key`) | Week 2 | Hex key in `auth.enc.env`, rotated each semester (plan 7.9) |
+| `qr_hmac_key` | api (`floorwars_qr_hmac_key`) | Week 2 | 32 random bytes, hex, in `auth.enc.env` |
+| `acs_access_key` | api (`floorwars_acs_access_key`) | Week 2 | Azure Communication Services access key (e-mail codes); the endpoint and sender are in `infra/.env` |
+| `migration_database_url` | `migrate` service (`floorwars_database_url`) | Week 2 | `postgresql+psycopg://floorwars_migrator:...`; DDL rights, created by `infra/sql/roles.sql` (plan 7.7) |
 
 Week 1 suggestion: keep the four Week 1 values in one `app.enc.env`:
 
@@ -56,7 +56,8 @@ valkey_url=redis://:<valkey_password>@valkey:6379/0
 ```
 
 `deploy.sh` refuses to deploy if any of `database_url`, `valkey_url`, `postgres_password`,
-`valkey_password` is missing after decryption (`REQUIRED_SECRETS`).
+`valkey_password`, `jwt_signing_key`, `qr_hmac_key`, `acs_access_key`, `migration_database_url`
+is missing after decryption (`REQUIRED_SECRETS`), with the message `missing secret <name>`.
 
 ## Encrypt and edit
 
