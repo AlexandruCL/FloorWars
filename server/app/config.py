@@ -18,8 +18,12 @@ failure the app refuses to start):
 
 - ``FLOORWARS_ENV=prod`` needs ``mail_backend=acs`` (decision 2026-10-31);
 - ``mail_backend=acs`` needs ``mail_from``, ``acs_endpoint`` and ``acs_access_key``;
-- ``staging`` and ``prod`` need ``jwt_signing_key`` and refuse the ``fake`` mail backend. In
-  ``dev`` a missing ``jwt_signing_key`` is replaced by a random key per process.
+- ``staging`` and ``prod`` need ``jwt_signing_key``, ``database_url`` and ``valkey_url`` and
+  refuse the ``fake`` mail backend. In ``dev`` a missing ``jwt_signing_key`` is replaced by a
+  random key per process (with a loud warning).
+
+``env`` defaults to ``prod``, so a deployment that forgets ``FLOORWARS_ENV`` gets the strict
+checks; local runs and tests set ``FLOORWARS_ENV=dev``.
 
 ``qr_hmac_key`` is only defined here; the check-in feature enforces it where it uses it.
 """
@@ -34,7 +38,7 @@ from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from app.db.models import OTP_MAX_ATTEMPTS
+from app.constants import DAY_S, HOUR_S, OTP_MAX_ATTEMPTS
 
 SECRETS_DIR = Path("/run/secrets")
 
@@ -43,9 +47,6 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 # acs: Azure Communication Services (production); log: logs "otp mail sent to <address>"
 # without the code (local dev); fake: in-memory outbox read by tests.
 MailBackend = Literal["acs", "log", "fake"]
-
-HOUR_S = 3600
-DAY_S = 24 * HOUR_S
 
 
 def _hex32(value: SecretStr | None, name: str) -> SecretStr | None:
@@ -72,7 +73,9 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,
     )
 
-    env: Environment = "dev"
+    # Safe default: a deployment that forgets FLOORWARS_ENV gets the strict checks. Local runs
+    # and tests set FLOORWARS_ENV=dev explicitly.
+    env: Environment = "prod"
     log_level: LogLevel = "INFO"
     database_url: SecretStr | None = None
     valkey_url: SecretStr | None = None
@@ -89,8 +92,15 @@ class Settings(BaseSettings):
     # Tokens (plan 7.9). The signing key is the hex of a 32-byte Ed25519 seed, not a PEM.
     jwt_signing_key: SecretStr | None = None
     jwt_audience: str = "floorwars-api"
+    # Key rotation (plan 7.5): public keys of previous signing keys, still accepted for
+    # verification during the overlap. Comma-separated, 64 hex characters each (raw Ed25519
+    # public keys). Not secret.
+    jwt_previous_public_keys: Annotated[tuple[str, ...], NoDecode] = ()
     access_token_ttl_s: int = Field(default=900, ge=60, le=DAY_S)
     refresh_token_ttl_s: int = Field(default=30 * DAY_S, ge=HOUR_S, le=365 * DAY_S)
+    # A rotated refresh token presented again within this window is a retry (401, family kept);
+    # later it is reuse and revokes the family.
+    refresh_reuse_grace_s: int = Field(default=20, ge=0, le=300)
 
     # One-time codes (plan 7.9: 10 minutes, at most 5 attempts).
     otp_ttl_s: int = Field(default=600, ge=60, le=HOUR_S)
@@ -98,6 +108,10 @@ class Settings(BaseSettings):
     # Valkey token buckets for POST /v1/auth/otp (plan 3.4, 7.11).
     otp_rate_per_email_per_hour: int = Field(default=5, ge=1, le=1000)
     otp_rate_per_ip_per_hour: int = Field(default=60, ge=1, le=100_000)
+    # Per client IP (IPv6 per /64) on /auth/verify and /auth/refresh, checked before any database
+    # work. Generous: the campus NAT puts many students behind one address.
+    verify_rate_per_ip_per_hour: int = Field(default=300, ge=1, le=100_000)
+    refresh_rate_per_ip_per_hour: int = Field(default=1200, ge=1, le=100_000)
 
     # Entrance QR signatures (HMAC-SHA256, 32 bytes as hex). Used by the check-in feature.
     qr_hmac_key: SecretStr | None = None
@@ -112,6 +126,23 @@ class Settings(BaseSettings):
             if not domains:
                 raise ValueError("at least one allowed e-mail domain is needed")
             return domains
+        return value
+
+    @field_validator("jwt_previous_public_keys", mode="before")
+    @classmethod
+    def _split_public_keys(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.split(",")
+        if isinstance(value, list | tuple):
+            keys = tuple(str(k).strip().lower() for k in value if str(k).strip())
+            for key in keys:
+                try:
+                    raw = bytes.fromhex(key)
+                except ValueError:
+                    raise ValueError("jwt_previous_public_keys must be hex") from None
+                if len(raw) != 32:
+                    raise ValueError("each previous public key must be 32 bytes (64 hex)")
+            return keys
         return value
 
     @field_validator("jwt_signing_key")
@@ -165,8 +196,9 @@ def check_api_settings(settings: Settings) -> None:
     if settings.env in ("staging", "prod"):
         if settings.mail_backend == "fake":
             raise ConfigError("the fake mail backend is for tests only")
-        if settings.jwt_signing_key is None:
-            raise ConfigError(f"FLOORWARS_ENV={settings.env} needs FLOORWARS_JWT_SIGNING_KEY")
+        for name in ("jwt_signing_key", "database_url", "valkey_url"):
+            if getattr(settings, name) is None:
+                raise ConfigError(f"FLOORWARS_ENV={settings.env} needs FLOORWARS_{name.upper()}")
 
 
 @lru_cache(maxsize=1)

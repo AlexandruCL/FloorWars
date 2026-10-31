@@ -1,11 +1,14 @@
 openapi: 3.1.0
 info:
   title: FloorWars API
-  version: 0.4.0-draft
+  version: 0.4.1-draft
   description: |
     Approved by both members on 2026-10-21. Every later change is a PR reviewed by the other member.
 
     Changelog:
+    - 0.4.1-draft (2026-10-31): 503 ServiceUnavailable on /auth/otp, /auth/verify and /auth/refresh
+      (rate limiting fails closed when Valkey is down, mail backend unavailable); 429 on /auth/refresh
+      (per-IP limit). Both were already returned by the server.
     - 0.4.0-draft (2026-10-31): week 2 auth and teams (plan 10, Week 2). OtpVerifyRequest requires
       device (DeviceInfo) and takes accept_terms and confirm_adult, which a new account must set to
       true (403 otherwise; users under 18 are not accepted). Added GET /seasons/active and Season.
@@ -67,6 +70,7 @@ paths:
               schema: { $ref: '#/components/schemas/Problem' }
         '422': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /auth/verify:
     post:
@@ -103,6 +107,7 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
 
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /auth/refresh:
     post:
       tags: [auth]
@@ -127,7 +132,8 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
         '422': { $ref: '#/components/responses/ValidationError' }
-
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /teams:
     get:
       tags: [teams]
@@ -531,6 +537,11 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     ValidationError:
       description: 'Inferred: the body or parameters fail schema validation (422, the FastAPI default).'
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ServiceUnavailable:
+      description: 'Inferred: a required backend (rate limiter, mail, database) is unavailable. Retry later with backoff.'
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
