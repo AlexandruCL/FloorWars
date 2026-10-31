@@ -348,7 +348,7 @@ Shared operating model (PDF, host changed by us from Oracle to Azure): one team-
 - Tested backups make a rebuild routine, so a lost or replaced VM is a restore, not a crisis.
 - SSH keys only, no root login, a dedicated deploy user whose key is restricted to a forced `deploy.sh` command.
 - Cloud firewall (security group or NSG) plus `ufw`: 80/443 public, 22 from team IPs only. `unattended-upgrades` for security patches. `fail2ban` on SSH.
-- Docker Engine and Compose v2. Four networks: `edge` (only Caddy), `app` (API and workers), `data` (Postgres and Valkey, `internal: true`, no route to the internet), `monitoring` (exporters). Staging runs as a separate compose project on the same host with its own database.
+- Docker Engine and Compose v2. Four networks: `edge` (only Caddy), `app` (API and workers), `data` (Postgres and Valkey, `internal: true`, no route to the internet), `monitoring` (exporters). Staging is, for now, the same compose project as production on the one VM (decision 2026-10-31, `docs/runbook.md` section 12); a separate staging project or VM comes back if the credit allows.
 - Encryption at rest: database and data live on a separate encrypted cloud disk (Azure managed disk with platform-managed or customer keys). The PDF used LUKS because the host was a bare VM; the cloud disk encryption replaces it. Backups are encrypted independently.
 
 Containers: `caddy`, `api` (two replicas), `worker` (Celery), `scheduler` (Celery beat), `admin` (SQLAdmin), `postgres`, `valkey`, plus the monitoring stack (Prometheus, Grafana, Loki, Alloy, Alertmanager, node_exporter, cAdvisor, postgres_exporter). Only Caddy publishes ports. The admin panel is reachable only from team IPs (Caddy `remote_ip` matcher) and also requires an admin role in the JWT. Grafana is published through Caddy behind an IP allowlist plus basic auth.
@@ -367,7 +367,7 @@ Rule carried over from the PDF: no managed backend platforms (no Firebase databa
 | Off-site backups | Blob Storage account in a second EU region, versioning on | pgBackRest has a native Azure repository type. |
 | Sign-in e-mails | Azure Communication Services Email (or an SMTP relay as fallback) | One-time codes only. |
 | Budget control | Cost Management budget with alerts | Create it before any other resource. |
-| Staging | Same VM with a separate compose project, or a second small VM | |
+| Staging | For now the same VM and compose project as production (decision 2026-10-31) | A separate project or VM later if the credit allows |
 | Uptime check | Application Insights availability test, or Uptime Kuma elsewhere | Must live outside the VM it watches. |
 | DNS | Azure DNS (optional), or the registrar's DNS | |
 | Credit | Azure for Students: USD 100, no credit card, via GitHub Student Developer Pack (verify current terms) | |

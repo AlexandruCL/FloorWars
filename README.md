@@ -53,6 +53,7 @@ Dates are when the decision was made. The rule that is in force is in the plan a
 | 2026-10-29 | The API address is `https://api.floorwars.me` (domain `floorwars.me` from the GitHub Student Pack, DNS `A api -> 4.223.83.29`, no other records). | `contracts/openapi.yaml`, `cristea/vm_guide.md` |
 | 2026-10-25 | ~~Firebase project for FCM only~~ Replaced on 2026-10-29, see the next row. | |
 | 2026-10-29 | No Firebase or managed push service (professor's rule). Notifications use our own channel: `game_event` table, WebSocket replay from the Kotlin sensing service, WorkManager polling fallback, local Android notifications. The FCM key and the Firebase project are deleted. | Plan section 7.2.1 |
+| 2026-10-31 | Staging is the same VM and the same compose project as production for now (one VM on student credit). A deploy to staging is a deploy to production; revisit before real users. Database roles: `floorwars_migrator` (DDL) and `floorwars_app` (DML only). | `docs/runbook.md` sections 11 and 12, `infra/sql/roles.sql` |
 
 Starting values are ours and tunable from real data: 1 point per verified step, halving after 300 steps in an hour, at most 600 verified steps per 10 minutes per user, 20 steps per floor-equivalent.
 

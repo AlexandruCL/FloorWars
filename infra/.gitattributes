@@ -2,3 +2,4 @@
 *.sh text eol=lf
 caddy/Caddyfile text eol=lf
 *.yml text eol=lf
+*.sql text eol=lf
