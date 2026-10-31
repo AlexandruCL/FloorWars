@@ -11,7 +11,7 @@ from app.api.deps import AppSettings, DbSession, get_access_tokens
 from app.api.problems import problem_doc
 from app.auth import service
 from app.auth.ratelimit import RateLimiter
-from app.auth.schemas import OtpRequest, OtpVerifyRequest, TokenPair
+from app.auth.schemas import OtpRequest, OtpVerifyRequest, RefreshRequest, TokenPair
 from app.auth.tokens import AccessTokens
 from app.mail import MailSender
 
@@ -78,3 +78,20 @@ def verify_otp(
     """Exchange e-mail and code for tokens; registers the device."""
     response.headers.update(NO_STORE)
     return service.verify_otp(db, settings, tokens, body)
+
+
+@router.post(
+    "/refresh",
+    response_model=TokenPair,
+    responses={
+        401: problem_doc("Unknown, expired or reused refresh token (reuse revokes the family)."),
+        422: problem_doc("The body does not match the schema."),
+    },
+    operation_id="refreshTokens",
+)
+def refresh_tokens(
+    body: RefreshRequest, response: Response, db: DbSession, settings: AppSettings, tokens: Tokens
+) -> TokenPair:
+    """Rotate the refresh token and return a new pair."""
+    response.headers.update(NO_STORE)
+    return service.refresh(db, settings, tokens, body.refresh_token)

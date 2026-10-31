@@ -48,6 +48,10 @@ def _wrong_code() -> ProblemError:
     return ProblemError(401, detail="Wrong or expired code.")
 
 
+def _bad_refresh() -> ProblemError:
+    return ProblemError(401, detail="Unknown, expired or reused refresh token.")
+
+
 def _hash_refresh(raw: str) -> bytes:
     return hashlib.sha256(raw.encode("utf-8")).digest()
 
@@ -210,3 +214,28 @@ def verify_otp(
 
 
 # POST /v1/auth/refresh
+
+
+def refresh(db: Session, settings: Settings, tokens: AccessTokens, raw_token: str) -> TokenPair:
+    """Rotate a refresh token. Presenting a revoked (already rotated) one revokes its family."""
+    now = _now()
+    row = repository.lock_refresh_token(db, _hash_refresh(raw_token))
+    if row is None:
+        db.rollback()
+        raise _bad_refresh()
+    if row.revoked_at is not None:
+        revoked = repository.revoke_family(db, row.family_id)
+        db.commit()
+        logger.warning(
+            "refresh token reuse, family revoked",
+            extra={"user_id": str(row.user_id), "family_id": str(row.family_id), "n": revoked},
+        )
+        raise _bad_refresh()
+    if row.expires_at <= now:
+        db.rollback()
+        raise _bad_refresh()
+
+    row.revoked_at = now
+    pair = _issue_pair(db, settings, tokens, row.user_id, row.family_id, now)
+    db.commit()
+    return pair

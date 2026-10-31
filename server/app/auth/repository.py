@@ -7,7 +7,7 @@ No commits here: the service decides transaction boundaries. Functions that lock
 import uuid
 from datetime import datetime
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -105,3 +105,19 @@ def add_refresh_token(
         )
     )
     db.flush()
+
+
+def lock_refresh_token(db: Session, token_hash: bytes) -> RefreshToken | None:
+    return db.scalars(
+        select(RefreshToken).where(RefreshToken.token_hash == token_hash).with_for_update()
+    ).one_or_none()
+
+
+def revoke_family(db: Session, family_id: uuid.UUID) -> int:
+    """Revoke every still-valid token of the family; returns how many were revoked."""
+    result = db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=func.now())
+    )
+    return int(getattr(result, "rowcount", 0) or 0)
