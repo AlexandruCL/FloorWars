@@ -8,8 +8,9 @@ Only the Ed25519 primitive comes from ``cryptography``. Format:
 
 ``verify`` rejects anything else: another ``alg`` (including ``none``), an unknown ``kid``, a
 ``crit`` header, a bad signature, a wrong ``aud``, an expired token, a non-canonical encoding.
-Rotation (each semester, plan 7.5): add the previous public key to ``extra_verify_keys`` for the
-overlap; only the current key signs.
+Rotation (each semester, plan 7.5): put the previous key's public key (``public_key_hex``) in
+``FLOORWARS_JWT_PREVIOUS_PUBLIC_KEYS`` for the overlap (at least the access-token lifetime); only
+the current key signs.
 """
 
 import base64
@@ -186,4 +187,16 @@ def build_access_tokens(settings: Settings) -> AccessTokens:
         seed = secrets.token_bytes(32)
     else:  # Settings already refuses this; kept as a guard.
         raise RuntimeError("FLOORWARS_JWT_SIGNING_KEY is required outside dev")
-    return AccessTokens(seed, settings.jwt_audience, settings.access_token_ttl_s)
+    previous = {}
+    for hex_key in settings.jwt_previous_public_keys:
+        public = Ed25519PublicKey.from_public_bytes(bytes.fromhex(hex_key))
+        previous[key_id(public)] = public
+    return AccessTokens(
+        seed, settings.jwt_audience, settings.access_token_ttl_s, extra_verify_keys=previous
+    )
+
+
+def public_key_hex(seed: bytes) -> str:
+    """Raw public key (hex) of a signing seed, for ``FLOORWARS_JWT_PREVIOUS_PUBLIC_KEYS``."""
+    public = Ed25519PrivateKey.from_private_bytes(seed).public_key()
+    return public.public_bytes(Encoding.Raw, PublicFormat.Raw).hex()

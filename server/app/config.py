@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     # Tokens (plan 7.9). The signing key is the hex of a 32-byte Ed25519 seed, not a PEM.
     jwt_signing_key: SecretStr | None = None
     jwt_audience: str = "floorwars-api"
+    # Key rotation (plan 7.5): public keys of previous signing keys, still accepted for
+    # verification during the overlap. Comma-separated, 64 hex characters each (raw Ed25519
+    # public keys). Not secret.
+    jwt_previous_public_keys: Annotated[tuple[str, ...], NoDecode] = ()
     access_token_ttl_s: int = Field(default=900, ge=60, le=DAY_S)
     refresh_token_ttl_s: int = Field(default=30 * DAY_S, ge=HOUR_S, le=365 * DAY_S)
     # A rotated refresh token presented again within this window is a retry (401, family kept);
@@ -125,6 +129,23 @@ class Settings(BaseSettings):
             if not domains:
                 raise ValueError("at least one allowed e-mail domain is needed")
             return domains
+        return value
+
+    @field_validator("jwt_previous_public_keys", mode="before")
+    @classmethod
+    def _split_public_keys(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.split(",")
+        if isinstance(value, list | tuple):
+            keys = tuple(str(k).strip().lower() for k in value if str(k).strip())
+            for key in keys:
+                try:
+                    raw = bytes.fromhex(key)
+                except ValueError:
+                    raise ValueError("jwt_previous_public_keys must be hex") from None
+                if len(raw) != 32:
+                    raise ValueError("each previous public key must be 32 bytes (64 hex)")
+            return keys
         return value
 
     @field_validator("jwt_signing_key")

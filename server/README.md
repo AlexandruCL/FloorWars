@@ -96,9 +96,15 @@ docker stop fw-db fw-valkey
 Schema: `app/db/models.py` (SQLAlchemy 2.0, GeoAlchemy2), migrations in `migrations/versions/`.
 The baseline `0001_baseline` creates `user`, `device`, `team`, `season`, `team_membership`,
 `building` and `refresh_token`, and enables the `postgis` and `citext` extensions. `0002_auth`
-(expand-only) adds `otp_challenge` (hashed sign-in codes, `attempts` CHECK 0..5, a unique partial
-index `ix_otp_challenge_email` for one active challenge per e-mail) and the nullable
-`user.terms_accepted_at` and `user.age_confirmed_at`. Review notes and schema decisions:
+adds `otp_challenge` (hashed sign-in codes, `attempts` CHECK 0..5, a unique partial index
+`ix_otp_challenge_email` for one active challenge per e-mail, and `ix_otp_challenge_email_created_at`
+for cleanup), the nullable `user.terms_accepted_at`, `user.age_confirmed_at` and
+`refresh_token.rotated_at`, and gives `device` the composite primary key `(user_id, id)` (it was
+never deployed, so this reshaping was done in place).
+
+Retention: `app.auth.repository.purge_expired(db, now)` deletes challenges older than one day and
+refresh-token families whose every token has expired (revoked tokens of live families stay for
+reuse detection). **TODO (Week 5):** schedule it daily with Celery beat; nothing runs it yet. Review notes and schema decisions:
 [`docs/er_review.md`](docs/er_review.md).
 
 From `server/`, with `FLOORWARS_DATABASE_URL` set:
@@ -169,6 +175,7 @@ the host files to these names, see `infra/secrets/README.md`.
 | `FLOORWARS_ACS_ACCESS_KEY` | unset | ACS access key (base64). Secret. Required with `acs`. |
 | `FLOORWARS_JWT_SIGNING_KEY` | unset | Hex of a 32-byte Ed25519 seed (64 hex characters, one line, not a PEM). Secret. Required in `staging`/`prod`; in `dev` a random key per process is used. |
 | `FLOORWARS_JWT_AUDIENCE` | `floorwars-api` | `aud` claim of access tokens; tokens with another audience are rejected. |
+| `FLOORWARS_JWT_PREVIOUS_PUBLIC_KEYS` | empty | Key rotation: comma-separated raw Ed25519 public keys (64 hex each) of previous signing keys, still accepted for verification during the overlap. Not secret. Get one with `app.auth.tokens.public_key_hex(seed)`. |
 | `FLOORWARS_ACCESS_TOKEN_TTL_S` | `900` | Access token lifetime (plan 7.9: 15 minutes). |
 | `FLOORWARS_REFRESH_TOKEN_TTL_S` | `2592000` | Refresh token lifetime (30 days), renewed on every rotation. |
 | `FLOORWARS_REFRESH_REUSE_GRACE_S` | `20` | A rotated refresh token presented again within this window is a retry: 401, family kept. Later it is reuse and revokes the family. |

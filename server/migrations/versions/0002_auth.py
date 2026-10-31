@@ -63,6 +63,9 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text("consumed_at IS NULL"),
     )
+    op.create_index(
+        op.f("ix_otp_challenge_email_created_at"), "otp_challenge", ["email", "created_at"]
+    )
 
 
 def downgrade() -> None:

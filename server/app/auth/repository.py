@@ -5,13 +5,16 @@ No commits here: the service decides transaction boundaries. Functions that lock
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.db.models import Device, OtpChallenge, RefreshToken, User
+
+# Challenges older than this are deleted (codes live 10 minutes; a day is plenty for support).
+CHALLENGE_RETENTION = timedelta(days=1)
 
 # One-time codes.
 
@@ -126,3 +129,36 @@ def revoke_family(db: Session, family_id: uuid.UUID) -> int:
         .values(revoked_at=func.now())
     )
     return int(getattr(result, "rowcount", 0) or 0)
+
+
+# Maintenance.
+
+
+def purge_expired(db: Session, now: datetime) -> tuple[int, int]:
+    """Delete stale auth rows; returns ``(challenges, refresh_tokens)`` deleted. No commit.
+
+    - challenges created more than ``CHALLENGE_RETENTION`` ago (used, retired or expired);
+    - refresh tokens of families whose every token is past ``expires_at``. Revoked tokens of a
+      family that still has a live token are kept, so presenting them is still detected as reuse.
+
+    TODO(week 5, plan 7.6): run daily from Celery beat (one transaction, then commit).
+    """
+    challenges = db.execute(
+        delete(OtpChallenge)
+        .where(OtpChallenge.created_at < now - CHALLENGE_RETENTION)
+        .execution_options(synchronize_session=False)
+    )
+    expired_families = (
+        select(RefreshToken.family_id)
+        .group_by(RefreshToken.family_id)
+        .having(func.max(RefreshToken.expires_at) < now)
+    )
+    tokens = db.execute(
+        delete(RefreshToken)
+        .where(RefreshToken.family_id.in_(expired_families))
+        .execution_options(synchronize_session=False)
+    )
+    return (
+        int(getattr(challenges, "rowcount", 0) or 0),
+        int(getattr(tokens, "rowcount", 0) or 0),
+    )

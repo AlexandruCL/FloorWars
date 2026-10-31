@@ -32,8 +32,6 @@ from app.valkey import ValkeyError
 logger = logging.getLogger("floorwars.auth")
 
 HOUR_S = 3600
-# Retired challenges older than this are deleted when the same e-mail asks for a new code.
-CHALLENGE_RETENTION = timedelta(days=1)
 
 DOMAIN_NOT_ALLOWED = "urn:floorwars:problem:email-domain-not-allowed"
 TERMS_REQUIRED = "urn:floorwars:problem:terms-required"
@@ -78,7 +76,7 @@ def _store_pending_challenge(db: Session, settings: Settings, email: str, code: 
     """Store the new challenge retired (not usable yet); the previous one stays active."""
     now = _now()
     salt = otp.new_salt()
-    repository.delete_old_challenges(db, email, now - CHALLENGE_RETENTION)
+    repository.delete_old_challenges(db, email, now - repository.CHALLENGE_RETENTION)
     challenge_id = repository.add_pending_challenge(
         db, email, otp.hash_code(salt, code), salt, now + timedelta(seconds=settings.otp_ttl_s), now
     )

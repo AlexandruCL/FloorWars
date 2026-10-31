@@ -153,6 +153,8 @@ class OtpChallenge(Base):
             unique=True,
             postgresql_where=text("consumed_at IS NULL"),
         ),
+        # Retention purge and per-e-mail cleanup (``created_at`` ranges).
+        Index("ix_otp_challenge_email_created_at", "email", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
