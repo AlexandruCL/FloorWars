@@ -71,6 +71,7 @@ Starting values are ours and tunable from real data: 1 point per verified step, 
 | `tools/fake_segments/` | Script that posts fake climb segments to `POST /segments` (stairs, elevator, shake) with no phone |
 | `tools/synthetic_traces/` | Seeded generator for the synthetic traces |
 | `tools/validate_traces/` | Checker for trace files against `docs/trace_format.md` (checks 1 to 9) |
+| `tools/seed/`, `tools/qr/` | Idempotent seed (placeholder buildings, teams, active season) and the signed entrance QR generator. See the README in each folder |
 
 ## Getting started
 
