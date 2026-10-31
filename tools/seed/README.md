@@ -39,3 +39,18 @@ again. Remove or edit the `BUILDINGS` list in `seed.py` at the same time.
 
 `pytest -q tools/seed` needs `FLOORWARS_TEST_DATABASE_URL` (a throwaway, migrated database) and is
 skipped without it.
+
+## On the VM (staging)
+
+The server image already contains SQLAlchemy and psycopg, so the seed runs inside the `migrate`
+container, which has the migration role's URL as the secret file
+`/run/secrets/floorwars_database_url`. Nothing is passed on the command line, so the password never
+appears in the process list or the shell history:
+
+```sh
+cd /srv/floorwars/repo/infra && export API_TAG=$(cat /srv/floorwars/current)
+sudo -E docker compose --profile tools run --rm --no-deps \
+  -v /srv/floorwars/repo/tools/seed:/seed:ro migrate python /seed/seed.py
+```
+
+It prints the row counts (`building=2, team=5, season=1`). Running it again changes nothing.

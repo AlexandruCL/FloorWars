@@ -1,7 +1,9 @@
 """Idempotent seed for development and staging.
 
 Creates two placeholder buildings near UPT (Timisoara), five teams and one active season on the
-database in ``FLOORWARS_DATABASE_URL``. Running it twice changes nothing. It never creates users
+database in ``FLOORWARS_DATABASE_URL`` (or, if unset, the secret file
+``/run/secrets/floorwars_database_url``, as mounted in the ``migrate`` container on the VM).
+Running it twice changes nothing. It never creates users
 or team memberships.
 
     python tools/seed/seed.py
@@ -11,6 +13,7 @@ import math
 import os
 import sys
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy import Connection, create_engine, text
 
@@ -88,10 +91,27 @@ def seed(conn: Connection, now: datetime | None = None) -> None:
     )
 
 
-def main() -> int:
+MOUNTED_URL_PATH = "/run/secrets/floorwars_database_url"
+
+
+def database_url() -> str | None:
+    """The database URL: the environment variable, else the mounted secret file (never echoed)."""
     url = os.environ.get("FLOORWARS_DATABASE_URL")
+    if url:
+        return url
+    secret = Path(os.environ.get("FLOORWARS_DATABASE_URL_FILE", MOUNTED_URL_PATH))
+    if secret.is_file():
+        return secret.read_text(encoding="utf-8").strip() or None
+    return None
+
+
+def main() -> int:
+    url = database_url()
     if not url:
-        print("error: FLOORWARS_DATABASE_URL is not set", file=sys.stderr)
+        print(
+            "error: set FLOORWARS_DATABASE_URL or mount the floorwars_database_url secret",
+            file=sys.stderr,
+        )
         return 1
     engine = create_engine(url)
     try:

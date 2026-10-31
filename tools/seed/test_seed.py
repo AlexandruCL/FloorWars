@@ -126,3 +126,18 @@ def test_season_active_now(conn: Connection) -> None:
         text("SELECT count(*) FROM season WHERE active_during @> now()")
     ).scalar_one()
     assert active == 1
+
+
+def test_database_url_prefers_env_then_secret_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: "os.PathLike[str]"
+) -> None:
+    secret = os.path.join(tmp_path, "floorwars_database_url")
+    with open(secret, "w", encoding="utf-8") as fh:
+        fh.write("postgresql+psycopg://from-file" + chr(10))
+    monkeypatch.setenv("FLOORWARS_DATABASE_URL_FILE", secret)
+    monkeypatch.setenv("FLOORWARS_DATABASE_URL", "postgresql+psycopg://from-env")
+    assert seed.database_url() == "postgresql+psycopg://from-env"
+    monkeypatch.delenv("FLOORWARS_DATABASE_URL")
+    assert seed.database_url() == "postgresql+psycopg://from-file"
+    monkeypatch.setenv("FLOORWARS_DATABASE_URL_FILE", os.path.join(tmp_path, "missing"))
+    assert seed.database_url() is None
