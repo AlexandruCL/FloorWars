@@ -2,23 +2,36 @@
 
 Use the ``Annotated`` aliases in route signatures::
 
-    from app.api.deps import AppSettings, DbSession
+    from app.api.deps import CurrentUser, DbSession
 
-    @router.get("/teams")
-    def list_teams(db: DbSession) -> list[TeamOut]: ...
+    @router.post("/seasons/{id}/join")
+    def join(id: int, user: CurrentUser, db: DbSession) -> ...: ...
 
-Route handlers are plain ``def`` (FastAPI runs them in its thread pool) and the session is the
-sync SQLAlchemy ``Session``. The session does not commit by itself: the service that changes
-data calls ``db.commit()``; anything left uncommitted is rolled back when the request ends.
+- ``CurrentUser``: the signed-in ``app.db.models.User``. Verifies the ``Authorization: Bearer``
+  access token (EdDSA JWT, ``app.auth.tokens``) and loads the user; answers 401 ``Problem`` with
+  ``WWW-Authenticate: Bearer`` when the token is missing, invalid, expired or the user is gone.
+- ``DbSession``: the request's sync SQLAlchemy ``Session``.
+- ``AppSettings``: the ``Settings`` the app was created with.
+
+Route handlers are plain ``def`` (FastAPI runs them in its thread pool). The session does not
+commit by itself: the service that changes data calls ``db.commit()``; anything left uncommitted
+is rolled back when the request ends.
+
+Tests get a valid access token with ``app.state.access_tokens.issue(user_id)``; see
+``tests/auth/helpers.py`` (``auth_headers``).
 """
 
 from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.api.problems import unauthorized
+from app.auth.tokens import AccessTokens, TokenError
 from app.config import Settings
+from app.db.models import User
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -36,5 +49,35 @@ def get_db(request: Request) -> Iterator[Session]:
         yield session
 
 
+def get_access_tokens(request: Request) -> AccessTokens:
+    """The app's access-token issuer and verifier."""
+    tokens: AccessTokens = request.app.state.access_tokens
+    return tokens
+
+
 AppSettings = Annotated[Settings, Depends(get_app_settings)]
 DbSession = Annotated[Session, Depends(get_db)]
+
+# auto_error=False: a missing header must give our 401 Problem, not FastAPI's 403.
+_bearer = HTTPBearer(auto_error=False, description="Access token from POST /v1/auth/verify.")
+
+
+def current_user(
+    db: DbSession,
+    tokens: Annotated[AccessTokens, Depends(get_access_tokens)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+) -> User:
+    """The user named by a valid Bearer access token, or 401 ``Problem``."""
+    if credentials is None:
+        raise unauthorized("Missing access token.")
+    try:
+        claims = tokens.verify(credentials.credentials)
+    except TokenError:
+        raise unauthorized("Invalid or expired access token.") from None
+    user = db.get(User, claims.user_id)
+    if user is None:
+        raise unauthorized("Invalid or expired access token.")
+    return user
+
+
+CurrentUser = Annotated[User, Depends(current_user)]
