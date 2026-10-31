@@ -21,12 +21,14 @@ import binascii
 import hashlib
 import hmac
 import json
+import re
 from dataclasses import dataclass
 
 PREFIX = "fwq1."
 VERSION = 1
 KEY_BYTES = 32
 MAX_TOKEN_LEN = 512
+_B64_ALPHABET = re.compile(r"[A-Za-z0-9_-]*")
 
 
 class QrTokenError(Exception):
@@ -84,12 +86,16 @@ def _b64e(data: bytes) -> str:
 
 
 def _b64d(text: str) -> bytes:
-    if not text.isascii() or "=" in text:
+    """Strict, canonical base64url decode: no padding, no foreign characters, no spare bits."""
+    if not _B64_ALPHABET.fullmatch(text):
         raise QrMalformedError("bad base64url")
     try:
-        return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+        decoded = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
     except (binascii.Error, ValueError):
         raise QrMalformedError("bad base64url") from None
+    if _b64e(decoded) != text:
+        raise QrMalformedError("non-canonical base64url")
+    return decoded
 
 
 def _mac(key: bytes, payload: bytes) -> bytes:

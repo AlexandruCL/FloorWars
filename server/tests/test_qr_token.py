@@ -91,7 +91,7 @@ def test_expired_and_not_yet_valid() -> None:
         "fwq1.",
         "fwq1.onlyone",
         "fwq1.a.b.c",
-        "fwq1.!!!.???",
+        "fwq1.!!!.???",  # characters outside the base64url alphabet
         "fwq1.e30.AAAA",  # payload {} has no v
         "fwq1." + _b64(b"not json") + ".AAAA",
         "fwq1." + _b64(b'{"v":2,"b":1,"nbf":1,"exp":2,"kid":"x"}') + ".AAAA",
@@ -102,6 +102,38 @@ def test_expired_and_not_yet_valid() -> None:
 def test_malformed(token: str) -> None:
     with pytest.raises(QrMalformedError):
         verify(token, KEY, NOW)
+
+
+def test_non_alphabet_characters_name_the_reason() -> None:
+    with pytest.raises(QrMalformedError, match="bad base64url"):
+        verify("fwq1.!!!.???", KEY, NOW)
+
+
+def _with_signature(sig: str) -> str:
+    head, payload, _ = sign(7, KEY, NBF, EXP).split(".")
+    return f"{head}.{payload}.{sig}"
+
+
+_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+
+def test_non_canonical_signature_encodings_are_malformed() -> None:
+    sig = sign(7, KEY, NBF, EXP).split(".")[2]
+    assert len(sig) == 43
+    # Same decoded bytes, different last character (the last 4 bits are spare).
+    spare = _ALPHABET[(_ALPHABET.index(sig[-1]) & ~0xF) | ((_ALPHABET.index(sig[-1]) + 1) & 0xF)]
+    assert spare != sig[-1]
+    cases = [
+        sig[:5] + "+" + sig[6:],
+        sig[:5] + "/" + sig[6:],
+        sig + "!!!!",
+        sig[:10] + "\n" + sig[10:],
+        sig[:-1] + spare,
+        sig + "=",
+    ]
+    for bad in cases:
+        with pytest.raises(QrMalformedError):
+            verify(_with_signature(bad), KEY, NOW)
 
 
 def test_errors_share_base() -> None:
@@ -122,10 +154,11 @@ def test_sign_rejects_inverted_window() -> None:
 
 def test_key_from_hex() -> None:
     assert key_from_hex(KEY.hex() + "\n") == KEY
-    for bad in ("", "zz" * 32, "ab" * 31):
+    for bad in ("", "zz" * 32, "ab" * 31, "ab" * 33, "0x" + "ab" * 31):
         with pytest.raises(ValueError, match="64 hexadecimal") as exc:
             key_from_hex(bad)
-        assert bad not in str(exc.value) or bad == ""
+        if bad:
+            assert bad not in str(exc.value)
 
 
 def test_prefix_constant() -> None:
