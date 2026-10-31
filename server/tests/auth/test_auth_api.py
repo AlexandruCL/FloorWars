@@ -246,6 +246,13 @@ def test_otp_without_valkey_is_503(make_app: Callable[..., TestClient]) -> None:
     assert client.post("/v1/auth/otp", json={"email": new_email()}).status_code == 503
 
 
+def test_otp_with_unreachable_valkey_is_503(make_app: Callable[..., TestClient]) -> None:
+    client = make_app(valkey_url="redis://127.0.0.1:1/0")
+    response = client.post("/v1/auth/otp", json={"email": new_email()})
+    assert response.status_code == 503
+    assert response.headers["content-type"] == PROBLEM_JSON
+
+
 # Refresh tokens.
 
 

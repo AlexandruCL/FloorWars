@@ -2,8 +2,9 @@
 
 A bucket holds up to ``capacity`` tokens and refills continuously, ``capacity`` tokens per
 ``period_s``. Each request takes one token; an empty bucket answers with the wait until the next
-token. The whole check is one Lua script, so concurrent API workers cannot race, and it uses the
-Valkey server clock (``TIME``), so API hosts with skewed clocks agree.
+token. The whole check is one Lua script, so concurrent API workers cannot race. The time comes
+from the API process (``clock``, injectable for tests); there is a single API host, and a clock
+step backwards only delays the refill.
 
 Keys: ``fw:rl:<name>:<subject>``. Subjects that are personal data (e-mail addresses) are hashed
 before they become part of a key. Keys expire once the bucket would be full again.
@@ -11,16 +12,17 @@ before they become part of a key. Keys expire once the bucket would be full agai
 
 import hashlib
 import math
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.valkey import ValkeyClient
+from app.valkey import ValkeyClient, ValkeyError
 
 _BUCKET_SCRIPT = """
 local capacity = tonumber(ARGV[1])
 local period_ms = tonumber(ARGV[2])
-local t = redis.call('TIME')
-local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+local now = tonumber(ARGV[3])
 local state = redis.call('HMGET', KEYS[1], 'tokens', 'ts')
 local tokens = tonumber(state[1])
 local ts = tonumber(state[2])
@@ -51,7 +53,9 @@ class Decision:
 
 
 class RateLimiter(Protocol):
-    def hit(self, name: str, subject: str, capacity: int, period_s: int) -> Decision: ...
+    def hit(self, name: str, subject: str, capacity: int, period_s: int) -> Decision:
+        """Take one token. Raises ``app.valkey.ValkeyError`` when the limiter cannot answer."""
+        ...
 
 
 def hashed_subject(value: str) -> str:
@@ -60,18 +64,25 @@ def hashed_subject(value: str) -> str:
 
 
 class ValkeyRateLimiter:
-    """``RateLimiter`` on Valkey. Raises ``app.valkey.ValkeyError`` when Valkey is unreachable."""
+    """``RateLimiter`` on Valkey. Any Valkey problem raises ``ValkeyError`` (fail closed)."""
 
-    def __init__(self, client: ValkeyClient, prefix: str = "fw:rl") -> None:
-        self._client = client
+    def __init__(
+        self,
+        client: ValkeyClient,
+        prefix: str = "fw:rl",
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        self._script = client.register_script(_BUCKET_SCRIPT)
         self._prefix = prefix
+        self._clock = clock
 
     def hit(self, name: str, subject: str, capacity: int, period_s: int) -> Decision:
         key = f"{self._prefix}:{name}:{subject}"
-        reply = self._client.run_script(_BUCKET_SCRIPT, [key], [capacity, period_s * 1000])
+        now_ms = int(self._clock() * 1000)
+        reply = self._script([key], [capacity, period_s * 1000, now_ms])
         if not (isinstance(reply, list) and len(reply) == 2):
-            raise TypeError("unexpected token bucket reply")
+            raise ValkeyError("unexpected token bucket reply")
         allowed, wait_ms = reply
         if not (isinstance(allowed, int) and isinstance(wait_ms, int)):
-            raise TypeError("unexpected token bucket reply")
+            raise ValkeyError("unexpected token bucket reply")
         return Decision(allowed=allowed == 1, retry_after_s=math.ceil(wait_ms / 1000))

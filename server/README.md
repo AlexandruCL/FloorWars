@@ -13,7 +13,7 @@ the `/v1/auth/*` sign-in endpoints (contract 0.4.0-draft).
 | `app/api/problems.py` | RFC 9457 errors: raise `ProblemError(status, title, detail, type_=..., headers=..., **ext)` or `unauthorized`, `forbidden`, `not_found`, `conflict`, `too_many_requests`, `service_unavailable`; `problem_doc("...")` documents a problem response in OpenAPI. Validation errors are 422 problems with an `errors` list (no echoed input). |
 | `app/auth/` | Sign-in: `tokens` (EdDSA JWTs), `otp`, `ratelimit` (Valkey token buckets), `repository` (all SQL), `service` (flows), `schemas`. |
 | `app/mail.py` | `MailSender` with `acs`, `log` and `fake` backends. |
-| `app/valkey.py` | Minimal RESP client used by the rate limiter. |
+| `app/valkey.py` | Thin wrapper around `valkey-py` (pooled, 2 s timeouts, one retry on connection errors); every failure is `ValkeyError`, and the rate limiter fails closed on it. |
 
 Handlers are plain `def` (FastAPI runs them in its thread pool) on the sync session; SQL lives in
 small repository functions so a later move to async touches one layer. Tests get an access token
