@@ -9,15 +9,20 @@ the `/v1/auth/*` sign-in endpoints (contract 0.4.0-draft).
 | Module | What it gives |
 |---|---|
 | `app/api/v1/__init__.py` | The `/v1` router. A feature adds `app/api/v1/<feature>.py` with its own `router` and lists it in `_FEATURE_ROUTERS`. |
-| `app/api/deps.py` | `CurrentUser` (signed-in `User` from the Bearer access token, else 401 Problem), `DbSession` (sync SQLAlchemy session, no autocommit), `AppSettings`. |
+| `app/api/deps.py` | `CurrentUser` (signed-in `User` from the Bearer access token, else 401 Problem), `DbSession` (sync SQLAlchemy session, no autocommit), `AppSettings`, `Tokens`, `Mail`, `Limiter`. |
 | `app/api/problems.py` | RFC 9457 errors: raise `ProblemError(status, title, detail, type_=..., headers=..., **ext)` or `unauthorized`, `forbidden`, `not_found`, `conflict`, `too_many_requests`, `service_unavailable`; `problem_doc("...")` documents a problem response in OpenAPI. Validation errors are 422 problems with an `errors` list (no echoed input). |
 | `app/auth/` | Sign-in: `tokens` (EdDSA JWTs), `otp`, `ratelimit` (Valkey token buckets), `repository` (all SQL), `service` (flows), `schemas`. |
 | `app/mail.py` | `MailSender` with `acs`, `log` and `fake` backends. |
 | `app/valkey.py` | Thin wrapper around `valkey-py` (pooled, 2 s timeouts, one retry on connection errors); every failure is `ValkeyError`, and the rate limiter fails closed on it. |
 
 Handlers are plain `def` (FastAPI runs them in its thread pool) on the sync session; SQL lives in
-small repository functions so a later move to async touches one layer. Tests get an access token
-with `tests.auth.helpers.auth_headers(app, user_id)` (wraps `app.state.access_tokens.issue`).
+small repository functions so a later move to async touches one layer.
+
+Tests: `tests/conftest.py` has the shared fixtures `migrated` (test database at head), `clean`
+(truncates every application table, flushes the test Valkey), `make_app(**settings_overrides)`
+and `client` (started `TestClient`s). `tests/helpers.py` has `settings_for_tests`, `insert_user`,
+`auth_headers(app, user_id)` (a valid access token), `new_email`, `sign_in` and `last_code`.
+Modules can run in any order: `tests/test_migrations.py` always leaves the database at head.
 
 ## Run
 

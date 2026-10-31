@@ -1,12 +1,13 @@
-"""Helpers for tests that need a signed-in user. Other features' tests may import these.
+"""Shared test helpers for every feature. The fixtures are in ``tests/conftest.py``.
 
-Example (any test with a ``create_app`` app whose database is migrated)::
+Example with the ``client`` fixture (a started ``TestClient`` on a migrated, clean database)::
 
-    from tests.auth.helpers import auth_headers, insert_user
+    from tests.helpers import auth_headers, insert_user
 
-    with app.state.sessionmaker() as db:
-        user_id = insert_user(db, "ana@student.upt.ro")
-    response = client.get("/v1/teams", headers=auth_headers(app, user_id))
+    def test_teams(client: TestClient) -> None:
+        with client.app.state.sessionmaker() as db:
+            user_id = insert_user(db, "ana@student.upt.ro")
+        response = client.get("/v1/teams", headers=auth_headers(client.app, user_id))
 """
 
 import os

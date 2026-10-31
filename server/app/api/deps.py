@@ -12,13 +12,15 @@ Use the ``Annotated`` aliases in route signatures::
   ``WWW-Authenticate: Bearer`` when the token is missing, invalid, expired or the user is gone.
 - ``DbSession``: the request's sync SQLAlchemy ``Session``.
 - ``AppSettings``: the ``Settings`` the app was created with.
+- ``Tokens`` (``AccessTokens``), ``Mail`` (``MailSender``), ``Limiter`` (``RateLimiter | None``):
+  app-wide resources from ``app.state``, built by ``create_app``.
 
 Route handlers are plain ``def`` (FastAPI runs them in its thread pool). The session does not
 commit by itself: the service that changes data calls ``db.commit()``; anything left uncommitted
 is rolled back when the request ends.
 
 Tests get a valid access token with ``app.state.access_tokens.issue(user_id)``; see
-``tests/auth/helpers.py`` (``auth_headers``).
+``tests/helpers.py`` (``auth_headers``) and the fixtures in ``tests/conftest.py``.
 """
 
 from collections.abc import Iterator
@@ -29,9 +31,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.problems import unauthorized
+from app.auth.ratelimit import RateLimiter
 from app.auth.tokens import AccessTokens, TokenError
 from app.config import Settings
 from app.db.models import User
+from app.mail import MailSender
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -55,16 +59,36 @@ def get_access_tokens(request: Request) -> AccessTokens:
     return tokens
 
 
+def get_mail_sender(request: Request) -> MailSender:
+    """The sign-in mail backend (``FLOORWARS_MAIL_BACKEND``)."""
+    sender: MailSender = request.app.state.mail_sender
+    return sender
+
+
+def get_rate_limiter(request: Request) -> RateLimiter | None:
+    """The Valkey token-bucket limiter, or None without ``FLOORWARS_VALKEY_URL`` (fail closed)."""
+    limiter: RateLimiter | None = request.app.state.rate_limiter
+    return limiter
+
+
 AppSettings = Annotated[Settings, Depends(get_app_settings)]
 DbSession = Annotated[Session, Depends(get_db)]
+Tokens = Annotated[AccessTokens, Depends(get_access_tokens)]
+Mail = Annotated[MailSender, Depends(get_mail_sender)]
+Limiter = Annotated[RateLimiter | None, Depends(get_rate_limiter)]
 
 # auto_error=False: a missing header must give our 401 Problem, not FastAPI's 403.
-_bearer = HTTPBearer(auto_error=False, description="Access token from POST /v1/auth/verify.")
+# scheme_name matches the contract's security scheme (components.securitySchemes.bearerAuth).
+_bearer = HTTPBearer(
+    scheme_name="bearerAuth",
+    auto_error=False,
+    description="Access token from POST /v1/auth/verify.",
+)
 
 
 def current_user(
     db: DbSession,
-    tokens: Annotated[AccessTokens, Depends(get_access_tokens)],
+    tokens: Tokens,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> User:
     """The user named by a valid Bearer access token, or 401 ``Problem``."""

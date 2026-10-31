@@ -3,35 +3,17 @@
 Thin handlers: validation by the schemas, the flows in ``app.auth.service``.
 """
 
-from typing import Annotated
+from fastapi import APIRouter, Request, Response
 
-from fastapi import APIRouter, Depends, Request, Response
-
-from app.api.deps import AppSettings, DbSession, get_access_tokens
+from app.api.deps import AppSettings, DbSession, Limiter, Mail, Tokens
 from app.api.problems import problem_doc
 from app.auth import service
-from app.auth.ratelimit import RateLimiter
 from app.auth.schemas import OtpRequest, OtpVerifyRequest, RefreshRequest, TokenPair
-from app.auth.tokens import AccessTokens
-from app.mail import MailSender
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Token responses must not be cached (RFC 6749 section 5.1).
 NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
-
-
-def get_mail_sender(request: Request) -> MailSender:
-    sender: MailSender = request.app.state.mail_sender
-    return sender
-
-
-def get_rate_limiter(request: Request) -> RateLimiter | None:
-    limiter: RateLimiter | None = request.app.state.rate_limiter
-    return limiter
-
-
-Tokens = Annotated[AccessTokens, Depends(get_access_tokens)]
 
 
 @router.post(
@@ -52,8 +34,8 @@ def request_otp(
     request: Request,
     db: DbSession,
     settings: AppSettings,
-    mail: Annotated[MailSender, Depends(get_mail_sender)],
-    limiter: Annotated[RateLimiter | None, Depends(get_rate_limiter)],
+    mail: Mail,
+    limiter: Limiter,
 ) -> Response:
     """Send a 6-digit code to a university e-mail address."""
     client_ip = request.client.host if request.client else "unknown"

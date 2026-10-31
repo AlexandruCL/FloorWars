@@ -16,7 +16,7 @@ from app.auth import otp
 from app.auth.tokens import AccessTokens, b64url_decode, b64url_encode
 from app.config import ConfigError, Settings
 from app.main import create_app
-from tests.auth.helpers import (
+from tests.helpers import (
     TEST_JWT_KEY,
     auth_headers,
     device,
