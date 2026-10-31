@@ -26,9 +26,11 @@ Modules can run in any order: `tests/test_migrations.py` always leaves the datab
 
 ## Run
 
-From `server/`, with the project venv active (Python 3.13):
+From `server/`, with the project venv active (Python 3.13). `FLOORWARS_ENV` defaults to `prod`,
+which needs the full configuration, so set `dev` locally:
 
 ```sh
+export FLOORWARS_ENV=dev
 uvicorn app.main:app --reload
 curl -s localhost:8000/healthz   # {"status":"ok"}
 ```
@@ -129,9 +131,12 @@ Notes:
 
 Auth details (plan 7.9): codes are `sha256(salt || code)` with a 16-byte salt, compared in
 constant time, attempts counted under a row lock before comparing; a new request supersedes the
-previous unused code. Access tokens are EdDSA JWTs (`kid` = first 16 hex of SHA-256 of the public
+previous unused code only once the mail backend accepted the new one (if sending fails, 503, and
+the previous code keeps working). New accounts get a neutral display name `Player-xxxx`, never
+derived from the e-mail. Access tokens are EdDSA JWTs (`kid` = first 16 hex of SHA-256 of the public
 key, `aud` checked, 15 minutes). Refresh tokens are 256-bit random values stored as SHA-256, each
-rotation renews the 30-day lifetime. Devices are keyed by `(user_id, id)`: the same device id
+rotation renews the 30-day lifetime; a rotated token presented again within
+`FLOORWARS_REFRESH_REUSE_GRACE_S` is a retry (401, family kept), later it revokes the family. Devices are keyed by `(user_id, id)`: the same device id
 signed in by two users gives two rows, and sign-in never moves a device between users. Codes and
 tokens are never logged; database errors are logged as class, SQLSTATE and constraint only
 (PostgreSQL error details repeat row values), and the engine hides bound parameters.
@@ -151,7 +156,7 @@ the host files to these names, see `infra/secrets/README.md`.
 
 | Variable | Default | Values / notes |
 |---|---|---|
-| `FLOORWARS_ENV` | `dev` | `dev`, `staging`, `prod` |
+| `FLOORWARS_ENV` | `prod` | `dev`, `staging`, `prod`. Defaults to `prod` so a deployment that forgets it gets the strict startup checks; local runs and tests set `dev`. |
 | `FLOORWARS_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `FLOORWARS_DATABASE_URL` | unset | PostgreSQL URL (`postgresql+psycopg://...`). Secret. Required by Alembic and the DB session. |
 | `FLOORWARS_TEST_DATABASE_URL` | unset | Tests only: throwaway PostGIS database for the migration and auth tests. Not read by the app. |
@@ -166,6 +171,7 @@ the host files to these names, see `infra/secrets/README.md`.
 | `FLOORWARS_JWT_AUDIENCE` | `floorwars-api` | `aud` claim of access tokens; tokens with another audience are rejected. |
 | `FLOORWARS_ACCESS_TOKEN_TTL_S` | `900` | Access token lifetime (plan 7.9: 15 minutes). |
 | `FLOORWARS_REFRESH_TOKEN_TTL_S` | `2592000` | Refresh token lifetime (30 days), renewed on every rotation. |
+| `FLOORWARS_REFRESH_REUSE_GRACE_S` | `20` | A rotated refresh token presented again within this window is a retry: 401, family kept. Later it is reuse and revokes the family. |
 | `FLOORWARS_OTP_TTL_S` | `600` | Sign-in code lifetime (plan 7.9: 10 minutes). |
 | `FLOORWARS_OTP_MAX_ATTEMPTS` | `5` | Wrong codes allowed per challenge, 1 to 5 (the database CHECK caps it at 5). |
 | `FLOORWARS_OTP_RATE_PER_EMAIL_PER_HOUR` | `5` | Token bucket size and hourly refill for code requests per e-mail. |
@@ -179,8 +185,10 @@ migration container receives only the database URL. Given values are format-chec
 base64 ACS key, https endpoint). The API checks the rest at startup (`check_api_settings` in
 `app/config.py`, called by `create_app`) and refuses to start when `FLOORWARS_ENV=prod` and the
 mail backend is not `acs`, when `acs` lacks one of its three settings, when `staging`/`prod` lack
-`FLOORWARS_JWT_SIGNING_KEY`, or when `staging`/`prod` use the `fake` mail backend. Errors name the
-variable, never the value.
+`FLOORWARS_JWT_SIGNING_KEY`, `FLOORWARS_DATABASE_URL` or `FLOORWARS_VALKEY_URL`, or when
+`staging`/`prod` use the `fake` mail backend. Errors name the variable, never the value.
+`app.main:app` is built lazily on first access, so importing `create_app` never runs the checks
+against the process environment.
 
 ## Logging
 

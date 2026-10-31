@@ -16,13 +16,34 @@ from app.db.models import Device, OtpChallenge, RefreshToken, User
 # One-time codes.
 
 
-def supersede_active_challenge(db: Session, email: str, now: datetime) -> None:
-    """Retire the e-mail's unused challenge, if any (a new request replaces it)."""
+def add_pending_challenge(
+    db: Session, email: str, code_hash: bytes, salt: bytes, expires_at: datetime, now: datetime
+) -> uuid.UUID:
+    """Store a new challenge as *retired* (``consumed_at`` set) until its mail is accepted.
+
+    The e-mail's current active challenge stays usable meanwhile; ``activate_challenge`` swaps
+    them once the mail backend accepted the new code.
+    """
+    challenge = OtpChallenge(
+        email=email, code_hash=code_hash, salt=salt, expires_at=expires_at, consumed_at=now
+    )
+    db.add(challenge)
+    db.flush()
+    return challenge.id
+
+
+def activate_challenge(db: Session, email: str, challenge_id: uuid.UUID, now: datetime) -> None:
+    """Retire the e-mail's active challenge (superseded) and make ``challenge_id`` the active one.
+
+    Raises ``IntegrityError`` (unique active challenge per e-mail) if a concurrent request
+    activated its own challenge in between; the caller retries.
+    """
     db.execute(
         update(OtpChallenge)
         .where(OtpChallenge.email == email, OtpChallenge.consumed_at.is_(None))
         .values(consumed_at=now)
     )
+    db.execute(update(OtpChallenge).where(OtpChallenge.id == challenge_id).values(consumed_at=None))
 
 
 def delete_old_challenges(db: Session, email: str, before: datetime) -> None:
@@ -34,13 +55,6 @@ def delete_old_challenges(db: Session, email: str, before: datetime) -> None:
             OtpChallenge.created_at < before,
         )
     )
-
-
-def add_challenge(
-    db: Session, email: str, code_hash: bytes, salt: bytes, expires_at: datetime
-) -> None:
-    db.add(OtpChallenge(email=email, code_hash=code_hash, salt=salt, expires_at=expires_at))
-    db.flush()
 
 
 def lock_active_challenge(db: Session, email: str) -> OtpChallenge | None:

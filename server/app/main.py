@@ -75,4 +75,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+_app: FastAPI | None = None
+
+
+def __getattr__(name: str) -> FastAPI:
+    """``app.main:app`` for uvicorn, built on first access (PEP 562).
+
+    Lazy, so importing ``create_app`` (tests, tools) does not build an app from the process
+    environment, which fails the startup checks unless the environment is complete.
+    """
+    global _app
+    if name != "app":
+        raise AttributeError(name)
+    if _app is None:
+        _app = create_app()
+    return _app

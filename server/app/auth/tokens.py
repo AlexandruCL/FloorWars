@@ -178,7 +178,11 @@ def build_access_tokens(settings: Settings) -> AccessTokens:
     if settings.jwt_signing_key is not None:
         seed = bytes.fromhex(settings.jwt_signing_key.get_secret_value())
     elif settings.env == "dev":
-        logger.warning("FLOORWARS_JWT_SIGNING_KEY unset: random key, tokens end with the process")
+        logger.warning(
+            "SECURITY WARNING: FLOORWARS_JWT_SIGNING_KEY is unset; using a random signing key "
+            "for this process only (dev). Tokens stop working on restart. Never run like this "
+            "outside local development."
+        )
         seed = secrets.token_bytes(32)
     else:  # Settings already refuses this; kept as a guard.
         raise RuntimeError("FLOORWARS_JWT_SIGNING_KEY is required outside dev")

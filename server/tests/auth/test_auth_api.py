@@ -261,8 +261,10 @@ def test_refresh_reuse_revokes_family(client: TestClient) -> None:
     second = client.post("/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
     assert second.status_code == 200
     newer = second.json()["refresh_token"]
+    # Past the retry grace window ...
+    _sql(client, "UPDATE refresh_token SET rotated_at = now() - interval '1 hour'")
 
-    # Reusing the rotated token is theft: 401 and the whole family is revoked ...
+    # ... reusing the rotated token is theft: 401 and the whole family is revoked ...
     reuse = client.post("/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
     assert reuse.status_code == 401
     assert reuse.headers["content-type"] == PROBLEM_JSON
@@ -374,8 +376,22 @@ def test_prod_without_acs_refuses_to_start() -> None:
         create_app(Settings(env="prod", mail_backend="acs", **ACS))
     with pytest.raises(ConfigError, match="fake"):
         create_app(Settings(env="staging", mail_backend="fake", jwt_signing_key=TEST_JWT_KEY))
+    full = {
+        "jwt_signing_key": TEST_JWT_KEY,
+        "database_url": "postgresql+psycopg://u:p@db:5432/floorwars",
+        "valkey_url": "redis://valkey:6379/0",
+    }
+    for missing in ("database_url", "valkey_url"):
+        partial_env = {k: v for k, v in full.items() if k != missing}
+        with pytest.raises(ConfigError, match=f"FLOORWARS_{missing.upper()}"):
+            create_app(Settings(env="staging", mail_backend="log", **partial_env))
     # Complete production settings start.
-    create_app(Settings(env="prod", mail_backend="acs", jwt_signing_key=TEST_JWT_KEY, **ACS))
+    create_app(Settings(env="prod", mail_backend="acs", **full, **ACS))
+
+
+def test_env_defaults_to_prod(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FLOORWARS_ENV", raising=False)
+    assert Settings().env == "prod"
 
 
 def test_settings_load_with_only_database_url(monkeypatch: pytest.MonkeyPatch) -> None:

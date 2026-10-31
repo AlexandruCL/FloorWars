@@ -18,8 +18,12 @@ failure the app refuses to start):
 
 - ``FLOORWARS_ENV=prod`` needs ``mail_backend=acs`` (decision 2026-10-31);
 - ``mail_backend=acs`` needs ``mail_from``, ``acs_endpoint`` and ``acs_access_key``;
-- ``staging`` and ``prod`` need ``jwt_signing_key`` and refuse the ``fake`` mail backend. In
-  ``dev`` a missing ``jwt_signing_key`` is replaced by a random key per process.
+- ``staging`` and ``prod`` need ``jwt_signing_key``, ``database_url`` and ``valkey_url`` and
+  refuse the ``fake`` mail backend. In ``dev`` a missing ``jwt_signing_key`` is replaced by a
+  random key per process (with a loud warning).
+
+``env`` defaults to ``prod``, so a deployment that forgets ``FLOORWARS_ENV`` gets the strict
+checks; local runs and tests set ``FLOORWARS_ENV=dev``.
 
 ``qr_hmac_key`` is only defined here; the check-in feature enforces it where it uses it.
 """
@@ -72,7 +76,9 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,
     )
 
-    env: Environment = "dev"
+    # Safe default: a deployment that forgets FLOORWARS_ENV gets the strict checks. Local runs
+    # and tests set FLOORWARS_ENV=dev explicitly.
+    env: Environment = "prod"
     log_level: LogLevel = "INFO"
     database_url: SecretStr | None = None
     valkey_url: SecretStr | None = None
@@ -91,6 +97,9 @@ class Settings(BaseSettings):
     jwt_audience: str = "floorwars-api"
     access_token_ttl_s: int = Field(default=900, ge=60, le=DAY_S)
     refresh_token_ttl_s: int = Field(default=30 * DAY_S, ge=HOUR_S, le=365 * DAY_S)
+    # A rotated refresh token presented again within this window is a retry (401, family kept);
+    # later it is reuse and revokes the family.
+    refresh_reuse_grace_s: int = Field(default=20, ge=0, le=300)
 
     # One-time codes (plan 7.9: 10 minutes, at most 5 attempts).
     otp_ttl_s: int = Field(default=600, ge=60, le=HOUR_S)
@@ -169,8 +178,9 @@ def check_api_settings(settings: Settings) -> None:
     if settings.env in ("staging", "prod"):
         if settings.mail_backend == "fake":
             raise ConfigError("the fake mail backend is for tests only")
-        if settings.jwt_signing_key is None:
-            raise ConfigError(f"FLOORWARS_ENV={settings.env} needs FLOORWARS_JWT_SIGNING_KEY")
+        for name in ("jwt_signing_key", "database_url", "valkey_url"):
+            if getattr(settings, name) is None:
+                raise ConfigError(f"FLOORWARS_ENV={settings.env} needs FLOORWARS_{name.upper()}")
 
 
 @lru_cache(maxsize=1)

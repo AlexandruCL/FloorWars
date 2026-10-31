@@ -158,7 +158,7 @@ def test_database_error_logs_no_bound_values(
     monkeypatch.setattr(otp, "new_salt", lambda: salt)
     monkeypatch.setattr(otp, "new_code", lambda: "135791")
 
-    def failing_add(db: Session, email: str, code_hash: bytes, salt: bytes, *_: Any) -> None:
+    def failing_add(db: Session, email: str, code_hash: bytes, salt: bytes, *_: Any) -> Any:
         # attempts = 9 violates the CHECK: a database error with bound parameters.
         db.execute(
             text(
@@ -168,7 +168,7 @@ def test_database_error_logs_no_bound_values(
             {"e": email, "h": code_hash, "s": salt},
         )
 
-    monkeypatch.setattr(repository, "add_challenge", failing_add)
+    monkeypatch.setattr(repository, "add_pending_challenge", failing_add)
     caplog.set_level(logging.DEBUG)
     client = make_app(log_level="DEBUG")
     client_no_raise = TestClient(client.app, raise_server_exceptions=False)

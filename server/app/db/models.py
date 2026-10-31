@@ -127,6 +127,9 @@ class RefreshToken(Base):
     created_at: Mapped[datetime] = _created_at()
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set when the token was rotated (0002_auth). Presenting it again within the reuse grace
+    # window is a client retry, not theft; ``revoked_at`` alone also covers family revocation.
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 # Highest value of otp_challenge.attempts (plan 7.9: five attempts per code). The CHECK below and

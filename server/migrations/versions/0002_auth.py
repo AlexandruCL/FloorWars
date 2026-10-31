@@ -31,6 +31,7 @@ def upgrade() -> None:
 
     op.add_column("user", sa.Column("terms_accepted_at", sa.DateTime(timezone=True)))
     op.add_column("user", sa.Column("age_confirmed_at", sa.DateTime(timezone=True)))
+    op.add_column("refresh_token", sa.Column("rotated_at", sa.DateTime(timezone=True)))
 
     op.create_table(
         "otp_challenge",
@@ -70,5 +71,6 @@ def downgrade() -> None:
     op.create_index("ix_device_user_id", "device", ["user_id"])
     op.drop_constraint("pk_device", "device", type_="primary")
     op.create_primary_key("pk_device", "device", ["id"])
+    op.drop_column("refresh_token", "rotated_at")
     op.drop_column("user", "age_confirmed_at")
     op.drop_column("user", "terms_accepted_at")

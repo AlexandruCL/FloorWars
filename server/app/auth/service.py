@@ -32,7 +32,6 @@ from app.valkey import ValkeyError
 logger = logging.getLogger("floorwars.auth")
 
 HOUR_S = 3600
-DISPLAY_NAME_MAX = 64
 # Retired challenges older than this are deleted when the same e-mail asks for a new code.
 CHALLENGE_RETENTION = timedelta(days=1)
 
@@ -75,24 +74,27 @@ def _enforce_limits(limiter: RateLimiter | None, checks: list[tuple[str, str, in
         raise service_unavailable("Sign-in is temporarily unavailable.") from None
 
 
-def _store_challenge(db: Session, settings: Settings, email: str, code: str) -> None:
+def _store_pending_challenge(db: Session, settings: Settings, email: str, code: str) -> uuid.UUID:
+    """Store the new challenge retired (not usable yet); the previous one stays active."""
+    now = _now()
     salt = otp.new_salt()
+    repository.delete_old_challenges(db, email, now - CHALLENGE_RETENTION)
+    challenge_id = repository.add_pending_challenge(
+        db, email, otp.hash_code(salt, code), salt, now + timedelta(seconds=settings.otp_ttl_s), now
+    )
+    db.commit()
+    return challenge_id
+
+
+def _activate_challenge(db: Session, email: str, challenge_id: uuid.UUID) -> None:
+    """Supersede the previous active challenge with the new one (after the mail was sent)."""
     for attempt in range(2):
-        now = _now()
         try:
-            repository.supersede_active_challenge(db, email, now)
-            repository.delete_old_challenges(db, email, now - CHALLENGE_RETENTION)
-            repository.add_challenge(
-                db,
-                email,
-                otp.hash_code(salt, code),
-                salt,
-                now + timedelta(seconds=settings.otp_ttl_s),
-            )
+            repository.activate_challenge(db, email, challenge_id, _now())
             db.commit()
             return
         except IntegrityError:
-            # A concurrent request for the same e-mail inserted its challenge first (unique
+            # A concurrent request for the same e-mail activated its challenge first (unique
             # active challenge per e-mail). Retry once: this time it is superseded.
             db.rollback()
             if attempt == 1:
@@ -107,7 +109,11 @@ def request_otp(
     email: str,
     client_ip: str,
 ) -> None:
-    """Send a new code to ``email``. A new request supersedes the previous unused code."""
+    """Send a new code to ``email``.
+
+    The new code supersedes the previous unused one only once the mail backend accepted it; if
+    sending fails (503), the previous code keeps working.
+    """
     domain = email.rsplit("@", 1)[1]
     if domain not in settings.allowed_email_domains:
         raise forbidden("This e-mail domain cannot sign in.", type_=DOMAIN_NOT_ALLOWED)
@@ -120,11 +126,13 @@ def request_otp(
     )
 
     code = otp.new_code()
-    _store_challenge(db, settings, email, code)
+    challenge_id = _store_pending_challenge(db, settings, email, code)
     try:
         mail.send_otp(email, code, settings.otp_ttl_s)
     except MailError:
+        # The new challenge stays retired and the previous code (if any) stays usable.
         raise service_unavailable("The code could not be sent. Try again later.") from None
+    _activate_challenge(db, email, challenge_id)
 
 
 # Token pairs.
@@ -197,8 +205,8 @@ def verify_otp(
                 "A new account must accept the terms and confirm being 18 or older.",
                 type_=TERMS_REQUIRED,
             )
-        local_part = body.email.split("@", 1)[0]
-        user = repository.add_user(db, body.email, local_part[:DISPLAY_NAME_MAX], now)
+        # Neutral name, never derived from the e-mail (the address is personal data).
+        user = repository.add_user(db, body.email, f"Player-{secrets.token_hex(2)}", now)
         logger.info("user created", extra={"user_id": str(user.id)})
 
     challenge.consumed_at = now
@@ -223,7 +231,12 @@ def refresh(
     raw_token: str,
     client_ip: str,
 ) -> TokenPair:
-    """Rotate a refresh token. Presenting a revoked (already rotated) one revokes its family."""
+    """Rotate a refresh token.
+
+    A token rotated less than ``refresh_reuse_grace_s`` ago is refused (401) without side
+    effects: a client retry or two parallel refreshes, not theft. Presenting it later, or any
+    revoked token, is reuse: the whole family is revoked (plan 7.9).
+    """
     _enforce_limits(
         limiter, [("refresh:ip", client_bucket(client_ip), settings.refresh_rate_per_ip_per_hour)]
     )
@@ -233,6 +246,12 @@ def refresh(
         db.rollback()
         raise _bad_refresh()
     if row.revoked_at is not None:
+        grace = timedelta(seconds=settings.refresh_reuse_grace_s)
+        if row.rotated_at is not None and now - row.rotated_at < grace:
+            # A retry (lost response, parallel requests): refuse, but do not punish the family.
+            db.rollback()
+            logger.info("refresh token retried within grace window")
+            raise _bad_refresh()
         revoked = repository.revoke_family(db, row.family_id)
         db.commit()
         logger.warning(
@@ -245,6 +264,7 @@ def refresh(
         raise _bad_refresh()
 
     row.revoked_at = now
+    row.rotated_at = now
     pair = _issue_pair(db, settings, tokens, row.user_id, row.family_id, now)
     db.commit()
     return pair
