@@ -5,6 +5,9 @@ on:
     paths:
       - "server/**"
       - "contracts/**"
+      - "tools/qr/**"
+      - "tools/seed/**"
+      - "tools/conftest.py"
       - ".github/workflows/server.yml"
   # No path filter on main: deploy.sh pulls the image tagged with the deployed commit, so every
   # commit on main (including infra-only ones) needs its own image.
@@ -78,6 +81,15 @@ jobs:
 
       - name: Pytest
         run: uv run pytest -q
+
+      # Needs `qrcode` in the dev dependency group (added by the auth branch).
+      # The migration tests above downgrade to base when they finish, so migrate again for the seed.
+      - name: Pytest (tools)
+        env:
+          FLOORWARS_DATABASE_URL: postgresql+psycopg://postgres:test@localhost:5432/floorwars
+        run: |
+          uv run alembic upgrade head
+          uv run pytest -q ../tools/qr ../tools/seed
 
   image:
     name: build image
