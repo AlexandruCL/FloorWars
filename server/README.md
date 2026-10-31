@@ -126,12 +126,15 @@ the host files to these names, see `infra/secrets/README.md`.
 | `FLOORWARS_OTP_MAX_ATTEMPTS` | `5` | Wrong codes allowed per challenge, 1 to 5 (the database CHECK caps it at 5). |
 | `FLOORWARS_OTP_RATE_PER_EMAIL_PER_HOUR` | `5` | Token bucket size and hourly refill for code requests per e-mail. |
 | `FLOORWARS_OTP_RATE_PER_IP_PER_HOUR` | `60` | Same, per client IP. Students behind the campus NAT share one IP, so keep it generous. |
-| `FLOORWARS_QR_HMAC_KEY` | unset | 32-byte HMAC key for entrance QR codes, hex. Secret. Required in `staging`/`prod`. Used by the check-in feature. |
+| `FLOORWARS_QR_HMAC_KEY` | unset | 32-byte HMAC key for entrance QR codes, hex. Secret. Checked by the check-in feature where it is used. |
 
-Startup checks: `Settings` refuses to load (and the app to start) when `FLOORWARS_ENV=prod` and
-the mail backend is not `acs`, when `acs` lacks one of its three settings, or when `staging`/`prod`
-lack `FLOORWARS_JWT_SIGNING_KEY` or `FLOORWARS_QR_HMAC_KEY`. Errors name the variable, never the
-value.
+All settings except `FLOORWARS_DATABASE_URL` are optional when `Settings` loads, because the
+migration container receives only the database URL. Given values are format-checked (hex keys,
+base64 ACS key, https endpoint). The API checks the rest at startup (`check_api_settings` in
+`app/config.py`, called by `create_app`) and refuses to start when `FLOORWARS_ENV=prod` and the
+mail backend is not `acs`, when `acs` lacks one of its three settings, when `staging`/`prod` lack
+`FLOORWARS_JWT_SIGNING_KEY`, or when `staging`/`prod` use the `fake` mail backend. Errors name the
+variable, never the value.
 
 ## Logging
 

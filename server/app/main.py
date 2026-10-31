@@ -14,7 +14,7 @@ from app.api import v1
 from app.api.problems import install_problem_handlers
 from app.auth.ratelimit import ValkeyRateLimiter
 from app.auth.tokens import build_access_tokens
-from app.config import Settings, get_settings
+from app.config import Settings, check_api_settings, get_settings
 from app.db.session import make_engine, make_sessionmaker
 from app.logging_config import configure_logging
 from app.mail import build_mail_sender
@@ -34,6 +34,7 @@ METRICS_STUB = (
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the app. Shared resources live on ``app.state`` and are read by ``app.api.deps``."""
     settings = settings or get_settings()
+    check_api_settings(settings)  # refuses to start with an unusable configuration
     configure_logging(settings.log_level)
 
     engine = (

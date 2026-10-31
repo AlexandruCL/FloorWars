@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import time
 import uuid
 from collections.abc import Callable
@@ -13,7 +14,8 @@ from sqlalchemy import text
 
 from app.auth import otp
 from app.auth.tokens import AccessTokens, b64url_decode, b64url_encode
-from app.config import Settings
+from app.config import ConfigError, Settings
+from app.main import create_app
 from tests.auth.helpers import (
     TEST_JWT_KEY,
     auth_headers,
@@ -345,18 +347,44 @@ def test_code_and_tokens_never_logged(
 # Startup checks.
 
 
+ACS = {
+    "mail_from": "DoNotReply@example.azurecomm.net",
+    "acs_endpoint": "https://example.communication.azure.com",
+    "acs_access_key": "Zmxvb3J3YXJzLXRlc3Qta2V5LW5vdC1hLXNlY3JldCE=",  # dummy
+}
+
+
 def test_prod_without_acs_refuses_to_start() -> None:
-    keys = {"jwt_signing_key": TEST_JWT_KEY, "qr_hmac_key": "22" * 32}
-    with pytest.raises(ValidationError, match="MAIL_BACKEND=acs") as exc:
-        Settings(env="prod", mail_backend="log", **keys)
+    with pytest.raises(ConfigError, match="MAIL_BACKEND=acs") as exc:
+        create_app(Settings(env="prod", mail_backend="log", jwt_signing_key=TEST_JWT_KEY))
     assert TEST_JWT_KEY not in str(exc.value)
-    with pytest.raises(ValidationError, match="acs_access_key"):
-        Settings(
-            env="prod",
-            mail_backend="acs",
-            mail_from="DoNotReply@example.azurecomm.net",
-            acs_endpoint="https://example.communication.azure.com",
-            **keys,
+    partial = {k: v for k, v in ACS.items() if k != "acs_access_key"}
+    with pytest.raises(ConfigError, match="FLOORWARS_ACS_ACCESS_KEY"):
+        create_app(
+            Settings(env="prod", mail_backend="acs", jwt_signing_key=TEST_JWT_KEY, **partial)
         )
-    with pytest.raises(ValidationError, match="jwt_signing_key"):
-        Settings(env="staging", mail_backend="log", qr_hmac_key="22" * 32)
+    with pytest.raises(ConfigError, match="FLOORWARS_JWT_SIGNING_KEY"):
+        create_app(Settings(env="prod", mail_backend="acs", **ACS))
+    with pytest.raises(ConfigError, match="fake"):
+        create_app(Settings(env="staging", mail_backend="fake", jwt_signing_key=TEST_JWT_KEY))
+    # Complete production settings start.
+    create_app(Settings(env="prod", mail_backend="acs", jwt_signing_key=TEST_JWT_KEY, **ACS))
+
+
+def test_settings_load_with_only_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The migration container gets only floorwars_database_url (and the environment name)."""
+    for name in list(os.environ):
+        if name.upper().startswith("FLOORWARS_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("FLOORWARS_ENV", "prod")
+    monkeypatch.setenv("FLOORWARS_DATABASE_URL", "postgresql+psycopg://u:p@db:5432/floorwars")
+    settings = Settings()
+    assert settings.database_url is not None
+    assert settings.jwt_signing_key is None
+    assert settings.qr_hmac_key is None
+
+
+def test_malformed_keys_rejected_without_echo() -> None:
+    with pytest.raises(ValidationError, match="64 hex") as exc:
+        Settings(jwt_signing_key="ab" * 31)
+    assert "ab" * 31 not in str(exc.value)

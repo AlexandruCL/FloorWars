@@ -9,22 +9,29 @@ exists. Local runs without that directory fall back to plain environment variabl
 Secrets (connection strings, keys) are ``SecretStr`` so they never show up in reprs or logs.
 Every variable is documented in ``server/.env.example`` and ``server/README.md``.
 
-Startup checks (``Settings`` raises, so the app refuses to start):
+Every setting except the database URL is optional when ``Settings`` is built: the migration
+container (Alembic's ``env.py`` loads ``Settings``) gets only ``floorwars_database_url``. Values
+that are given are format-checked here (hex keys, base64 ACS key, https endpoint).
+
+The API checks what it needs at startup (``check_api_settings``, called by ``create_app``; on
+failure the app refuses to start):
 
 - ``FLOORWARS_ENV=prod`` needs ``mail_backend=acs`` (decision 2026-10-31);
 - ``mail_backend=acs`` needs ``mail_from``, ``acs_endpoint`` and ``acs_access_key``;
-- ``staging`` and ``prod`` need ``jwt_signing_key`` and ``qr_hmac_key`` and refuse the ``fake``
-  mail backend. In ``dev`` a missing ``jwt_signing_key`` is replaced by a random key per process.
+- ``staging`` and ``prod`` need ``jwt_signing_key`` and refuse the ``fake`` mail backend. In
+  ``dev`` a missing ``jwt_signing_key`` is replaced by a random key per process.
+
+``qr_hmac_key`` is only defined here; the check-in feature enforces it where it uses it.
 """
 
 import base64
 import binascii
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.db.models import OTP_MAX_ATTEMPTS
@@ -138,25 +145,28 @@ class Settings(BaseSettings):
             raise ValueError("acs_endpoint must be https://<resource>.communication.azure.com")
         return f"https://{parts.netloc}"
 
-    @model_validator(mode="after")
-    def _check_environment(self) -> Self:
-        if self.mail_backend == "acs":
-            missing = [
-                name
-                for name in ("mail_from", "acs_endpoint", "acs_access_key")
-                if getattr(self, name) is None
-            ]
-            if missing:
-                raise ValueError(f"mail_backend=acs needs {', '.join(missing)}")
-        if self.env == "prod" and self.mail_backend != "acs":
-            raise ValueError("FLOORWARS_ENV=prod needs FLOORWARS_MAIL_BACKEND=acs")
-        if self.env in ("staging", "prod"):
-            if self.mail_backend == "fake":
-                raise ValueError("the fake mail backend is for tests only")
-            for name in ("jwt_signing_key", "qr_hmac_key"):
-                if getattr(self, name) is None:
-                    raise ValueError(f"FLOORWARS_ENV={self.env} needs {name}")
-        return self
+
+class ConfigError(RuntimeError):
+    """The settings are not enough to run the API. Names variables, never values."""
+
+
+def check_api_settings(settings: Settings) -> None:
+    """Refuse to start the API with an unusable configuration (see the module docstring)."""
+    if settings.mail_backend == "acs":
+        missing = [
+            f"FLOORWARS_{name.upper()}"
+            for name in ("mail_from", "acs_endpoint", "acs_access_key")
+            if getattr(settings, name) is None
+        ]
+        if missing:
+            raise ConfigError(f"FLOORWARS_MAIL_BACKEND=acs needs {', '.join(missing)}")
+    if settings.env == "prod" and settings.mail_backend != "acs":
+        raise ConfigError("FLOORWARS_ENV=prod needs FLOORWARS_MAIL_BACKEND=acs")
+    if settings.env in ("staging", "prod"):
+        if settings.mail_backend == "fake":
+            raise ConfigError("the fake mail backend is for tests only")
+        if settings.jwt_signing_key is None:
+            raise ConfigError(f"FLOORWARS_ENV={settings.env} needs FLOORWARS_JWT_SIGNING_KEY")
 
 
 @lru_cache(maxsize=1)
