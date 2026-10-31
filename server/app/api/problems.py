@@ -90,6 +90,14 @@ def _render(err: ProblemError) -> JSONResponse:
     )
 
 
+def problem_doc(description: str) -> dict[str, Any]:
+    """OpenAPI entry for a route: ``responses={409: problem_doc("Already joined.")}``."""
+    return {
+        "description": description,
+        "content": {PROBLEM_JSON: {"schema": Problem.model_json_schema()}},
+    }
+
+
 # Helpers for the common cases. Each returns the error; the caller raises it.
 
 

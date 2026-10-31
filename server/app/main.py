@@ -12,10 +12,13 @@ from fastapi.responses import PlainTextResponse
 
 from app.api import v1
 from app.api.problems import install_problem_handlers
+from app.auth.ratelimit import ValkeyRateLimiter
 from app.auth.tokens import build_access_tokens
 from app.config import Settings, get_settings
 from app.db.session import make_engine, make_sessionmaker
 from app.logging_config import configure_logging
+from app.mail import build_mail_sender
+from app.valkey import ValkeyClient
 
 logger = logging.getLogger("floorwars")
 
@@ -36,17 +39,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     engine = (
         make_engine(settings.database_url.get_secret_value()) if settings.database_url else None
     )
+    valkey = ValkeyClient(settings.valkey_url.get_secret_value()) if settings.valkey_url else None
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
         if engine is not None:
             engine.dispose()
+        if valkey is not None:
+            valkey.close()
 
     app = FastAPI(title="FloorWars API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.sessionmaker = make_sessionmaker(engine) if engine is not None else None
     app.state.access_tokens = build_access_tokens(settings)
+    app.state.mail_sender = build_mail_sender(settings)
+    # None without FLOORWARS_VALKEY_URL: POST /v1/auth/otp then answers 503 (fails closed).
+    app.state.rate_limiter = ValkeyRateLimiter(valkey) if valkey is not None else None
     install_problem_handlers(app)
 
     @app.get("/healthz", include_in_schema=False)
