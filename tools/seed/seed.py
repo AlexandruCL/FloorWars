@@ -64,8 +64,8 @@ def seed(conn: Connection, now: datetime | None = None) -> None:
         conn.execute(
             text(
                 "INSERT INTO building (name, footprint) "
-                "SELECT :name, ST_GeomFromText(:wkt, 4326) "
-                "WHERE NOT EXISTS (SELECT 1 FROM building WHERE name = :name)"
+                "SELECT CAST(:name AS text), ST_GeomFromText(:wkt, 4326) "
+                "WHERE NOT EXISTS (SELECT 1 FROM building WHERE name = CAST(:name AS text))"
             ),
             {"name": name, "wkt": hexagon_wkt(lat, lon)},
         )
@@ -98,7 +98,7 @@ def main() -> int:
         with engine.begin() as conn:
             seed(conn)
             counts = {
-                table: conn.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
+                table: conn.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()  # noqa: S608
                 for table in ("building", "team", "season")
             }
     finally:
