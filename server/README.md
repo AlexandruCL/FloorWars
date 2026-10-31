@@ -110,8 +110,28 @@ the host files to these names, see `infra/secrets/README.md`.
 | `FLOORWARS_ENV` | `dev` | `dev`, `staging`, `prod` |
 | `FLOORWARS_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `FLOORWARS_DATABASE_URL` | unset | PostgreSQL URL (`postgresql+psycopg://...`). Secret. Required by Alembic and the DB session. |
-| `FLOORWARS_TEST_DATABASE_URL` | unset | Tests only: throwaway PostGIS database for `tests/test_migrations.py`. Not read by the app. |
-| `FLOORWARS_VALKEY_URL` | unset | Valkey URL (`redis://...`). Secret. Optional for now. |
+| `FLOORWARS_TEST_DATABASE_URL` | unset | Tests only: throwaway PostGIS database for the migration and auth tests. Not read by the app. |
+| `FLOORWARS_VALKEY_URL` | unset | Valkey URL (`redis://[:password@]host:port/db`). Secret. Needed by `POST /v1/auth/otp` (rate limits). |
+| `FLOORWARS_TEST_VALKEY_URL` | unset | Tests only: throwaway Valkey for `tests/auth` (flushed by the tests). Not read by the app. |
+| `FLOORWARS_ALLOWED_EMAIL_DOMAINS` | `student.upt.ro` | Comma-separated e-mail domains that may sign in (case-insensitive, exact domain match). |
+| `FLOORWARS_MAIL_BACKEND` | `log` | `acs` (Azure Communication Services, required in `prod`), `log` (dev: logs `otp mail sent to <address>`, never the code), `fake` (tests: in-memory outbox; refused in `staging`/`prod`). |
+| `FLOORWARS_MAIL_FROM` | unset | Sender address of the ACS e-mail domain. Required with `acs`. |
+| `FLOORWARS_ACS_ENDPOINT` | unset | `https://<resource>.communication.azure.com`. Required with `acs`. |
+| `FLOORWARS_ACS_ACCESS_KEY` | unset | ACS access key (base64). Secret. Required with `acs`. |
+| `FLOORWARS_JWT_SIGNING_KEY` | unset | Hex of a 32-byte Ed25519 seed (64 hex characters, one line, not a PEM). Secret. Required in `staging`/`prod`; in `dev` a random key per process is used. |
+| `FLOORWARS_JWT_AUDIENCE` | `floorwars-api` | `aud` claim of access tokens; tokens with another audience are rejected. |
+| `FLOORWARS_ACCESS_TOKEN_TTL_S` | `900` | Access token lifetime (plan 7.9: 15 minutes). |
+| `FLOORWARS_REFRESH_TOKEN_TTL_S` | `2592000` | Refresh token lifetime (30 days), renewed on every rotation. |
+| `FLOORWARS_OTP_TTL_S` | `600` | Sign-in code lifetime (plan 7.9: 10 minutes). |
+| `FLOORWARS_OTP_MAX_ATTEMPTS` | `5` | Wrong codes allowed per challenge, 1 to 5 (the database CHECK caps it at 5). |
+| `FLOORWARS_OTP_RATE_PER_EMAIL_PER_HOUR` | `5` | Token bucket size and hourly refill for code requests per e-mail. |
+| `FLOORWARS_OTP_RATE_PER_IP_PER_HOUR` | `60` | Same, per client IP. Students behind the campus NAT share one IP, so keep it generous. |
+| `FLOORWARS_QR_HMAC_KEY` | unset | 32-byte HMAC key for entrance QR codes, hex. Secret. Required in `staging`/`prod`. Used by the check-in feature. |
+
+Startup checks: `Settings` refuses to load (and the app to start) when `FLOORWARS_ENV=prod` and
+the mail backend is not `acs`, when `acs` lacks one of its three settings, or when `staging`/`prod`
+lack `FLOORWARS_JWT_SIGNING_KEY` or `FLOORWARS_QR_HMAC_KEY`. Errors name the variable, never the
+value.
 
 ## Logging
 
