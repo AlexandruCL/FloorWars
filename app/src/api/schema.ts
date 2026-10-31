@@ -81,6 +81,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/seasons/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The season that is running now
+         * @description Inferred: the app needs the active season id to join a team (POST /seasons/{id}/join).
+         */
+        get: operations["getActiveSeason"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/seasons/{id}/join": {
         parameters: {
             query?: never;
@@ -399,6 +419,11 @@ export interface components {
             email: string;
             /** @description The 6-digit code from the e-mail. */
             code: string;
+            device: components["schemas"]["DeviceInfo"];
+            /** @description Inferred: the user accepted the terms and privacy notice. Required true for a new account. */
+            accept_terms?: boolean;
+            /** @description Inferred: the user confirms being 18 or older (plan section 2). Required true for a new account. */
+            confirm_adult?: boolean;
         };
         RefreshRequest: {
             refresh_token: string;
@@ -421,6 +446,26 @@ export interface components {
             code: string;
             /** @description Team colour. Inferred: the "#RRGGBB" format. */
             color_hex: string;
+        };
+        /** @description Inferred: device registration at sign-in (plan 5.1 device table, 10 Week 2). */
+        DeviceInfo: {
+            /**
+             * Format: uuid
+             * @description Generated once by the app and kept for the install. Segments are later linked to it.
+             */
+            id: string;
+            /** @description Manufacturer and model as the phone reports them, for example "samsung SM-S918B". */
+            model: string;
+            /** @description From getStatus() of the sensor module. Phones without one use the landing-scan fallback. */
+            has_barometer: boolean;
+        };
+        /** @description Inferred: a season and its time range (active_during in the data model). */
+        Season: {
+            id: number;
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
         };
         JoinRequest: {
             team_id: number;
@@ -835,6 +880,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            /** @description Inferred: a new account needs accept_terms and confirm_adult both true. Users under 18 are not accepted. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             422: components["responses"]["ValidationError"];
             /** @description Too many attempts for this code (more than 5). */
             429: {
@@ -897,6 +951,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Team"][];
+                };
+            };
+        };
+    };
+    getActiveSeason: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The active season. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Season"];
+                };
+            };
+            /** @description No season is active right now. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
