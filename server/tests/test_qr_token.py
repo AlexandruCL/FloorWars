@@ -130,3 +130,18 @@ def test_key_from_hex() -> None:
 
 def test_prefix_constant() -> None:
     assert qr_token.PREFIX == "fwq1."
+
+
+def test_deeply_nested_payload_is_malformed(monkeypatch: pytest.MonkeyPatch) -> None:
+    token = "fwq1." + _b64(b"[" * 5000) + ".AAAA"
+    with pytest.raises(QrMalformedError, match="too long"):
+        verify(token, KEY, NOW)
+    # Lift the length cap to reach the JSON parser itself (RecursionError path).
+    monkeypatch.setattr(qr_token, "MAX_TOKEN_LEN", 100_000)
+    with pytest.raises(QrMalformedError, match="not JSON"):
+        verify(token, KEY, NOW)
+
+
+def test_oversized_token_is_malformed() -> None:
+    with pytest.raises(QrMalformedError, match="too long"):
+        verify("fwq1." + "A" * 1_000_000, KEY, NOW)

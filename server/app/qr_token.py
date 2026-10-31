@@ -26,6 +26,7 @@ from dataclasses import dataclass
 PREFIX = "fwq1."
 VERSION = 1
 KEY_BYTES = 32
+MAX_TOKEN_LEN = 512
 
 
 class QrTokenError(Exception):
@@ -117,6 +118,8 @@ def verify(token: str, key: bytes, now: int) -> QrClaims:
     Raises QrMalformedError, QrWrongKeyError, QrBadSignatureError, QrNotYetValidError or
     QrExpiredError (all subclasses of QrTokenError).
     """
+    if len(token) > MAX_TOKEN_LEN:
+        raise QrMalformedError("token too long")
     if not token.startswith(PREFIX):
         raise QrMalformedError("missing prefix")
     parts = token[len(PREFIX) :].split(".")
@@ -126,7 +129,7 @@ def verify(token: str, key: bytes, now: int) -> QrClaims:
     signature = _b64d(parts[1])
     try:
         data = json.loads(payload)
-    except ValueError:
+    except (ValueError, RecursionError):
         raise QrMalformedError("payload is not JSON") from None
     if not isinstance(data, dict) or data.get("v") != VERSION:
         raise QrMalformedError("unsupported payload")
