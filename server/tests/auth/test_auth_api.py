@@ -165,15 +165,17 @@ def test_expired_code_is_401(client: TestClient) -> None:
     assert response.status_code == 401
 
 
-def test_new_request_supersedes_old_code(client: TestClient) -> None:
+def test_new_request_supersedes_old_code(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    codes = iter(["111111", "222222"])
+    monkeypatch.setattr(otp, "new_code", lambda: next(codes))
     email = new_email()
     client.post("/v1/auth/otp", json={"email": email})
-    old = last_code(client.app, email)
     client.post("/v1/auth/otp", json={"email": email})
-    new = last_code(client.app, email)
-    if old != new:
-        assert _verify(client, email, old).status_code == 401
-    ok = _verify(client, email, new, accept_terms=True, confirm_adult=True)
+    assert last_code(client.app, email) == "222222"
+    assert _verify(client, email, "111111").status_code == 401
+    ok = _verify(client, email, "222222", accept_terms=True, confirm_adult=True)
     assert ok.status_code == 200
 
 

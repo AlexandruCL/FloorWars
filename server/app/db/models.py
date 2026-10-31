@@ -24,6 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import BYTEA, CITEXT, TSTZRANGE, UUID, ExcludeConstraint, Range
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.constants import OTP_MAX_ATTEMPTS
 from app.db.base import Base
 
 GEN_UUID = text("gen_random_uuid()")
@@ -130,11 +131,6 @@ class RefreshToken(Base):
     # Set when the token was rotated (0002_auth). Presenting it again within the reuse grace
     # window is a client retry, not theft; ``revoked_at`` alone also covers family revocation.
     rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-# Highest value of otp_challenge.attempts (plan 7.9: five attempts per code). The CHECK below and
-# the Settings bound on ``otp_max_attempts`` both use it.
-OTP_MAX_ATTEMPTS = 5
 
 
 class OtpChallenge(Base):

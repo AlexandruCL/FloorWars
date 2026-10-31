@@ -26,12 +26,12 @@ from app.auth.ratelimit import RateLimiter, client_bucket, hashed_subject
 from app.auth.schemas import OtpVerifyRequest, TokenPair
 from app.auth.tokens import AccessTokens
 from app.config import Settings
+from app.constants import HOUR_S
 from app.mail import MailError, MailSender
 from app.valkey import ValkeyError
 
 logger = logging.getLogger("floorwars.auth")
 
-HOUR_S = 3600
 
 DOMAIN_NOT_ALLOWED = "urn:floorwars:problem:email-domain-not-allowed"
 TERMS_REQUIRED = "urn:floorwars:problem:terms-required"

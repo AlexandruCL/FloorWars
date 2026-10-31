@@ -38,7 +38,7 @@ from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from app.db.models import OTP_MAX_ATTEMPTS
+from app.constants import DAY_S, HOUR_S, OTP_MAX_ATTEMPTS
 
 SECRETS_DIR = Path("/run/secrets")
 
@@ -47,9 +47,6 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 # acs: Azure Communication Services (production); log: logs "otp mail sent to <address>"
 # without the code (local dev); fake: in-memory outbox read by tests.
 MailBackend = Literal["acs", "log", "fake"]
-
-HOUR_S = 3600
-DAY_S = 24 * HOUR_S
 
 
 def _hex32(value: SecretStr | None, name: str) -> SecretStr | None:

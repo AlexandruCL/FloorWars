@@ -7,8 +7,6 @@ runs in its thread pool, and database access lives in small repository functions
 ``app/auth/repository.py``), so a later switch to ``create_async_engine`` touches one layer.
 """
 
-from functools import lru_cache
-
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -38,13 +36,3 @@ def make_engine(url: str) -> Engine:
 def make_sessionmaker(engine: Engine) -> sessionmaker[Session]:
     """Session factory. Sessions do not autocommit: services call ``session.commit()``."""
     return sessionmaker(engine, expire_on_commit=False)
-
-
-@lru_cache(maxsize=1)
-def get_engine() -> Engine:
-    return make_engine(database_url())
-
-
-@lru_cache(maxsize=1)
-def get_sessionmaker() -> sessionmaker[Session]:
-    return make_sessionmaker(get_engine())

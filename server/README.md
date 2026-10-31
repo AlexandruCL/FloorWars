@@ -10,8 +10,9 @@ the `/v1/auth/*` sign-in endpoints (contract 0.4.0-draft).
 |---|---|
 | `app/api/v1/__init__.py` | The `/v1` router. A feature adds `app/api/v1/<feature>.py` with its own `router` and lists it in `_FEATURE_ROUTERS`. |
 | `app/api/deps.py` | `CurrentUser` (signed-in `User` from the Bearer access token, else 401 Problem), `DbSession` (sync SQLAlchemy session, no autocommit), `AppSettings`, `Tokens`, `Mail`, `Limiter`. |
-| `app/api/problems.py` | RFC 9457 errors: raise `ProblemError(status, title, detail, type_=..., headers=..., **ext)` or `unauthorized`, `forbidden`, `not_found`, `conflict`, `too_many_requests`, `service_unavailable`; `problem_doc("...")` documents a problem response in OpenAPI. Validation errors are 422 problems with an `errors` list (no echoed input). |
+| `app/api/problems.py` | RFC 9457 errors: raise `ProblemError(status, title, detail, type_=..., headers=..., **ext)` or `unauthorized`, `forbidden`, `not_found`, `conflict`, `too_many_requests`, `service_unavailable`; `problem_doc("...")` documents a problem response in OpenAPI (a `$ref` to the one shared `Problem` component). Validation errors are 422 problems with an `errors` list (no echoed input). |
 | `app/auth/` | Sign-in: `tokens` (EdDSA JWTs), `otp`, `ratelimit` (Valkey token buckets), `repository` (all SQL), `service` (flows), `schemas`. |
+| `app/constants.py` | `HOUR_S`, `DAY_S`, `OTP_MAX_ATTEMPTS` (no imports, safe for settings and models). |
 | `app/mail.py` | `MailSender` with `acs`, `log` and `fake` backends. |
 | `app/valkey.py` | Thin wrapper around `valkey-py` (pooled, 2 s timeouts, one retry on connection errors); every failure is `ValkeyError`, and the rate limiter fails closed on it. |
 
@@ -122,8 +123,9 @@ Notes:
 - The migration connection pins `search_path=public`, because the `postgis/postgis` image adds
   the `tiger` and `topology` schemas to it and Alembic would otherwise report their tables.
 - Downgrading drops tables only; the `postgis` and `citext` extensions stay.
-- `app/db/session.py` has a sync engine (decision 2026-10-31): handlers are plain `def`, and an
-  async engine would need `greenlet` (`sqlalchemy[asyncio]`), which is not a dependency.
+- `app/db/session.py` builds the sync engine `create_app` uses (decision 2026-10-31: handlers are
+  plain `def`; an async engine would need `greenlet`). Pool 10 + 10 overflow, `pool_pre_ping`,
+  `hide_parameters`.
 
 ## Endpoints
 

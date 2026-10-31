@@ -52,7 +52,9 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_otp_challenge")),
         sa.CheckConstraint(
-            "attempts BETWEEN 0 AND 5", name=op.f("ck_otp_challenge_attempts_range")
+            # 5 = app.constants.OTP_MAX_ATTEMPTS at the time of writing (migrations are frozen).
+            "attempts BETWEEN 0 AND 5",
+            name=op.f("ck_otp_challenge_attempts_range"),
         ),
     )
     # At most one active challenge per e-mail; also the lookup index for verify.
@@ -69,6 +71,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Undo 0002. Destroys data: the users' consent timestamps (``terms_accepted_at``,
+    ``age_confirmed_at``), every sign-in challenge and ``rotated_at``; re-collect consent after
+    upgrading again."""
     op.drop_table("otp_challenge")
     # Fails if two users registered the same device id; delete the duplicates first.
     op.create_index("ix_device_user_id", "device", ["user_id"])
