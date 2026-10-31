@@ -1,11 +1,14 @@
 openapi: 3.1.0
 info:
   title: FloorWars API
-  version: 0.3.0-draft
+  version: 0.4.0-draft
   description: |
     Approved by both members on 2026-10-21. Every later change is a PR reviewed by the other member.
 
     Changelog:
+    - 0.4.0-draft (2026-10-31): week 2 auth and teams (plan 10, Week 2). OtpVerifyRequest requires
+      device (DeviceInfo) and takes accept_terms and confirm_adult, which a new account must set to
+      true (403 otherwise; users under 18 are not accepted). Added GET /seasons/active and Season.
     - 0.3.0-draft (2026-10-29): no Firebase (course rule, plan 7.2.1). POST /devices/push-token and
       PushTokenRequest removed. Added GET /me/events (notification feed), event_id on WebSocket events,
       and since on WS /ws to replay missed events on connect.
@@ -83,6 +86,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TokenPair' }
+        '403':
+          description: 'Inferred: a new account needs accept_terms and confirm_adult both true. Users under 18 are not accepted.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '401':
           description: Wrong or expired code.
           content:
@@ -134,6 +142,25 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Team' }
+
+  /seasons/active:
+    get:
+      tags: [teams]
+      operationId: getActiveSeason
+      summary: The season that is running now
+      description: 'Inferred: the app needs the active season id to join a team (POST /seasons/{id}/join).'
+      security: []
+      responses:
+        '200':
+          description: The active season.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Season' }
+        '404':
+          description: No season is active right now.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
 
   /seasons/{id}/join:
     post:
@@ -544,13 +571,20 @@ components:
 
     OtpVerifyRequest:
       type: object
-      required: [email, code]
+      required: [email, code, device]
       properties:
         email: { type: string, format: email }
         code:
           type: string
           pattern: '^[0-9]{6}$'
           description: The 6-digit code from the e-mail.
+        device: { $ref: '#/components/schemas/DeviceInfo' }
+        accept_terms:
+          type: boolean
+          description: 'Inferred: the user accepted the terms and privacy notice. Required true for a new account.'
+        confirm_adult:
+          type: boolean
+          description: 'Inferred: the user confirms being 18 or older (plan section 2). Required true for a new account.'
       additionalProperties: false
 
     RefreshRequest:
@@ -594,6 +628,33 @@ components:
           type: string
           pattern: '^#[0-9A-Fa-f]{6}$'
           description: 'Team colour. Inferred: the "#RRGGBB" format.'
+
+    DeviceInfo:
+      type: object
+      description: 'Inferred: device registration at sign-in (plan 5.1 device table, 10 Week 2).'
+      required: [id, model, has_barometer]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Generated once by the app and kept for the install. Segments are later linked to it.
+        model:
+          type: string
+          maxLength: 100
+          description: Manufacturer and model as the phone reports them, for example "samsung SM-S918B".
+        has_barometer:
+          type: boolean
+          description: From getStatus() of the sensor module. Phones without one use the landing-scan fallback.
+      additionalProperties: false
+
+    Season:
+      type: object
+      description: 'Inferred: a season and its time range (active_during in the data model).'
+      required: [id, starts_at, ends_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
 
     JoinRequest:
       type: object

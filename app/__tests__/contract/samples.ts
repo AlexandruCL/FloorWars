@@ -16,6 +16,25 @@ type JsonBody<P extends keyof paths, M extends 'get' | 'post'> = NonNullable<
 export const verifyRequest: JsonBody<'/auth/verify', 'post'> = {
   email: 'student@example.edu',
   code: '123456',
+  device: {
+    id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+    model: 'samsung SM-S918B',
+    has_barometer: true,
+  },
+  accept_terms: true,
+  confirm_adult: true,
+};
+// @ts-expect-error device is required (0.4.0-draft)
+export const verifyMissingDevice: Schemas['OtpVerifyRequest'] = {
+  email: 'student@example.edu',
+  code: '123456',
+};
+
+// GET /seasons/active
+export const activeSeason: Schemas['Season'] = {
+  id: 1,
+  starts_at: '2026-11-02T00:00:00Z',
+  ends_at: '2026-11-16T00:00:00Z',
 };
 export const verifyResponse: paths['/auth/verify']['post']['responses'][200]['content']['application/json'] =
   {
