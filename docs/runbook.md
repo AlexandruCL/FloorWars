@@ -178,7 +178,7 @@ cd /srv/floorwars/repo/infra
 export API_TAG=$(cat /srv/floorwars/current)          # compose needs it for every command
 docker compose ps                                     # 2 api replicas, postgres, valkey healthy
 docker compose logs --tail=50 caddy                   # certificate issuance problems show here
-docker compose exec postgres psql -U postgres -d floorwars -c 'select postgis_version()'
+docker compose exec postgres psql -U postgres -d floorwars -c 'select public.postgis_version()'
 sudo ss -tlnp | grep -E ':(5432|6379)\b' || echo "db ports not published (expected)"
 tail -n 30 /srv/floorwars/deploy.log
 ```
@@ -195,6 +195,12 @@ ssh -i ~/.ssh/floorwars_deploy deploy@<VM_IP> rollback     # or: sudo /srv/floor
 Re-pins the sha in `/srv/floorwars/last_good` without running migrations. Migrations are
 expand-only (plan 7.7), so the previous image works on the newer schema. A bad classifier
 threshold is reverted in the database `config` table, not by a deploy.
+
+`deploy.sh` takes the list of required secrets from the compose file of the tag it checks out,
+so a rollback to a pre-Week-2 tag needs only that tag's four secrets. **That tag brings back the
+secret files of its own tree, including its `database_url`, which before section 11 is the
+superuser `postgres` URL:** the API of that tag runs with full rights again, and the app role
+and the `migrate` service are unused until you deploy a Week 2 tag again.
 
 ## 10. After a reboot
 
@@ -218,7 +224,7 @@ New secrets (host file name = decrypted name; the API reads each as `/run/secret
 | Secret | Used by | What |
 |---|---|---|
 | `jwt_signing_key`, `qr_hmac_key` | api | Hex keys, already in `infra/secrets/auth.enc.env` (from the auth work) |
-| `acs_access_key` | api | Azure Communication Services access key, added by Ionut (step 4) |
+| `acs_access_key` | api | Azure Communication Services access key, added by Ionut (step 3) |
 | `migration_database_url` | `migrate` service | URL of the migration role (DDL rights) |
 | `database_url` | api | Changes to the URL of the app role (no DDL) |
 
@@ -226,26 +232,16 @@ Non-secret settings go in `infra/.env` on the VM: `FLOORWARS_MAIL_BACKEND=acs`,
 `FLOORWARS_ACS_ENDPOINT`, `FLOORWARS_MAIL_FROM`, `FLOORWARS_ALLOWED_EMAIL_DOMAINS=student.upt.ro`
 (see `infra/.env.example`).
 
-**1. Pull the release onto the VM and create the roles.** The stack must be running (postgres up
-and the Week 1 schema applied by migration `0001`). Passwords are generated here, shown to nobody:
+**Order.** Steps 1 to 3 are on your PC, step 4 on the VM, step 5 is the deploy, step 6 the check.
+Steps 1 and 2 go together: the same two passwords go into the encrypted URLs and into the roles,
+and the `acs_access_key` is added in the same SOPS session so one merge carries all secrets.
+Nothing here is typed as a command-line argument, echoed, or kept in shell history.
 
-```sh
-cd /srv/floorwars/repo && sudo git fetch origin main && sudo git checkout --detach <SHA>
-APP_PW=$(openssl rand -hex 24); MIG_PW=$(openssl rand -hex 24)
-# plain `docker exec`: `docker compose` would need every new secret file to exist already
-docker exec -i floorwars-postgres-1 psql -U postgres -d floorwars -v ON_ERROR_STOP=1 \
-  -v app_password="$APP_PW" -v migrator_password="$MIG_PW" < infra/sql/roles.sql
-```
+**1. Choose the two passwords on your PC.** In a second local terminal run `openssl rand -hex 24`
+twice and keep the two values in that terminal only (do not write them to a file). Call them
+`<APP_PW>` and `<MIG_PW>`.
 
-(The deploy in step 5 checks out the release again; this checkout only makes `sql/roles.sql` available.)
-`sql/roles.sql` is idempotent (re-running rotates the two passwords). It creates
-`floorwars_migrator` (owns the schema, runs DDL) and `floorwars_app` (SELECT/INSERT/UPDATE/DELETE and
-sequence USAGE only), moves the existing tables and `alembic_version` to the migrator, and sets
-default privileges so tables created by later migrations get the app grants. Keep `APP_PW` and
-`MIG_PW` in the shell until step 2. The script was tested locally with `sql/check_roles.sh`.
-
-**2. Encrypt the two database URLs** into a SOPS file, on your PC, from the two passwords
-(`@postgres:5432/floorwars` is the compose host name):
+**2. Edit the encrypted secrets** (`@postgres:5432/floorwars` is the compose host name):
 
 ```sh
 sops infra/secrets/app.enc.env      # opens the decrypted file in $EDITOR, re-encrypts on save
@@ -254,22 +250,57 @@ sops infra/secrets/app.enc.env      # opens the decrypted file in $EDITOR, re-en
 git diff infra/secrets/             # must show only ENC[...] values
 ```
 
-Do not define a key in two files. Commit on a branch and merge; the VM reads the files from the repo.
+Do not define a key in two files (`deploy.sh` stops with `secret <key> defined twice`). Commit on a
+branch and merge; the VM reads the files from the repo. Nothing changes on the VM until step 5.
 
-**3. Check after the deploy:** `docker exec floorwars-postgres-1 psql -U postgres -d floorwars -c '\du floorwars_*'`
-lists both roles, and the API log shows no `permission denied`.
-
-**4. Add `acs_access_key`.** Create the Communication Services resource and an Email Communication
+**3. Add `acs_access_key`.** Create the Communication Services resource and an Email Communication
 Service with a verified (or Azure-managed) sender domain, copy a key from Keys, then
 `sops infra/secrets/auth.enc.env` and add `acs_access_key=<key>` (one line). Fill
-`FLOORWARS_ACS_ENDPOINT` and `FLOORWARS_MAIL_FROM` in `/srv/floorwars/repo/infra/.env`.
+`FLOORWARS_ACS_ENDPOINT` and `FLOORWARS_MAIL_FROM` in `/srv/floorwars/repo/infra/.env` on the VM.
+Create the sender domain and resource before step 5; the deploy refuses to start without the key.
+
+**4. Create the extension and the roles on the VM.** The stack is running (postgres up, Week 1
+schema from migration `0001`). Enter the passwords hidden, then pipe them in on stdin together with
+`roles.sql` (never as `-v` arguments; `roles.sql` switches statement logging off for its session):
+
+```sh
+cd /srv/floorwars/repo && sudo git fetch origin main && sudo git checkout --detach <SHA>
+read -rsp 'app password: ' APP_PW; echo
+read -rsp 'migrator password: ' MIG_PW; echo
+PG=floorwars-postgres-1     # check with: docker ps --format '{{.Names}}'
+# extensions are a superuser step; the migrator cannot create them (needed by the check-in migration)
+docker exec -i $PG psql -U postgres -d floorwars -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS btree_gist'
+{ printf '\set app_password %s\n\set migrator_password %s\n' "$APP_PW" "$MIG_PW"
+  cat infra/sql/roles.sql; } | docker exec -i $PG psql -U postgres -d floorwars -v ON_ERROR_STOP=1
+unset APP_PW MIG_PW
+```
+
+Plain `docker exec` is used because `docker compose` would need every new secret file to exist.
+The deploy in step 5 checks out the release again; this checkout only makes `infra/sql/roles.sql`
+available. `roles.sql` is idempotent (re-running rotates the two passwords; update the SOPS URLs
+to match). It creates `floorwars_migrator` (owns the schema, runs DDL) and `floorwars_app`
+(SELECT/INSERT/UPDATE/DELETE and sequence USAGE only; no access to `alembic_version`), moves the
+existing tables to the migrator, and sets default privileges so tables created by later migrations
+get the app grants. It also sets `search_path = pg_catalog, public` for the `postgres` role in this
+database. It was tested locally with `infra/sql/check_roles.sh`.
+
+**Never run DML (INSERT, UPDATE, DELETE) on the app tables as `postgres`.** The `postgres` role
+bypasses the app's grants and any later row-level policy, and a superuser session on app tables
+is how mistakes become data loss. For a data fix, write a migration or use `floorwars_app` itself.
+Superuser sessions are for roles, extensions, backups and read-only inspection.
 
 **5. Redeploy.** `sudo /srv/floorwars/deploy.sh <SHA>` (re-install the reviewed copy first, since
 `deploy.sh` changed: see section 6). The deploy now runs `alembic upgrade head` through the
-`migrate` service (migration role) and starts the API with the app role. A rollback still never migrates.
+`migrate` service (migration role) and starts the API with the app role. A rollback still never
+migrates. The `app` network gets a fixed subnet (`APP_SUBNET`, default `172.29.40.0/24`) so the API
+trusts `X-Forwarded-For` only from Caddy; compose recreates the network and containers once. If the
+subnet clashes with another network on the VM, set `APP_SUBNET` in `infra/.env`.
 
 If `migrate` cannot start with only its one secret (the API settings require another), the log
 names the missing setting: report it, do not widen the mount by hand.
+
+**6. Check after the deploy:** `docker exec floorwars-postgres-1 psql -U postgres -d floorwars -c '\du floorwars_*'`
+lists both roles, and the API log shows no `permission denied`.
 
 ## 12. Staging
 
