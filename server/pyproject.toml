@@ -14,14 +14,21 @@ dependencies = [
     "alembic>=1.20.1",
     "geoalchemy2>=0.20.0",
     "psycopg[binary]>=3.3.6",
+    # Ed25519 for access tokens (plan 7.9: libraries only for crypto primitives). Approved 2026-10-31.
+    "cryptography==50.0.2",
+    # Outbound HTTP to Azure Communication Services (sign-in e-mail). Also used by TestClient.
+    "httpx>=0.28.1",
+    # Valkey client for the rate-limit token buckets. Approved 2026-10-31.
+    "valkey==6.2.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "httpx>=0.28.1",
     "ruff>=0.17.1",
     "mypy>=2.4.0",
+    # Offline QR tool only (tools/qr), never imported by the app. Approved 2026-10-31.
+    "qrcode==8.2",
 ]
 
 [build-system]

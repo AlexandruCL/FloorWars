@@ -1,6 +1,6 @@
-"""SQLAlchemy models for the baseline schema (plan section 5.1).
+"""SQLAlchemy models (plan section 5.1).
 
-Must match ``migrations/versions/0001_baseline.py`` exactly; ``alembic check`` enforces that.
+Must match the migrations in ``migrations/versions/`` exactly; ``alembic check`` enforces that.
 See ``docs/er_review.md`` for the decisions behind nullability, PK types and delete rules.
 """
 
@@ -16,6 +16,7 @@ from sqlalchemy import (
     Identity,
     Index,
     Integer,
+    SmallInteger,
     Text,
     func,
     text,
@@ -23,6 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import BYTEA, CITEXT, TSTZRANGE, UUID, ExcludeConstraint, Range
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.constants import OTP_MAX_ATTEMPTS
 from app.db.base import Base
 
 GEN_UUID = text("gen_random_uuid()")
@@ -44,14 +46,26 @@ class User(Base):
     email: Mapped[str] = mapped_column(CITEXT(), unique=True)
     display_name: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = _created_at()
+    # Set at sign-up from OtpVerifyRequest.accept_terms / confirm_adult (0002_auth). NULL only
+    # for rows created before 0002; the API never creates a user without them.
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    age_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Device(Base):
+    """A phone of a user. The id comes from the app; it is unique per user only.
+
+    Composite primary key ``(user_id, id)`` (0002_auth): the same device id signed in by two
+    users gives two rows, so one user can never take over another user's device row.
+    """
+
     __tablename__ = "device"
 
-    id: Mapped[uuid.UUID] = _uuid_pk()
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("user.id", ondelete="CASCADE"), index=True
+        ForeignKey("user.id", ondelete="CASCADE"), primary_key=True
+    )
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=GEN_UUID
     )
     model: Mapped[str] = mapped_column(Text)
     has_barometer: Mapped[bool] = mapped_column(Boolean)
@@ -114,3 +128,36 @@ class RefreshToken(Base):
     created_at: Mapped[datetime] = _created_at()
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set when the token was rotated (0002_auth). Presenting it again within the reuse grace
+    # window is a client retry, not theft; ``revoked_at`` alone also covers family revocation.
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class OtpChallenge(Base):
+    """A sign-in code sent by e-mail (plan 7.9). Only ``sha256(salt || code)`` is stored.
+
+    At most one *active* (``consumed_at IS NULL``) challenge per e-mail: a new request sets
+    ``consumed_at`` on the previous one (superseded), a successful verify sets it too.
+    """
+
+    __tablename__ = "otp_challenge"
+    __table_args__ = (
+        CheckConstraint(f"attempts BETWEEN 0 AND {OTP_MAX_ATTEMPTS}", name="attempts_range"),
+        Index(
+            "ix_otp_challenge_email",
+            "email",
+            unique=True,
+            postgresql_where=text("consumed_at IS NULL"),
+        ),
+        # Retention purge and per-e-mail cleanup (``created_at`` ranges).
+        Index("ix_otp_challenge_email_created_at", "email", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    email: Mapped[str] = mapped_column(CITEXT())
+    code_hash: Mapped[bytes] = mapped_column(BYTEA())
+    salt: Mapped[bytes] = mapped_column(BYTEA())
+    attempts: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
