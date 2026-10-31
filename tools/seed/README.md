@@ -1,6 +1,8 @@
 # Seed data
 
-Idempotent seed for development and staging. Running it twice changes nothing.
+Idempotent seed for development and staging. Running it twice changes nothing, as long as it
+is within the same season window. A run in a later week (after the season ended or once its
+range no longer overlaps) creates a new season.
 
 ```bash
 export FLOORWARS_DATABASE_URL=postgresql+psycopg://...   # migrated database (alembic upgrade head)

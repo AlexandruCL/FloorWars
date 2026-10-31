@@ -10,9 +10,7 @@ import seed
 from sqlalchemy import Connection, create_engine, text
 
 TEST_DB_URL = os.environ.get("FLOORWARS_TEST_DATABASE_URL")
-needs_db = pytest.mark.skipif(
-    not TEST_DB_URL, reason="FLOORWARS_TEST_DATABASE_URL not set"
-)
+needs_db = pytest.mark.skipif(not TEST_DB_URL, reason="FLOORWARS_TEST_DATABASE_URL not set")
 
 TABLES = ("building", "team", "season", '"user"', "team_membership")
 
@@ -32,9 +30,7 @@ def conn() -> Iterator[Connection]:
 
 
 def _counts(conn: Connection) -> dict[str, int]:
-    return {
-        t: conn.execute(text(f"SELECT count(*) FROM {t}")).scalar_one() for t in TABLES
-    }
+    return {t: conn.execute(text(f"SELECT count(*) FROM {t}")).scalar_one() for t in TABLES}
 
 
 def test_hexagon_wkt_is_closed_with_seven_points() -> None:
