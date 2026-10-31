@@ -50,12 +50,23 @@ services:
     environment:
       FLOORWARS_ENV: ${FLOORWARS_ENV:-prod}
       FLOORWARS_LOG_LEVEL: ${FLOORWARS_LOG_LEVEL:-INFO}
+      # Non-secret Week 2 settings, from infra/.env (see .env.example).
+      FLOORWARS_MAIL_BACKEND: ${FLOORWARS_MAIL_BACKEND:-acs}
+      FLOORWARS_ACS_ENDPOINT: ${FLOORWARS_ACS_ENDPOINT:-}
+      FLOORWARS_MAIL_FROM: ${FLOORWARS_MAIL_FROM:-}
+      FLOORWARS_ALLOWED_EMAIL_DOMAINS: ${FLOORWARS_ALLOWED_EMAIL_DOMAINS:-student.upt.ro}
     # pydantic-settings reads /run/secrets/<env prefix + field>, so targets carry the prefix.
     secrets:
       - source: database_url
         target: floorwars_database_url
       - source: valkey_url
         target: floorwars_valkey_url
+      - source: jwt_signing_key
+        target: floorwars_jwt_signing_key
+      - source: qr_hmac_key
+        target: floorwars_qr_hmac_key
+      - source: acs_access_key
+        target: floorwars_acs_access_key
     networks:
       - app
       - data
@@ -64,6 +75,25 @@ services:
         condition: service_healthy
       valkey:
         condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  # One-off migrations (plan 7.7): `compose --profile tools run --rm migrate alembic upgrade head`.
+  # Same image as api, but its floorwars_database_url is the migration role's URL (DDL rights).
+  # Only on the data network: no internet, no published ports.
+  migrate:
+    image: ${API_IMAGE:-ghcr.io/alexandrucl/floorwars-api}:${API_TAG:?set API_TAG to the git sha to run}
+    profiles: ["tools"]
+    secrets:
+      - source: migration_database_url
+        target: floorwars_database_url
+    networks:
+      - data
     read_only: true
     tmpfs:
       - /tmp
@@ -97,7 +127,7 @@ services:
     security_opt:
       - no-new-privileges:true
     logging: *logging
-    # TODO (Week 2, plan 7.7): separate migration role (DDL) and app role (no DDL).
+    # Roles: infra/sql/roles.sql creates floorwars_migrator (DDL) and floorwars_app (DML only).
 
   valkey:
     image: valkey/valkey:8
@@ -160,3 +190,11 @@ secrets:
     file: ${SECRETS_DIR:-/run/secrets/floorwars}/postgres_password
   valkey_password:
     file: ${SECRETS_DIR:-/run/secrets/floorwars}/valkey_password
+  jwt_signing_key:
+    file: ${SECRETS_DIR:-/run/secrets/floorwars}/jwt_signing_key
+  qr_hmac_key:
+    file: ${SECRETS_DIR:-/run/secrets/floorwars}/qr_hmac_key
+  acs_access_key:
+    file: ${SECRETS_DIR:-/run/secrets/floorwars}/acs_access_key
+  migration_database_url:
+    file: ${SECRETS_DIR:-/run/secrets/floorwars}/migration_database_url
