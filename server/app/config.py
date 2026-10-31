@@ -116,6 +116,12 @@ class Settings(BaseSettings):
     # Entrance QR signatures (HMAC-SHA256, 32 bytes as hex). Used by the check-in feature.
     qr_hmac_key: SecretStr | None = None
 
+    # Check-in (plan 3.2, 8): a check-in lasts 90 minutes; a geofence fix must be at most
+    # geofence_max_accuracy_m inaccurate and within geofence_radius_m of a building footprint.
+    checkin_ttl_s: int = Field(default=5400, ge=60, le=DAY_S)
+    geofence_radius_m: int = Field(default=30, ge=1, le=1000)
+    geofence_max_accuracy_m: int = Field(default=50, ge=1, le=1000)
+
     @field_validator("allowed_email_domains", mode="before")
     @classmethod
     def _split_domains(cls, value: object) -> object:

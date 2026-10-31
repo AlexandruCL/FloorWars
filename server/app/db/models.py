@@ -7,7 +7,7 @@ See ``docs/er_review.md`` for the decisions behind nullability, PK types and del
 import uuid
 from datetime import datetime
 
-from geoalchemy2 import Geometry, WKBElement
+from geoalchemy2 import Geography, Geometry, WKBElement
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     Text,
+    cast,
     func,
     text,
 )
@@ -161,3 +162,45 @@ class OtpChallenge(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
+
+
+# Check-in (0003_checkin).
+
+CHECKIN_METHODS = ("qr", "geofence")
+
+
+class Checkin(Base):
+    """A check-in at a building, valid for ``valid_during`` (plan 3.2; 90 minutes by default).
+
+    The exclusion constraint keeps the check-ins of one user from overlapping, so a user has at
+    most one active check-in. The position of a geofence check-in is never stored (plan 8).
+    """
+
+    __tablename__ = "checkin"
+    __table_args__ = (
+        CheckConstraint("method IN ('qr', 'geofence')", name="method"),
+        CheckConstraint("NOT isempty(valid_during)", name="valid_during_not_empty"),
+        ExcludeConstraint(
+            ("user_id", "="),
+            ("valid_during", "&&"),
+            name="excl_checkin_user_overlap",
+            using="gist",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
+    building_id: Mapped[int] = mapped_column(ForeignKey("building.id"), index=True)
+    method: Mapped[str] = mapped_column(Text)
+    valid_during: Mapped[Range[datetime]] = mapped_column(TSTZRANGE())
+    created_at: Mapped[datetime] = _created_at()
+
+
+# Plain ``geography`` (no subtype, no SRID), so the cast is exactly ``footprint::geography``; the
+# geofence query uses the same expression, which is what lets it use the index below.
+GEOGRAPHY = Geography(geometry_type=None, srid=-1)
+BUILDING_FOOTPRINT_GEOG = cast(Building.footprint, GEOGRAPHY)
+
+# Functional GiST index for the geofence lookup (0003_checkin). Declared outside ``Building`` so
+# that model stays unchanged; it attaches to the building table all the same.
+Index("ix_building_footprint_geog", BUILDING_FOOTPRINT_GEOG, postgresql_using="gist")
