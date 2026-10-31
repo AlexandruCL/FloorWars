@@ -1,3 +1,4 @@
+# ruff: noqa: S101
 """Tests for the entrance QR tool (no database needed)."""
 
 import time
@@ -33,7 +34,7 @@ def test_one_svg_per_building_with_verifiable_token(tmp_path: Path) -> None:
         token = (out / f"{building_id}.token.txt").read_text(encoding="ascii").strip()
         claims = verify(token, key, int(time.time()))
         assert claims.building_id == building_id
-        assert claims.exp - claims.nbf == 7 * 86400
+        assert claims.exp - claims.nbf == 7 * 86400 + make_entrance_qr.SKEW_SECONDS
 
 
 def test_days_option(tmp_path: Path) -> None:
@@ -75,3 +76,51 @@ def test_bad_key_exits_without_leaking(tmp_path: Path) -> None:
             ]
         )
     assert "abcd" not in str(exc.value)
+
+
+def _args(tmp_path: Path, *extra: str) -> list[str]:
+    key_file = tmp_path / "key.txt"
+    key_file.write_text(KEY_HEX, encoding="ascii")
+    return ["--key-file", str(key_file), "--out", str(tmp_path / "o"), *extra]
+
+
+def test_days_capped(tmp_path: Path) -> None:
+    for days in ("0", "32"):
+        with pytest.raises(SystemExit):
+            make_entrance_qr.main(
+                _args(tmp_path, "--days", days, "--building-id", "1", "--name", "X")
+            )
+    assert (
+        make_entrance_qr.main(_args(tmp_path, "--days", "31", "--building-id", "1", "--name", "X"))
+        == 0
+    )
+
+
+def test_duplicate_building_id_rejected(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        make_entrance_qr.main(
+            _args(
+                tmp_path, "--building-id", "1", "--name", "A", "--building-id", "1", "--name", "B"
+            )
+        )
+
+
+def test_nbf_allows_clock_skew(tmp_path: Path) -> None:
+    make_entrance_qr.generate([(1, "A")], key_from_hex(KEY_HEX), 7, tmp_path, now=1_800_000_000)
+    token = (tmp_path / "1.token.txt").read_text(encoding="ascii").strip()
+    claims = verify(token, key_from_hex(KEY_HEX), 1_800_000_000 - 100)
+    assert claims.nbf == 1_800_000_000 - 300
+    assert "2027-01-15" in (tmp_path / "1.svg").read_text(encoding="utf-8")  # intended start date
+
+
+def test_key_file_with_bom_and_unreadable(tmp_path: Path) -> None:
+    bom = tmp_path / "bom.txt"
+    bom.write_bytes(bytes([0xEF, 0xBB, 0xBF]) + KEY_HEX.encode() + bytes([13, 10]))
+    assert make_entrance_qr.load_key(str(bom)) == key_from_hex(KEY_HEX)
+    for bad in (tmp_path / "missing.txt", tmp_path):
+        with pytest.raises(SystemExit, match="cannot read key file"):
+            make_entrance_qr.load_key(str(bad))
+    binary = tmp_path / "bin.txt"
+    binary.write_bytes(bytes([0xFF, 0xFE, 0x00]))
+    with pytest.raises(SystemExit, match="cannot read key file"):
+        make_entrance_qr.load_key(str(binary))

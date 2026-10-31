@@ -25,23 +25,30 @@ import qrcode
 from qrcode.constants import ERROR_CORRECT_M
 from qrcode.image.svg import SvgPathImage
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "server"))
+_SERVER_DIR = str(Path(__file__).resolve().parents[2] / "server")
+if _SERVER_DIR not in sys.path:
+    sys.path.append(_SERVER_DIR)  # after existing entries, so it cannot shadow other modules
 
-from app.qr_token import key_from_hex, sign
+from app.qr_token import key_from_hex, sign  # noqa: E402
 
 KEY_ENV = "FLOORWARS_QR_HMAC_KEY"
 DB_ENV = "FLOORWARS_DATABASE_URL"
+MAX_DAYS = 31
+SKEW_SECONDS = 300  # nbf is set this far before the printed start, for clock skew
 CAPTION_HEIGHT = 7  # in QR modules
 
 
 def load_key(key_file: str | None) -> bytes:
-    """Read the key from a file, else from the environment. Error messages never contain it."""
+    """Read the key from a file, else from the environment. Errors never contain the key."""
     if key_file:
-        raw = Path(key_file).read_text(encoding="ascii")
-    else:
-        raw = os.environ.get(KEY_ENV, "")
-        if not raw:
-            raise SystemExit(f"error: give --key-file or set {KEY_ENV}")
+        try:
+            raw = Path(key_file).read_text(encoding="utf-8-sig").strip()
+            return key_from_hex(raw)
+        except (OSError, UnicodeDecodeError, ValueError):
+            raise SystemExit("error: cannot read key file") from None
+    raw = os.environ.get(KEY_ENV, "")
+    if not raw:
+        raise SystemExit(f"error: give --key-file or set {KEY_ENV}")
     try:
         return key_from_hex(raw)
     except ValueError as exc:
@@ -97,11 +104,12 @@ def generate(
 ) -> list[Path]:
     """Write ``<id>.svg`` and ``<id>.token.txt`` per building; return the SVG paths."""
     start = int(time.time()) if now is None else now
+    nbf = start - SKEW_SECONDS
     end = start + days * 86400
     out.mkdir(parents=True, exist_ok=True)
     written = []
     for building_id, name in buildings:
-        token = sign(building_id, key, start, end)
+        token = sign(building_id, key, nbf, end)
         svg_path = out / f"{building_id}.svg"
         svg_path.write_text(render_svg(token, name, start, end), encoding="utf-8")
         (out / f"{building_id}.token.txt").write_text(token + "\n", encoding="ascii")
@@ -110,23 +118,19 @@ def generate(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Create signed entrance QR codes (SVG)."
-    )
+    parser = argparse.ArgumentParser(description="Create signed entrance QR codes (SVG).")
     parser.add_argument("--key-file", help="file holding the 64-hex-character key")
     parser.add_argument("--building-id", type=int, action="append", default=[])
     parser.add_argument("--name", action="append", default=[])
-    parser.add_argument(
-        "--from-db", action="store_true", help=f"read buildings via {DB_ENV}"
-    )
-    parser.add_argument(
-        "--days", type=int, default=7, help="validity in days (default 7)"
-    )
+    parser.add_argument("--from-db", action="store_true", help=f"read buildings via {DB_ENV}")
+    parser.add_argument("--days", type=int, default=7, help="validity in days (default 7)")
     parser.add_argument("--out", required=True, help="output directory")
     args = parser.parse_args(argv)
 
-    if args.days < 1:
-        parser.error("--days must be at least 1")
+    if not 1 <= args.days <= MAX_DAYS:
+        parser.error(f"--days must be between 1 and {MAX_DAYS}")
+    if len(set(args.building_id)) != len(args.building_id):
+        parser.error("duplicate --building-id")
     if args.from_db:
         if args.building_id or args.name:
             parser.error("--from-db cannot be combined with --building-id/--name")
