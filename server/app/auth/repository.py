@@ -5,7 +5,7 @@ No commits here: the service decides transaction boundaries. Functions that lock
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -13,16 +13,40 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Device, OtpChallenge, RefreshToken, User
 
+# Challenges older than this are deleted (codes live 10 minutes; a day is plenty for support).
+CHALLENGE_RETENTION = timedelta(days=1)
+
 # One-time codes.
 
 
-def supersede_active_challenge(db: Session, email: str, now: datetime) -> None:
-    """Retire the e-mail's unused challenge, if any (a new request replaces it)."""
+def add_pending_challenge(
+    db: Session, email: str, code_hash: bytes, salt: bytes, expires_at: datetime, now: datetime
+) -> uuid.UUID:
+    """Store a new challenge as *retired* (``consumed_at`` set) until its mail is accepted.
+
+    The e-mail's current active challenge stays usable meanwhile; ``activate_challenge`` swaps
+    them once the mail backend accepted the new code.
+    """
+    challenge = OtpChallenge(
+        email=email, code_hash=code_hash, salt=salt, expires_at=expires_at, consumed_at=now
+    )
+    db.add(challenge)
+    db.flush()
+    return challenge.id
+
+
+def activate_challenge(db: Session, email: str, challenge_id: uuid.UUID, now: datetime) -> None:
+    """Retire the e-mail's active challenge (superseded) and make ``challenge_id`` the active one.
+
+    Raises ``IntegrityError`` (unique active challenge per e-mail) if a concurrent request
+    activated its own challenge in between; the caller retries.
+    """
     db.execute(
         update(OtpChallenge)
         .where(OtpChallenge.email == email, OtpChallenge.consumed_at.is_(None))
         .values(consumed_at=now)
     )
+    db.execute(update(OtpChallenge).where(OtpChallenge.id == challenge_id).values(consumed_at=None))
 
 
 def delete_old_challenges(db: Session, email: str, before: datetime) -> None:
@@ -34,13 +58,6 @@ def delete_old_challenges(db: Session, email: str, before: datetime) -> None:
             OtpChallenge.created_at < before,
         )
     )
-
-
-def add_challenge(
-    db: Session, email: str, code_hash: bytes, salt: bytes, expires_at: datetime
-) -> None:
-    db.add(OtpChallenge(email=email, code_hash=code_hash, salt=salt, expires_at=expires_at))
-    db.flush()
 
 
 def lock_active_challenge(db: Session, email: str) -> OtpChallenge | None:
@@ -66,13 +83,6 @@ def add_user(db: Session, email: str, display_name: str, now: datetime) -> User:
     return user
 
 
-def lock_device_owner(db: Session, device_id: uuid.UUID) -> uuid.UUID | None:
-    """Current owner of the device (row-locked), or None for a new device."""
-    return db.scalars(
-        select(Device.user_id).where(Device.id == device_id).with_for_update()
-    ).one_or_none()
-
-
 def upsert_device(
     db: Session,
     device_id: uuid.UUID,
@@ -81,12 +91,10 @@ def upsert_device(
     has_barometer: bool,
     now: datetime,
 ) -> None:
-    """Register the device for ``user_id`` (moving it if another user had it)."""
-    values = {"user_id": user_id, "model": model, "has_barometer": has_barometer}
-    stmt = insert(Device).values(id=device_id, last_seen_at=now, **values)
-    db.execute(
-        stmt.on_conflict_do_update(index_elements=[Device.id], set_={**values, "last_seen_at": now})
-    )
+    """Register or refresh the device ``(user_id, device_id)``; other users' rows are untouched."""
+    values = {"model": model, "has_barometer": has_barometer, "last_seen_at": now}
+    stmt = insert(Device).values(user_id=user_id, id=device_id, **values)
+    db.execute(stmt.on_conflict_do_update(index_elements=[Device.user_id, Device.id], set_=values))
 
 
 # Refresh tokens.
@@ -121,3 +129,36 @@ def revoke_family(db: Session, family_id: uuid.UUID) -> int:
         .values(revoked_at=func.now())
     )
     return int(getattr(result, "rowcount", 0) or 0)
+
+
+# Maintenance.
+
+
+def purge_expired(db: Session, now: datetime) -> tuple[int, int]:
+    """Delete stale auth rows; returns ``(challenges, refresh_tokens)`` deleted. No commit.
+
+    - challenges created more than ``CHALLENGE_RETENTION`` ago (used, retired or expired);
+    - refresh tokens of families whose every token is past ``expires_at``. Revoked tokens of a
+      family that still has a live token are kept, so presenting them is still detected as reuse.
+
+    TODO(week 5, plan 7.6): run daily from Celery beat (one transaction, then commit).
+    """
+    challenges = db.execute(
+        delete(OtpChallenge)
+        .where(OtpChallenge.created_at < now - CHALLENGE_RETENTION)
+        .execution_options(synchronize_session=False)
+    )
+    expired_families = (
+        select(RefreshToken.family_id)
+        .group_by(RefreshToken.family_id)
+        .having(func.max(RefreshToken.expires_at) < now)
+    )
+    tokens = db.execute(
+        delete(RefreshToken)
+        .where(RefreshToken.family_id.in_(expired_families))
+        .execution_options(synchronize_session=False)
+    )
+    return (
+        int(getattr(challenges, "rowcount", 0) or 0),
+        int(getattr(tokens, "rowcount", 0) or 0),
+    )

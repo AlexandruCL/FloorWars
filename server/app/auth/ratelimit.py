@@ -11,6 +11,7 @@ before they become part of a key. Keys expire once the bucket would be full agai
 """
 
 import hashlib
+import ipaddress
 import math
 import time
 from collections.abc import Callable
@@ -56,6 +57,24 @@ class RateLimiter(Protocol):
     def hit(self, name: str, subject: str, capacity: int, period_s: int) -> Decision:
         """Take one token. Raises ``app.valkey.ValkeyError`` when the limiter cannot answer."""
         ...
+
+
+def client_bucket(ip: str) -> str:
+    """Rate-limit subject for a client address: IPv4 per address, IPv6 per /64 network.
+
+    One IPv6 host usually controls a whole /64, so per-address buckets would be trivial to
+    escape. IPv4-mapped IPv6 addresses count as their IPv4 address. Anything that is not an IP
+    (for example the test client's host name) is used as is.
+    """
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if isinstance(address, ipaddress.IPv6Address):
+        if address.ipv4_mapped is not None:
+            return str(address.ipv4_mapped)
+        return str(ipaddress.IPv6Network((address, 64), strict=False))
+    return str(address)
 
 
 def hashed_subject(value: str) -> str:

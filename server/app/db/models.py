@@ -25,6 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import BYTEA, CITEXT, TSTZRANGE, UUID, ExcludeConstraint, Range
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.constants import OTP_MAX_ATTEMPTS
 from app.db.base import Base
 
 GEN_UUID = text("gen_random_uuid()")
@@ -53,11 +54,19 @@ class User(Base):
 
 
 class Device(Base):
+    """A phone of a user. The id comes from the app; it is unique per user only.
+
+    Composite primary key ``(user_id, id)`` (0002_auth): the same device id signed in by two
+    users gives two rows, so one user can never take over another user's device row.
+    """
+
     __tablename__ = "device"
 
-    id: Mapped[uuid.UUID] = _uuid_pk()
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("user.id", ondelete="CASCADE"), index=True
+        ForeignKey("user.id", ondelete="CASCADE"), primary_key=True
+    )
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=GEN_UUID
     )
     model: Mapped[str] = mapped_column(Text)
     has_barometer: Mapped[bool] = mapped_column(Boolean)
@@ -120,11 +129,9 @@ class RefreshToken(Base):
     created_at: Mapped[datetime] = _created_at()
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-# Highest value of otp_challenge.attempts (plan 7.9: five attempts per code). The CHECK below and
-# the Settings bound on ``otp_max_attempts`` both use it.
-OTP_MAX_ATTEMPTS = 5
+    # Set when the token was rotated (0002_auth). Presenting it again within the reuse grace
+    # window is a client retry, not theft; ``revoked_at`` alone also covers family revocation.
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class OtpChallenge(Base):
@@ -143,6 +150,8 @@ class OtpChallenge(Base):
             unique=True,
             postgresql_where=text("consumed_at IS NULL"),
         ),
+        # Retention purge and per-e-mail cleanup (``created_at`` ranges).
+        Index("ix_otp_challenge_email_created_at", "email", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
