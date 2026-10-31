@@ -50,6 +50,10 @@ services:
     environment:
       FLOORWARS_ENV: ${FLOORWARS_ENV:-prod}
       FLOORWARS_LOG_LEVEL: ${FLOORWARS_LOG_LEVEL:-INFO}
+      # uvicorn (proxy headers are on by default) takes the client IP from X-Forwarded-For only
+      # when the TCP peer is in this list. Caddy is on the app network, whose subnet is fixed
+      # below; per-IP rate limits would otherwise see Caddy's address for every user.
+      FORWARDED_ALLOW_IPS: ${APP_SUBNET:-172.29.40.0/24}
       # Non-secret Week 2 settings, from infra/.env (see .env.example).
       FLOORWARS_MAIL_BACKEND: ${FLOORWARS_MAIL_BACKEND:-acs}
       FLOORWARS_ACS_ENDPOINT: ${FLOORWARS_ACS_ENDPOINT:-}
@@ -170,7 +174,10 @@ services:
 
 networks:
   edge: {} # Caddy only; the one network with published ports
-  app: {} # api (and later workers); outbound internet for e-mail
+  app: # api (and later workers); outbound internet for e-mail. Fixed subnet: FORWARDED_ALLOW_IPS
+    ipam:
+      config:
+        - subnet: ${APP_SUBNET:-172.29.40.0/24}
   data:
     internal: true # postgres and valkey: no route to the internet, no published ports
   monitoring: {} # exporters (Week 5)
