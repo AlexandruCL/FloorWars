@@ -54,3 +54,7 @@ sudo -E docker compose --profile tools run --rm --no-deps \
 ```
 
 It prints the row counts (`building=2, team=5, season=1`). Running it again changes nothing.
+
+## Real footprints
+
+The two buildings are the real outlines drawn at geojson.io: Facultatea de Automatica si Calculatoare and Facultatea de Mecanica. A row from the earlier placeholder seed is renamed and updated **in place**, so it keeps its id and the printed QR codes stay valid. To change an outline later, edit the WKT in `seed.py` and run the seed again: a row with the real name gets its footprint refreshed.

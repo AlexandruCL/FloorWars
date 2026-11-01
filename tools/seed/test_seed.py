@@ -54,7 +54,7 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def test_hexagon_vertices_are_25_m_from_the_centre() -> None:
-    for _, lat, lon in seed.BUILDINGS:
+    for lat, lon in [(45.7472, 21.2266), (45.7475, 21.2306)]:
         wkt = seed.hexagon_wkt(lat, lon)
         points = [(float(x), float(y)) for x, y in re.findall(r"(-?\d+\.\d+) (-?\d+\.\d+)", wkt)]
         assert len(points) == 7
@@ -82,17 +82,18 @@ def test_seed_twice_same_counts(conn: Connection) -> None:
 def test_seeded_rows(conn: Connection) -> None:
     seed.seed(conn)
     names = [name for name, _, _ in seed.BUILDINGS]
+    expected_points = {"Facultatea de Automatica si Calculatoare": 23, "Facultatea de Mecanica": 13}
     rows = conn.execute(
         text(
-            "SELECT ST_IsValid(footprint), ST_NPoints(footprint),"
+            "SELECT name, ST_IsValid(footprint), ST_NPoints(footprint),"
             " ST_IsClosed(ST_ExteriorRing(footprint)), ST_SRID(footprint)"
             " FROM building WHERE name = ANY(:names)"
         ),
         {"names": names},
     ).all()
     assert len(rows) == 2
-    for valid, npoints, closed, srid in rows:
-        assert (valid, npoints, closed, srid) == (True, 7, True, 4326)
+    for name, valid, npoints, closed, srid in rows:
+        assert (valid, npoints, closed, srid) == (True, expected_points[name], True, 4326)
     colors = (
         conn.execute(
             text("SELECT color_hex FROM team WHERE code = ANY(:codes)"),
@@ -106,17 +107,36 @@ def test_seeded_rows(conn: Connection) -> None:
 
 
 @needs_db
-def test_footprints_cover_their_centres(conn: Connection) -> None:
+def test_real_footprints_are_sensible_sizes(conn: Connection) -> None:
     seed.seed(conn)
-    for name, lat, lon in seed.BUILDINGS:
-        covered = conn.execute(
+    areas = dict(
+        conn.execute(
+            text("SELECT name, ST_Area(footprint::geography) FROM building WHERE name = ANY(:n)"),
+            {"n": [name for name, _, _ in seed.BUILDINGS]},
+        ).all()
+    )
+    assert 1000 < areas["Facultatea de Automatica si Calculatoare"] < 10000
+    assert 1000 < areas["Facultatea de Mecanica"] < 10000
+
+
+@needs_db
+def test_placeholder_rows_are_renamed_in_place_keeping_their_id(conn: Connection) -> None:
+    name, _, old = seed.BUILDINGS[0]
+    ids = [
+        conn.execute(
             text(
-                "SELECT ST_Covers(footprint, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))"
-                " FROM building WHERE name = :name"
+                "INSERT INTO building (name, footprint) VALUES (:n,"
+                " ST_GeomFromText(:w, 4326)) RETURNING id"
             ),
-            {"lon": lon, "lat": lat, "name": name},
+            {"n": n, "w": seed.hexagon_wkt(45.7472, 21.2266 + i * 0.01)},
         ).scalar_one()
-        assert covered is True
+        for i, n in enumerate([old, seed.OLD_PLACEHOLDER_B])
+    ]
+    seed.seed(conn)
+    seed.seed(conn)
+    row = conn.execute(text("SELECT name FROM building WHERE id = :i"), {"i": ids[0]}).scalar_one()
+    assert row == name
+    assert conn.execute(text("SELECT count(*) FROM building")).scalar_one() == 2
 
 
 @needs_db
