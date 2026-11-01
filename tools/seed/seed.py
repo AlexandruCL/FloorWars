@@ -20,10 +20,33 @@ from sqlalchemy import Connection, create_engine, text
 METERS_PER_DEGREE_LAT = 111_320.0
 HEX_RADIUS_M = 25.0
 
-# (name, centre latitude, centre longitude). Names are the idempotency key.
+# Real footprints, drawn by Ionut at geojson.io (WGS 84, lon lat). Names are the idempotency key.
+# ``replaces`` is the name a placeholder row had before: such a row is renamed and updated in place,
+# so the building keeps its id (printed QR codes stay valid).
+AC_FOOTPRINT = (
+    "POLYGON((21.2259069 45.7474217, 21.2262371 45.7474267, 21.2262385 45.7475219,"
+    " 21.2264352 45.7475229, 21.2264366 45.7473556, 21.227551 45.7473674,"
+    " 21.2275531 45.7472409, 21.2282673 45.7472435, 21.2282673 45.7471257,"
+    " 21.2275174 45.7471141, 21.2275112 45.7470647, 21.2273175 45.7470618,"
+    " 21.2273175 45.7471446, 21.2271237 45.7471461, 21.2271234 45.7471899,"
+    " 21.2264402 45.7471827, 21.2262757 45.7471812, 21.226284 45.7470911,"
+    " 21.2260653 45.7470911, 21.2260632 45.7472844, 21.2259174 45.7472902,"
+    " 21.2259153 45.7474181, 21.2259069 45.7474217))"
+)
+# The drawn line ended a few centimetres past its start, which made the closed ring cross itself;
+# the stray last vertex was dropped so the ring closes from the previous vertex.
+MECANICA_FOOTPRINT = (
+    "POLYGON((21.2267229 45.7465834, 21.2272669 45.7466039, 21.2272634 45.7466328,"
+    " 21.2274741 45.7466449, 21.227519 45.7462219, 21.2273566 45.7462099,"
+    " 21.2273532 45.7462689, 21.2269629 45.7462484, 21.2269629 45.7462171,"
+    " 21.226868 45.7462147, 21.2268662 45.7462508, 21.2267626 45.746246,"
+    " 21.2267229 45.7465834))"
+)
+OLD_PLACEHOLDER_A = "Placeholder A (UPT, replace with real footprint)"
+OLD_PLACEHOLDER_B = "Placeholder B (UPT, replace with real footprint)"
 BUILDINGS = [
-    ("Placeholder A (UPT, replace with real footprint)", 45.7472, 21.2266),
-    ("Placeholder B (UPT, replace with real footprint)", 45.7475, 21.2306),
+    ("Facultatea de Automatica si Calculatoare", AC_FOOTPRINT, OLD_PLACEHOLDER_A),
+    ("Facultatea de Mecanica", MECANICA_FOOTPRINT, OLD_PLACEHOLDER_B),
 ]
 
 TEAMS = [
@@ -63,15 +86,34 @@ def season_range(now: datetime) -> tuple[datetime, datetime]:
 def seed(conn: Connection, now: datetime | None = None) -> None:
     """Insert missing rows. Safe to call repeatedly."""
     now = now or datetime.now(UTC)
-    for name, lat, lon in BUILDINGS:
-        conn.execute(
+    for name, wkt, replaces in BUILDINGS:
+        params = {"name": name, "wkt": wkt, "old": replaces}
+        # A row with the real name only gets its footprint refreshed; a placeholder row is
+        # renamed in place (same id); otherwise a new row is inserted.
+        updated = conn.execute(
             text(
-                "INSERT INTO building (name, footprint) "
-                "SELECT CAST(:name AS text), ST_GeomFromText(:wkt, 4326) "
-                "WHERE NOT EXISTS (SELECT 1 FROM building WHERE name = CAST(:name AS text))"
+                "UPDATE building SET footprint = ST_GeomFromText(:wkt, 4326)"
+                " WHERE name = CAST(:name AS text)"
             ),
-            {"name": name, "wkt": hexagon_wkt(lat, lon)},
-        )
+            params,
+        ).rowcount
+        if not updated:
+            updated = conn.execute(
+                text(
+                    "UPDATE building SET name = CAST(:name AS text),"
+                    " footprint = ST_GeomFromText(:wkt, 4326)"
+                    " WHERE name = CAST(:old AS text)"
+                ),
+                params,
+            ).rowcount
+        if not updated:
+            conn.execute(
+                text(
+                    "INSERT INTO building (name, footprint)"
+                    " VALUES (CAST(:name AS text), ST_GeomFromText(:wkt, 4326))"
+                ),
+                params,
+            )
     for code, color in TEAMS:
         conn.execute(
             text(
