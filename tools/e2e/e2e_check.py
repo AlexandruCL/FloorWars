@@ -4,10 +4,10 @@
         --qr-token-file tools/qr/out/1.token.txt
 
 Steps: request the sign-in code, read it from the e-mail (you type it, hidden), sign in with a
-device,
-list the teams, read the active season, join a team (an existing membership is fine), check in with
-the entrance QR token, then refresh the tokens. Standard library only. Tokens and the code are never
-printed. It creates or updates a real account, so use your own e-mail address.
+device, list the teams, read the active season, join a team (an existing membership is fine),
+check in with the entrance QR token, then refresh the tokens and test reuse detection (takes
+about 25 s). Standard library only. Tokens and the code are never printed. It creates or
+updates a real account, so use your own e-mail address.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import argparse
 import getpass
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -141,6 +142,10 @@ def main() -> int:
     )
     if not step(status == 200, "refresh tokens", f"HTTP {status}"):
         return 1
+    # A token reused within the grace window (20 s by default) is refused without revoking the
+    # family, so a retried request does not sign the user out. Wait it out to test real reuse.
+    print("      waiting 22 s, past the refresh grace window ...")
+    time.sleep(22)
     status, _ = call("POST", base, "/auth/refresh", {"refresh_token": tokens["refresh_token"]})
     step(status == 401, "reusing the old refresh token is refused", f"HTTP {status}")
     status, _ = call("POST", base, "/auth/refresh", {"refresh_token": rotated["refresh_token"]})
