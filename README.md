@@ -84,7 +84,7 @@ Starting values are ours and tunable from real data: 1 point per verified step, 
 | `app/` | React Native app and Kotlin native module (`FloorSensors`). See `app/README.md` for setup and the release test build |
 | `contracts/openapi.yaml` | API contract (OpenAPI 3.1) |
 | `contracts/prism/` | How to run the Prism mock of the contract (`npm run mock:api` in the root `package.json`) |
-| `cristea/` | Cristea's tasks and status per week. Week 2: `cristea/week_2/finish_week_2.md` (manual steps to finish) and `tester_guide.pdf` (for testers) |
+| `cristea/` | Cristea's tasks and status per week. Week 2: `cristea/week_2/week_2_summary.md` (what was built), `finish_week_2.md` (manual steps to finish) and `tester_guide.pdf` (for testers) |
 | `docs/` | Trace format and expected values (`trace_format.md`), classifier results (`evaluation.md`), test device log (`devices.md`), VM runbook (`runbook.md`), cost estimate (`cost.md`) |
 | `infra/` | Docker Compose stack, Caddyfile, `deploy.sh`, encrypted secrets. See `infra/README.md` |
 | `fixtures/synthetic/` | Synthetic labelled traces for week 1. Not real data |
