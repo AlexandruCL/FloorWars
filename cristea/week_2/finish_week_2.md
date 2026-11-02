@@ -55,7 +55,7 @@ Send this message, or go through it on the Thursday sync:
 >
 > Not blocking: a contract PR for `accuracy_m` on the geofence check-in, the `urn:floorwars:problem:*` types, 403 examples so Prism can return them, and the `/config` elevator example 1.0 → 0.5 (the client uses 0.5 now; please match it in the server if it keeps its own copy).
 
-- [ ] VM access granted (step 3 depends on it)
+- [x] VM access granted (2026-11-02). The laptop used for the test still needs the key from step 3 and its IP on Ionut's SSH rule
 - [ ] Real footprints seeded on the VM
 - [ ] Entrance codes printed for "Facultatea de Automatica si Calculatoare" and "Facultatea de Mecanica"
 - [ ] Allow-list confirmed
