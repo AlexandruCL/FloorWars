@@ -1,6 +1,7 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { EmailScreen, OtpScreen, TeamScreen } from '../screens/AuthScreens';
+import { CheckinScreen } from '../screens/CheckinScreen';
 import { HomeScreen } from '../screens/PlaceholderScreens';
 import { SensorLoggerScreen } from '../screens/SensorLoggerScreen';
 import type {
@@ -48,6 +49,11 @@ function MainNavigator() {
   return (
     <MainStack.Navigator>
       <MainStack.Screen name="Home" component={HomeScreen} />
+      <MainStack.Screen
+        name="Checkin"
+        component={CheckinScreen}
+        options={{ title: 'Check in' }}
+      />
       <MainStack.Screen
         name="SensorLogger"
         component={SensorLoggerScreen}

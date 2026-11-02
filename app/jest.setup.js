@@ -45,3 +45,20 @@ jest.mock('./src/native/NativeFloorSensors', () => ({
     onStatusChange: jest.fn(() => ({ remove: jest.fn() })),
   },
 }));
+
+// Native camera and location modules don't load under Jest; tests inject their own CheckinDeps.
+jest.mock('react-native-vision-camera', () => ({
+  VisionCamera: { requestCameraPermission: jest.fn(async () => true) },
+  useCameraDevice: jest.fn(() => undefined),
+  Camera: () =>
+    require('react').createElement(require('react-native').View, {
+      testID: 'camera',
+    }),
+}));
+jest.mock('react-native-vision-camera-barcode-scanner', () => ({
+  useBarcodeScannerOutput: jest.fn(() => ({})),
+}));
+jest.mock('@react-native-community/geolocation', () => ({
+  __esModule: true,
+  default: { getCurrentPosition: jest.fn() },
+}));
