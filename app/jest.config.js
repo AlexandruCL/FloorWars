@@ -1,6 +1,8 @@
 module.exports = {
   preset: '@react-native/jest-preset',
   setupFiles: ['./jest.setup.js'],
+  // A cold cache (always, in CI) spends over 5 s transforming react-native before the first test.
+  testTimeout: 30000,
   // Typed contract samples, checked by apiContract.typecheck.test.js; not a test file.
   testPathIgnorePatterns: ['/node_modules/', '<rootDir>/__tests__/contract/'],
   transformIgnorePatterns: [

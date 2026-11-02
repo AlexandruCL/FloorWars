@@ -1,6 +1,8 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { HomeScreen, SignInScreen } from '../screens/PlaceholderScreens';
+import { EmailScreen, OtpScreen, TeamScreen } from '../screens/AuthScreens';
+import { CheckinScreen } from '../screens/CheckinScreen';
+import { HomeScreen } from '../screens/PlaceholderScreens';
 import { SensorLoggerScreen } from '../screens/SensorLoggerScreen';
 import type {
   AuthStackParamList,
@@ -14,23 +16,30 @@ const MainStack = createNativeStackNavigator<MainStackParamList>();
 
 type Props = {
   isSignedIn: boolean;
-  onStubSignIn?: () => Promise<void>;
+  // Tokens are stored but no team chosen yet: reopen on the team screen.
+  needsTeam?: boolean;
+  onSignedIn?: () => void;
   onDevSkipSignIn?: () => void;
 };
 
 function AuthNavigator({
-  onStubSignIn,
+  needsTeam,
+  onSignedIn,
   onDevSkipSignIn,
-}: Pick<Props, 'onStubSignIn' | 'onDevSkipSignIn'>) {
+}: Pick<Props, 'needsTeam' | 'onSignedIn' | 'onDevSkipSignIn'>) {
   return (
-    <AuthStack.Navigator>
-      <AuthStack.Screen name="SignIn" options={{ title: 'Sign in' }}>
-        {() => (
-          <SignInScreen
-            onStubSignIn={onStubSignIn}
-            onDevSkipSignIn={onDevSkipSignIn}
-          />
-        )}
+    <AuthStack.Navigator initialRouteName={needsTeam ? 'Team' : 'Email'}>
+      <AuthStack.Screen name="Email" options={{ title: 'Sign in' }}>
+        {props => <EmailScreen {...props} onDevSkipSignIn={onDevSkipSignIn} />}
+      </AuthStack.Screen>
+      <AuthStack.Screen name="Otp" options={{ title: 'Enter code' }}>
+        {props => <OtpScreen {...props} />}
+      </AuthStack.Screen>
+      <AuthStack.Screen
+        name="Team"
+        options={{ title: 'Your team', headerBackVisible: false }}
+      >
+        {() => <TeamScreen onDone={() => onSignedIn?.()} />}
       </AuthStack.Screen>
     </AuthStack.Navigator>
   );
@@ -41,6 +50,11 @@ function MainNavigator() {
     <MainStack.Navigator>
       <MainStack.Screen name="Home" component={HomeScreen} />
       <MainStack.Screen
+        name="Checkin"
+        component={CheckinScreen}
+        options={{ title: 'Check in' }}
+      />
+      <MainStack.Screen
         name="SensorLogger"
         component={SensorLoggerScreen}
         options={{ title: 'Sensor logger' }}
@@ -49,10 +63,10 @@ function MainNavigator() {
   );
 }
 
-// Session state arrives with the auth stub (T7); until then the caller decides.
 export function RootNavigator({
   isSignedIn,
-  onStubSignIn,
+  needsTeam,
+  onSignedIn,
   onDevSkipSignIn,
 }: Props) {
   return (
@@ -64,7 +78,8 @@ export function RootNavigator({
           <RootStack.Screen name="Auth">
             {() => (
               <AuthNavigator
-                onStubSignIn={onStubSignIn}
+                needsTeam={needsTeam}
+                onSignedIn={onSignedIn}
                 onDevSkipSignIn={onDevSkipSignIn}
               />
             )}

@@ -146,3 +146,10 @@ tasks.register("ktlintFormat", JavaExec) {
     jvmArgs "--add-opens=java.base/java.lang=ALL-UNNAMED"
     args "-F", "src/**/*.kt"
 }
+
+// Show test stdout, so the trace-replay confusion matrix appears in `./gradlew test`.
+tasks.withType(Test).configureEach {
+    testLogging {
+        showStandardStreams = true
+    }
+}
