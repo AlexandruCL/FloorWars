@@ -1,4 +1,9 @@
-import { getAccessToken } from '../auth/authStub';
+import {
+  endSession,
+  getAccessToken,
+  getRefreshToken,
+  saveTokens,
+} from '../auth/session';
 import type { paths } from './schema';
 
 // Placeholder host from the contract's servers entry; replace when the server is deployed.
@@ -28,7 +33,65 @@ export class ApiError extends Error {
   }
 }
 
+async function send(
+  method: string,
+  url: string,
+  token: string | null,
+  options: { header?: unknown; body?: unknown },
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    ...((options.header ?? {}) as Record<string, string>),
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  if (options.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return fetch(API_BASE_URL + url, {
+    method: method.toUpperCase(),
+    headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+  });
+}
+
+async function parse(response: Response) {
+  const text = await response.text();
+  return text ? JSON.parse(text) : undefined;
+}
+
+let refreshing: Promise<void> | null = null;
+
+// One refresh at a time: concurrent 401s await the same call, so a rotated token is never spent twice.
+function refreshTokens(): Promise<void> {
+  refreshing ??= (async () => {
+    const refresh_token = await getRefreshToken();
+    if (!refresh_token) {
+      await endSession();
+      throw new ApiError(401, undefined);
+    }
+    const response = await send('post', '/auth/refresh', null, {
+      body: { refresh_token },
+    });
+    const data = await parse(response);
+    if (response.status === 401) {
+      // Unknown, expired or reused: the server has revoked the family, so the session is over.
+      await endSession();
+      throw new ApiError(401, data);
+    }
+    if (!response.ok) {
+      throw new ApiError(response.status, data);
+    }
+    await saveTokens(data);
+  })().finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
+}
+
 // Typed fetch over the generated contract types. Sends the stored access token as a bearer header.
+// On a 401 it refreshes the tokens and retries once; /auth/* calls never trigger a refresh.
 export async function api<P extends keyof paths, M extends Method>(
   method: M,
   path: P,
@@ -48,25 +111,16 @@ export async function api<P extends keyof paths, M extends Method>(
     url += `?${query}`;
   }
 
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    ...((options.header ?? {}) as Record<string, string>),
-  };
   const token = await getAccessToken();
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+  let response = await send(method, url, token, options);
+  if (response.status === 401 && token && !String(path).startsWith('/auth/')) {
+    // If another call already rotated the tokens, just retry with the new one.
+    if ((await getAccessToken()) === token) {
+      await refreshTokens();
+    }
+    response = await send(method, url, await getAccessToken(), options);
   }
-  if (options.body !== undefined) {
-    headers['Content-Type'] = 'application/json';
-  }
-
-  const response = await fetch(API_BASE_URL + url, {
-    method: method.toUpperCase(),
-    headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : undefined;
+  const data = await parse(response);
   if (!response.ok) {
     throw new ApiError(response.status, data);
   }

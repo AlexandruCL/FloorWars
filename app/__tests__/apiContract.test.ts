@@ -1,4 +1,4 @@
-import { signInWithStub, DUMMY_ACCESS_TOKEN } from '../src/auth/authStub';
+import { saveTokens } from '../src/auth/session';
 import { api, API_BASE_URL, ApiError } from '../src/api/client';
 import { batch, batchResult, segmentHeaders } from './contract/samples';
 
@@ -12,8 +12,13 @@ function mockFetch(ok: boolean, status: number, body: unknown) {
   return fetchMock;
 }
 
-test('api() calls the contract path with the stub token and JSON body', async () => {
-  await signInWithStub(() => {});
+test('api() calls the contract path with the stored token and JSON body', async () => {
+  await saveTokens({
+    access_token: 'access-1',
+    refresh_token: 'refresh-1',
+    token_type: 'Bearer',
+    expires_in: 900,
+  });
   const fetchMock = mockFetch(true, 200, batchResult);
   await expect(
     api('post', '/segments', { header: segmentHeaders, body: batch }),
@@ -23,7 +28,7 @@ test('api() calls the contract path with the stub token and JSON body', async ()
     headers: {
       Accept: 'application/json',
       'Idempotency-Key': 'batch-1',
-      Authorization: `Bearer ${DUMMY_ACCESS_TOKEN}`,
+      Authorization: `Bearer access-1`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(batch),
