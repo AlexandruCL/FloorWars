@@ -9,8 +9,7 @@ export class DeviceError extends Error {
   }
 }
 
-// What the check-in screen needs from native libraries. Cristea picks the libraries (see PR notes);
-// each is wrapped in one adapter that satisfies this interface.
+// What the check-in screen needs from native libraries; deviceLibs.tsx is the real adapter, tests inject fakes.
 export interface CheckinDeps {
   // Shows the camera and calls onScan with the raw text of each code it reads.
   ScannerView: ComponentType<{ onScan: (raw: string) => void }>;
@@ -19,14 +18,3 @@ export interface CheckinDeps {
   // Asks for location permission, then returns one fix. Throws DeviceError.
   getPosition(): Promise<Position>;
 }
-
-// Stand-in until the libraries are chosen: every device call reports 'unavailable'.
-export const noDeviceLibs: CheckinDeps = {
-  ScannerView: () => null,
-  requestCameraPermission: async () => {
-    throw new DeviceError('unavailable');
-  },
-  getPosition: async () => {
-    throw new DeviceError('unavailable');
-  },
-};

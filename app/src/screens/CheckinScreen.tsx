@@ -2,7 +2,8 @@ import { useRef, useState } from 'react';
 import { ActivityIndicator, Linking, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { api, ApiError } from '../api/client';
-import { DeviceError, noDeviceLibs, type CheckinDeps } from '../checkin/deps';
+import { DeviceError, type CheckinDeps } from '../checkin/deps';
+import { deviceLibs } from '../checkin/deviceLibs';
 import { parseQrPayload } from '../checkin/qr';
 import {
   errorKind,
@@ -29,7 +30,7 @@ async function buildingName(id: number): Promise<string> {
   }
 }
 
-export function CheckinScreen({ navigation, deps = noDeviceLibs }: Props) {
+export function CheckinScreen({ navigation, deps = deviceLibs }: Props) {
   const [phase, setPhase] = useState<Phase>({ name: 'idle' });
   // The scanner fires on every frame that holds a code; only the first one counts.
   const busy = useRef(false);
