@@ -25,7 +25,6 @@ beforeEach(async () => {
 });
 
 async function fillEmail(value: string, confirm = true) {
-   
   const props: any = { navigation, route: {} };
   await render(<EmailScreen {...props} />);
   await fireEvent.changeText(screen.getByLabelText('University e-mail'), value);
@@ -89,7 +88,6 @@ describe('EmailScreen', () => {
 describe('OtpScreen', () => {
   const otp = () => {
     const props: any = {
-       
       navigation,
       route: { params: { email: 'a@student.ro' } },
     };
@@ -214,5 +212,36 @@ describe('TeamScreen', () => {
     await fireEvent.press(await screen.findByText('AC'));
     await fireEvent.press(screen.getByText('Join team'));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
+  });
+});
+
+describe('stale validation errors', () => {
+  test('consent error clears when a switch changes, not on the next submit', async () => {
+    await fillEmail('a@student.ro', false);
+    expect(screen.getByText(/18 or older and accept the terms/)).toBeTruthy();
+    await fireEvent(
+      screen.getByLabelText('I am 18 or older'),
+      'valueChange',
+      true,
+    );
+    expect(screen.queryByText(/18 or older and accept the terms/)).toBeNull();
+  });
+
+  test('e-mail error clears when the e-mail is edited', async () => {
+    await fillEmail('nope');
+    await fireEvent.changeText(
+      screen.getByLabelText('University e-mail'),
+      'a@student.ro',
+    );
+    expect(screen.queryByText(/Enter a valid e-mail/)).toBeNull();
+  });
+
+  test('code error clears when the code is edited', async () => {
+    const props: any = { navigation, route: { params: { email: 'a@b.ro' } } };
+    await render(<OtpScreen {...props} />);
+    await fireEvent.press(screen.getByText('Verify'));
+    expect(screen.getByText(/Enter the 6 digits/)).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText('6-digit code'), '1');
+    expect(screen.queryByText(/Enter the 6 digits/)).toBeNull();
   });
 });

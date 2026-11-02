@@ -67,20 +67,25 @@ export function EmailScreen({
   const [email, setEmail] = useState('');
   const [adult, setAdult] = useState(false);
   const [terms, setTerms] = useState(false);
+  // Validation errors clear when their input changes; server errors only on an e-mail edit.
+  const [invalid, setInvalid] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
     const value = email.trim().toLowerCase();
     if (!EMAIL_RE.test(value) || value.length > 254) {
-      setError('Enter a valid e-mail address, like name@university.ro.');
+      setInvalid('Enter a valid e-mail address, like name@university.ro.');
       return;
     }
     if (!adult || !terms) {
-      setError('Confirm you are 18 or older and accept the terms to continue.');
+      setInvalid(
+        'Confirm you are 18 or older and accept the terms to continue.',
+      );
       return;
     }
     setError(null);
+    setInvalid(null);
     setBusy(true);
     try {
       await requestCode(value);
@@ -103,19 +108,30 @@ export function EmailScreen({
         autoCorrect={false}
         keyboardType="email-address"
         maxLength={254}
-        onChangeText={setEmail}
+        onChangeText={t => {
+          setEmail(t);
+          setInvalid(null);
+          setError(null);
+        }}
         placeholder="name@university.ro"
         placeholderTextColor={colors.muted}
         style={inputStyle}
         value={email}
       />
-      <Check label="I am 18 or older" value={adult} onChange={setAdult} />
+      <Check
+        label="I am 18 or older"
+        value={adult}
+        onChange={v => {
+          setAdult(v);
+          setInvalid(null);
+        }}
+      />
       <Check
         label="I accept the terms and privacy notice"
         value={terms}
         onChange={setTerms}
       />
-      <ErrorText message={error} />
+      <ErrorText message={invalid ?? error} />
       <Button title="Send code" onPress={submit} busy={busy} />
       {DEV_SKIP_SIGN_IN && onDevSkipSignIn && (
         <NativeButton title="Skip sign-in (dev)" onPress={onDevSkipSignIn} />
@@ -178,7 +194,10 @@ export function OtpScreen({ navigation, route }: Nav<'Otp'>) {
         autoComplete="sms-otp"
         keyboardType="number-pad"
         maxLength={6}
-        onChangeText={t => setCode(t.replace(/\D/g, ''))}
+        onChangeText={t => {
+          setCode(t.replace(/\D/g, ''));
+          setError(null);
+        }}
         placeholder="123456"
         placeholderTextColor={colors.muted}
         style={[inputStyle, styles.code]}
@@ -290,9 +309,7 @@ export function TeamScreen({ onDone }: { onDone: () => void }) {
           style={[styles.team, selected === t.id && styles.teamSelected]}
         >
           <View style={[styles.swatch, { backgroundColor: t.color_hex }]} />
-          <Text style={styles.teamCode}>
-            {t.code}
-          </Text>
+          <Text style={styles.teamCode}>{t.code}</Text>
         </Pressable>
       ))}
       <ErrorText message={error} />
