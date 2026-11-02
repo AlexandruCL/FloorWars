@@ -1,8 +1,8 @@
 import { getAccessToken } from '../auth/authStub';
 import type { paths } from './schema';
 
-// Placeholder host from the contract's servers entry; replace when the server is deployed.
-export const API_BASE_URL = 'https://api.example.invalid/v1';
+// The contract's servers entry. For the Prism mock, change it locally and do not commit that.
+export const API_BASE_URL = 'https://api.floorwars.me/v1';
 
 type Method = 'get' | 'post' | 'delete';
 type Operation<P extends keyof paths, M extends Method> = NonNullable<
