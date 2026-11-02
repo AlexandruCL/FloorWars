@@ -1,6 +1,7 @@
 package com.floorwars.floorsensors.segmenter
 
 import com.floorwars.floorsensors.RawSensorEvent
+import com.floorwars.floorsensors.TraceCsv
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,9 +16,8 @@ class SegmenterTest {
         val files = File("../../../fixtures/synthetic").listFiles { f -> f.name.startsWith("synthetic_${label}_") }!!
         assertTrue("no fixtures for $label", files.isNotEmpty())
         return files.sortedBy { it.name }.map { file ->
-            val rows = file.readLines().filter { !it.startsWith("#") }.drop(1).map { it.split(",") }
-            fun of(sensor: String) = rows.filter { it[0] == sensor }.map { event(it[1].toLong(), it[3].toFloat()) }
-            Trace(file.name, of("pressure"), of("step"))
+            val trace = TraceCsv.read(file.readLines())
+            Trace(file.name, trace.pressure, trace.steps)
         }
     }
 
