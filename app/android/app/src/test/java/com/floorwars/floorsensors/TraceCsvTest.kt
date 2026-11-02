@@ -31,6 +31,38 @@ class TraceCsvTest {
     }
 
     @Test
+    fun readsBackWhatItWrites() {
+        val out = StringBuilder()
+        val metadata = listOf("label" to "stairs_up", "device_model" to "Acme \"X1\", Pro")
+        TraceCsv.write(
+            out,
+            metadata,
+            events = listOf(
+                RawSensorEvent(6, 1_500_000_000, floatArrayOf(1013.25f)),
+                RawSensorEvent(18, 2_000_000_000, floatArrayOf(1f)),
+                RawSensorEvent(6, 2_100_000_000, floatArrayOf(1013.2f))
+            ),
+            startElapsedNanos = 1_000_000_000,
+            sensorName = { if (it == 6) "pressure" else "step" }
+        )
+        val trace = TraceCsv.read(out.lines())
+        assertEquals(metadata.toMap(), trace.metadata)
+        assertEquals(
+            listOf(1_500_000_000L, 2_100_000_000L),
+            trace.pressure.map {
+                it.timestampNanos
+            }
+        )
+        assertEquals(listOf(1013.25f, 1013.2f), trace.pressure.map { it.values.single() })
+        assertEquals(listOf(2_000_000_000L), trace.steps.map { it.timestampNanos })
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsAnUnknownSensor() {
+        TraceCsv.read(listOf("# label,shake", TraceCsv.COLUMNS, "gyro,1,0.000,1.0"))
+    }
+
+    @Test
     fun formatsUtcTimestampsAndSafeFileNames() {
         assertEquals("2026-10-21T17:05:09.123Z", TraceCsv.isoUtc(1_792_602_309_123))
         assertEquals(
