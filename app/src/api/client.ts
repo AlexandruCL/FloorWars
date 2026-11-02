@@ -40,7 +40,7 @@ async function send(
   options: { header?: unknown; body?: unknown },
 ): Promise<Response> {
   const headers: Record<string, string> = {
-    Accept: 'application/json',
+    Accept: 'application/json, application/problem+json',
     ...((options.header ?? {}) as Record<string, string>),
   };
   if (token) {

@@ -49,6 +49,15 @@ test('a 401 refreshes, stores the rotated pair and retries once', async () => {
   expect(await getRefreshToken()).toBe('refresh-2');
 });
 
+test('asks for problem+json so Problem errors can be negotiated', async () => {
+  server(() => reply(200, pair(2)));
+  await api('get', '/teams');
+  const init = (globalThis.fetch as jest.Mock).mock.calls[0][1];
+  expect(init.headers.Accept).toBe(
+    'application/json, application/problem+json',
+  );
+});
+
 test('concurrent 401s share one refresh call', async () => {
   const calls = server(() => reply(200, pair(2)));
   await Promise.all([api('get', '/teams'), api('get', '/teams')]);

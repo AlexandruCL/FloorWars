@@ -26,7 +26,7 @@ test('api() calls the contract path with the stored token and JSON body', async 
   expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/segments`, {
     method: 'POST',
     headers: {
-      Accept: 'application/json',
+      Accept: 'application/json, application/problem+json',
       'Idempotency-Key': 'batch-1',
       Authorization: `Bearer access-1`,
       'Content-Type': 'application/json',
