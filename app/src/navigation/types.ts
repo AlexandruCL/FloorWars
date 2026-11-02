@@ -1,5 +1,7 @@
 export type AuthStackParamList = {
-  SignIn: undefined;
+  Email: undefined;
+  Otp: { email: string };
+  Team: undefined;
 };
 
 export type MainStackParamList = {

@@ -99,7 +99,7 @@ npm start            # Metro; keep this terminal open
 npm run android      # second terminal: builds the debug APK and installs it
 ```
 
-The app opens on Sign in. Tap "Sign in (stub)" and it should switch to Home. Tell Cristea whether it started and switched.
+The app opens on the e-mail screen. Enter an allow-listed e-mail, tick the two confirmations, enter the code, then pick a team; Home follows. "Skip sign-in (dev)" still opens Home directly while `DEV_SKIP_SIGN_IN` is on.
 
 Calling the API from a screen:
 
@@ -117,7 +117,7 @@ const result = await api('post', '/segments', {
 
 Paths, parameters, bodies and responses are all typed from the contract, so a wrong field is a compile error. Non-2xx responses throw `ApiError` with `status` and the RFC 9457 `problem` body.
 
-What the auth stub does: `signInWithStub` in `src/auth/authStub.ts` stores a dummy access token in the Android Keystore through react-native-keychain and switches the navigator from Auth to Main. It never calls the server, and the dummy token is sent as the bearer header. The real OTP sign-in (`/auth/otp`, `/auth/verify`, `/auth/refresh`) replaces it. When that lands, also remove `DEV_SKIP_SIGN_IN` (`src/config/devFlags.ts`) and the "Skip sign-in (dev)" button.
+Auth: `src/auth/session.ts` keeps the access and refresh tokens in the Android Keystore (react-native-keychain). `api()` in `src/api/client.ts` refreshes on a 401 (one shared `POST /auth/refresh`, rotated pair stored, request retried once). A 401 from the refresh call (expired or reused token) clears the Keychain and returns the app to sign-in. `/auth/*` calls never trigger a refresh. Screens: `src/screens/AuthScreens.tsx`.
 
 ## Layout
 
@@ -127,7 +127,7 @@ src/navigation/RootNavigator.tsx  root stack switching between the Auth and Main
 src/navigation/types.ts         route param lists
 src/screens/                    placeholder screens and the sensor logger
 src/api/                        generated contract types (schema.ts) and the typed client
-src/auth/authStub.ts            auth stub (dummy token in react-native-keychain)
+src/auth/                       token storage (session.ts), error text (errors.ts), device info
 __tests__/                      Jest tests
 android/                        native Android project
 ```
