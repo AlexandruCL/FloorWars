@@ -32,11 +32,12 @@ class ClassifierTest {
         assertVerdict(Verdict.NO_MATCH, segment(ascentM = 5.94, durationS = 60.0, steps = 36))
         assertVerdict(Verdict.STAIRS, segment(ascentM = 54.0, durationS = 60.0, steps = 324))
         assertVerdict(Verdict.NO_MATCH, segment(ascentM = 54.06, durationS = 60.0, steps = 324))
-        // Between the rows (0.9 to 1.0 m/s) neither matches, even with no steps.
-        assertVerdict(Verdict.NO_MATCH, segment(ascentM = 57.0, durationS = 60.0, steps = 0))
-        // Elevator strictly above 1.0 m/s.
-        assertVerdict(Verdict.NO_MATCH, segment(ascentM = 60.0, durationS = 60.0, steps = 0))
-        assertVerdict(Verdict.ELEVATOR, segment(ascentM = 60.06, durationS = 60.0, steps = 0))
+        // Elevator strictly above 0.5 m/s.
+        assertVerdict(Verdict.NO_MATCH, segment(ascentM = 30.0, durationS = 60.0, steps = 0))
+        assertVerdict(Verdict.ELEVATOR, segment(ascentM = 30.06, durationS = 60.0, steps = 0))
+        // The rows overlap from 0.5 to 0.9 m/s: no steps is a lift, matching steps are stairs.
+        assertVerdict(Verdict.ELEVATOR, segment(ascentM = 36.0, durationS = 60.0, steps = 0))
+        assertVerdict(Verdict.STAIRS, segment(ascentM = 36.0, durationS = 60.0, steps = 216))
         // A stairs-like step rate at lift speed is not stairs.
         assertVerdict(Verdict.NO_MATCH, segment(ascentM = 60.06, durationS = 60.0, steps = 360))
     }

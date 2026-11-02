@@ -22,7 +22,9 @@ object ClassifierThresholds {
     const val MAX_STAIRS_SPEED_MPS = 0.9 // inclusive
     const val MIN_STAIRS_WINDOW_S = 5.0 // inclusive
     const val MAX_STAIRS_WINDOW_S = 180.0 // inclusive
-    const val MIN_ELEVATOR_SPEED_MPS = 1.0 // exclusive: "above 1.0 m/s"
+
+    // Exclusive. Was 1.0, which missed both real rides at 0.586 and 0.693 m/s (docs/evaluation.md).
+    const val MIN_ELEVATOR_SPEED_MPS = 0.5
     const val MAX_ELEVATOR_STEPS_PER_M = 1.0 // exclusive: "below 1", as validator check 9
 
     // Not in the 3.3 table: a no-step rise shorter than any stairs window is a blow bump, not a lift.

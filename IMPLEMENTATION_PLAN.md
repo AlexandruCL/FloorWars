@@ -169,10 +169,12 @@ Starting thresholds for the rules classifier (ours, all tune):
 
 | Feature | Stairs | Elevator | Other |
 |---|---|---|---|
-| Vertical speed | 0.1 to 0.9 m/s | above 1.0 m/s | outside both |
+| Vertical speed | 0.1 to 0.9 m/s | above 0.5 m/s | outside both |
 | Steps per metre of ascent | 4 to 10 | below 1 | steps without ascent, or ascent without steps |
 | Window length | 5 s to 3 min | any | any |
 | Points awarded | steps in the window, if both features match | none | none |
+
+Two more rules make a segment Other: a rise with no steps that lasts under 5 s is a blow bump (`MAX_BLOW_WINDOW_S`), and steps over less than 2 m of ascent are a shake (`MIN_SHAKE_FREE_ASCENT_M`).
 
 ### 3.4 Anti-cheat layers
 
