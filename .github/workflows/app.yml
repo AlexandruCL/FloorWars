@@ -48,10 +48,10 @@ jobs:
         working-directory: app
         run: npm ci
 
-      # Includes TraceReplayTest, the trace-replay gate over fixtures/synthetic and traces.
-      - name: Unit tests
+      # Includes TraceReplayTest, the trace-replay gate (STAIRS precision on traces/).
+      - name: ktlint and unit tests
         working-directory: app/android
-        run: ./gradlew test --console=plain
+        run: ./gradlew ktlintCheck test --console=plain
 
   node:
     name: lint, typecheck, test, API client

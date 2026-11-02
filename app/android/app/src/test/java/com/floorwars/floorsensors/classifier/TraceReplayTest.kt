@@ -11,7 +11,13 @@ import org.junit.Test
 // Trace replay (plan section 10, Week 2): segment and classify every recorded trace, print a confusion matrix.
 // Reads only; never writes to fixtures/ or traces/.
 class TraceReplayTest {
-    private class Result(val label: String, val predicted: SegmentClass)
+    // segments: one "VERDICT ascent duration speed steps" entry per segment, printed for misses.
+    private class Result(
+        val file: String,
+        val label: String,
+        val predicted: SegmentClass,
+        val segments: List<String>
+    )
 
     private val labels =
         listOf("stairs_up", "stairs_down", "elevator_up", "walk_flat", "shake", "blow")
@@ -57,7 +63,18 @@ class TraceReplayTest {
             )
             assertTrue("${file.name}: unknown label $label", label in labels)
             val segments = segmenter.segment(trace.pressure, trace.steps)
-            Result(label!!, traceClass(segments.map { classifier.classify(it) }))
+            val described = segments.map {
+                "%s %.2f m %.1f s %.3f m/s %d steps".format(
+                    Locale.US,
+                    classifier.verdict(it),
+                    it.ascentM,
+                    it.durationS,
+                    it.vertSpeedMps,
+                    it.steps
+                )
+            }
+            val predicted = traceClass(segments.map { classifier.classify(it) })
+            Result(file.name, label!!, predicted, described)
         }
     }
 
@@ -82,6 +99,10 @@ class TraceReplayTest {
             val recall = ratio(hits, results.count { expected(it.label) == c })
             out.appendLine("%-12s%16s%16s".format(c, precision, recall))
         }
+        for (r in results.filter { it.predicted != expected(it.label) }) {
+            val got = "expected ${expected(r.label)}, got ${r.predicted}"
+            out.appendLine("miss ${r.file}: $got; ${r.segments}")
+        }
         println(out)
     }
 
@@ -98,6 +119,20 @@ class TraceReplayTest {
 
     @Test
     fun realTraces() {
-        printMatrix("traces", replay("traces"))
+        val results = replay("traces")
+        printMatrix("traces", results)
+        // The trace-replay gate. Only real data: synthetic numbers are not evaluation.
+        val stairs = results.filter { it.predicted == SegmentClass.STAIRS }
+        val hits = stairs.count { expected(it.label) == SegmentClass.STAIRS }
+        assertTrue("traces/: no trace classified STAIRS", stairs.isNotEmpty())
+        assertTrue(
+            "traces/: STAIRS precision $hits/${stairs.size} is below $MIN_STAIRS_PRECISION",
+            hits.toDouble() / stairs.size >= MIN_STAIRS_PRECISION
+        )
+    }
+
+    companion object {
+        // Points ride on STAIRS; with 3 real stairs traces one false STAIRS gives <= 0.75: CI fails.
+        const val MIN_STAIRS_PRECISION = 0.9
     }
 }

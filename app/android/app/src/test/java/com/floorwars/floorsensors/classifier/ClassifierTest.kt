@@ -17,7 +17,7 @@ class ClassifierTest {
         vertSpeedMps = ascentM / durationS,
         steps = steps,
         stepsPerM = steps / ascentM,
-        pressureStepsMatch = stepsScored(steps, ascentM) > 0,
+        pressureStepsMatch = stepsScored(steps, ascentM) > 0
     )
 
     private fun assertVerdict(expected: Verdict, s: Segment) {
