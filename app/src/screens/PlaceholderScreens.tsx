@@ -16,6 +16,7 @@ export function HomeScreen({
   return (
     <>
       <Placeholder title="Home" />
+      <Button title="Check in" onPress={() => navigation.navigate('Checkin')} />
       <Button
         title="Sensor logger"
         onPress={() => navigation.navigate('SensorLogger')}
