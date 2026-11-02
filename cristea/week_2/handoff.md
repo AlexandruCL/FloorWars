@@ -1,5 +1,16 @@
 # Week 2 handoff (2026-11-02)
 
+## Prompt to paste on the new machine
+
+```
+Resume FloorWars Week 2. Run `git fetch origin`, then read the handoff with
+`git show origin/feat/w2-checkin:cristea/week_2/handoff.md` and follow its
+"Next steps" in order, using cristea/week_2/week_2_prompt.md as the rules.
+The Android emulator is already running on this machine. Start with the
+Android baseline on main and the first native build of feat/w2-checkin.
+Do not open PRs without asking me.
+```
+
 Resume Week 2 from here, on a machine with a running Android emulator. The task list is `cristea/week_2/week_2_prompt.md`. Paths there say `D:\FloorWars`; use your local checkout instead.
 
 ## Before you start
