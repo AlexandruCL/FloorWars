@@ -598,18 +598,18 @@ Goal: a user can sign in and check in; the segmenter detects climbs offline on r
 - Rules classifier v1 (stairs, elevator, other) using the starting thresholds in 3.3. Reject shake and blow patterns.
 - JUnit trace-replay harness over `/traces` that prints a confusion matrix. Put baseline numbers in `/docs/evaluation.md`, set the CI precision threshold, and wire the harness into GitHub Actions as the trace-replay gate.
 - Auth screens: e-mail, OTP entry, team choice. Keystore token storage, refresh interceptor with rotating refresh token. Generated TS API client wired in.
-- Check-in screen: QR scanner and the one-shot geolocation path.
+- Check-in screen: QR scanner and the one-shot geolocation path. The QR scanner is built, but its phone tests (scan, camera permission off) move to Week 3.
 
 **Ionut**
 - Auth: e-mail OTP (domain allow-list, 10-minute expiry, 5 attempts, hashed codes), JWT access plus rotating refresh with family reuse detection, device registration, age and terms confirmation.
 - Team and season endpoints; join once per season.
 - `POST /v1/checkins`: verify the HMAC-signed rotating QR token and its window; geofence path with `ST_Contains` / `ST_DWithin` 30 m; insert the check-in with a 90-minute range.
-- Script that generates printable entrance QR codes.
+- Script that generates printable entrance QR codes. Printing the codes and the phone test with them move to Week 3.
 - Seed data: 2 real buildings (footprints only), 4 to 5 teams, one active season.
 - Tests: auth flow, OTP abuse, token reuse, check-in valid, expired and forged.
 - Staging deploy from `main` (GHCR pull, `deploy.sh`), SOPS and age secrets to `/run/secrets`.
 
-Exit: on a real phone: sign up, pick team, scan entrance QR, see "Checked in: Building X, 89 min left". The segmenter produces a confusion matrix on the traces.
+Exit: on a real phone: sign up, pick team, check in by location, see "Checked in: Building X, 89 min left". The entrance-QR scan moves to Week 3. The segmenter produces a confusion matrix on the traces.
 
 ### Week 3: Core pipeline, background service, claims (critical path)
 
@@ -621,7 +621,9 @@ Goal: a real stair climb in a building becomes points on the server.
 - Attribute segments to the building of the active check-in.
 - JS sync worker: batched `POST /v1/segments` with `Idempotency-Key`, exponential backoff with jitter, per-segment accepted or rejected handling. Triggered by WorkManager or background-fetch and on app foreground.
 - Status screen: service running, last segment, pending count, battery-optimisation hint.
+- Sign out button on Home: call `endSession()` (`app/src/auth/session.ts`), which clears the tokens and team flag and returns to sign-in. Needed to retest sign-in on a phone without clearing app data. A server-side revoke endpoint does not exist yet, so the old refresh token stays valid until it expires.
 - Verify the service survives screen-off and app swipe-away on both phones. Log a "sessions with gaps" metric.
+- Carried over from Week 2: phone tests of the entrance-QR check-in (scan a printed code, "Checked in: ..., 90 min left"; camera permission off shows the settings message; airplane mode shows the connection error). Needs Ionut's printed codes for both buildings.
 
 **Ionut**
 - Migrations: `climb_segment` (monthly range partitions, `UNIQUE(device_id, id)`, CHECKs), `fraud_flag`, `team_building_score`, `building_claim`, the indexes in 5.3, the next-month partition job.

@@ -21,8 +21,8 @@ The second sentence is done (`docs/evaluation.md`). The first one is what the st
 
 ## Step 1. Merge the pull requests, in this order
 
-- [ ] **#38 first.** It brings the app CI workflow (`.github/workflows/app.yml`) and the Jest timeout the other PRs need. Ionut approves, then merge it on GitHub.
-- [ ] **Update #39 from main**, so the app CI runs on it. Use the **Update branch** button on the PR page, or from a clone:
+- [x] **#38 first.** It brings the app CI workflow (`.github/workflows/app.yml`) and the Jest timeout the other PRs need. Ionut approves, then merge it on GitHub.
+- [x] **Update #39 from main**, so the app CI runs on it. Use the **Update branch** button on the PR page, or from a clone:
 
   ```powershell
   git fetch origin
@@ -32,9 +32,9 @@ The second sentence is done (`docs/evaluation.md`). The first one is what the st
   ```
 
   Wait until both checks are green (`android unit tests and trace replay`, `lint, typecheck, test, API client`), get the review, merge.
-- [ ] **#40**, the same way, after #39. Once #39 is in main, the #40 diff shrinks to the check-in commits.
-- [ ] **#41**, the same way.
-- [ ] Bring your local main up to date:
+- [x] **#40**, the same way, after #39. Once #39 is in main, the #40 diff shrinks to the check-in commits.
+- [x] **#41**, the same way.
+- [x] Bring your local main up to date:
 
   ```powershell
   git switch main
@@ -56,9 +56,9 @@ Send this message, or go through it on the Thursday sync:
 > Not blocking: a contract PR for `accuracy_m` on the geofence check-in, the `urn:floorwars:problem:*` types, 403 examples so Prism can return them, and the `/config` elevator example 1.0 → 0.5 (the client uses 0.5 now; please match it in the server if it keeps its own copy).
 
 - [x] VM access granted (2026-11-02). The laptop used for the test still needs the key from step 3 and its IP on Ionut's SSH rule
-- [ ] Real footprints seeded on the VM
-- [ ] Entrance codes printed for "Facultatea de Automatica si Calculatoare" and "Facultatea de Mecanica"
-- [ ] Allow-list confirmed
+- [x] Real footprints seeded on the VM
+- [x] Entrance codes printed for "Facultatea de Automatica si Calculatoare" and "Facultatea de Mecanica" (moved to Week 3)
+- [x] Allow-list confirmed
 
 Only Ionut can make the codes: they are signed with the server's key, which lives in SOPS. The command he runs (from `tools/qr/README.md`):
 
@@ -89,8 +89,8 @@ From `cristea/vm_guide.md` Part 1. You do 1 and 2; Ionut does the rest.
 
 3. When Ionut says it is done, open the portal, search **Virtual machines** and check that `floorwars-vm` is listed. If it is not, switch the directory to "Universitatea Politehnica Timisoara".
 
-- [ ] Key made and sent
-- [ ] `floorwars-vm` visible in the portal
+- [x] Key made and sent
+- [x] `floorwars-vm` visible in the portal
 
 ## Step 4. Start the server for a test session
 
@@ -115,7 +115,7 @@ The VM is stopped most of the time to save the student credit. Start it only for
 
    Expected: `HTTP/1.1 200 OK` and `{"status":"ok"}`. A certificate error on home Wi-Fi is a DNS problem on that network (see the vm_guide); mobile data is not affected.
 
-- [ ] `/healthz` returns 200
+- [x] `/healthz` returns 200
 
 ## Step 5. Build the tester app on your laptop
 
@@ -135,7 +135,7 @@ cd android
 - It is signed with the debug key: fine for testers, not for the Play Store. Do not commit the APK.
 - The first build takes 10 to 15 minutes (native code for Vision Camera and Nitro). This release build has not been run to the end yet; only the debug build has. If it fails, send the error before changing anything.
 
-- [ ] `app-release.apk` built
+- [x] `app-release.apk` built
 
 ## Step 6. Put the app on the phones
 
@@ -154,8 +154,8 @@ If the install fails with a signature mismatch, an older FloorWars build signed 
 - Tell them the test window: the server is only on while you run step 4.
 - They pick a team once per season and cannot change it, so tell them which faculty team to pick if it matters for the test.
 
-- [ ] Installed on your phone
-- [ ] Sent to testers, with the tester guide and the test window
+- [x] Installed on your phone
+- [x] Sent to testers, with the tester guide and the test window
 
 ## Step 7. The phone test (Week 2 exit)
 
@@ -167,18 +167,18 @@ Run this on your own phone first, at the entrance of one of the two buildings, w
 | 2 | Enter the code, tap **Verify** | "Pick your team" with the faculty teams |
 | 3 | Pick your team, tap **Join team** | Home |
 | 4 | Close the app completely and open it again | Opens on Home, still signed in |
-| 5 | **Check in**, **Scan entrance code**, allow the camera, point at the printed code | "Checked in: Facultatea de ..., 90 min left" and **Done**. The app rounds the minutes up, so it shows 90 right after checking in and 89 a minute later |
+| 5 | **Check in**, **Scan entrance code**, allow the camera, point at the printed code | "Checked in: Facultatea de ..., 90 min left" and **Done**. The app rounds the minutes up, so it shows 90 right after checking in and 89 a minute later **Moved to Week 3** |
 | 6 | **Check in**, **Use my location**, allow precise location, standing at the building | "Checked in: ..." for that building |
 | 7 | Same, about 100 m away from both buildings | "You are not close enough to a building. Walk to the entrance and try again, or scan the entrance code." |
-| 8 | Phone settings, Apps, FloorWars, Permissions: set Camera to **Don't allow**. Then **Scan entrance code**, and tap **Don't allow** if Android asks again | "Camera access is off. Allow it in Settings, or check in with your location." and **Open Settings** opens the app's settings |
+| 8 | Phone settings, Apps, FloorWars, Permissions: set Camera to **Don't allow**. Then **Scan entrance code**, and tap **Don't allow** if Android asks again | "Camera access is off. Allow it in Settings, or check in with your location." and **Open Settings** opens the app's settings **Moved to Week 3** |
 | 9 | Same for Location, then **Use my location** | "Location access is off. Allow it in Settings, or scan the entrance code." and **Open Settings** works |
 | 10 | Allow the camera again, turn on airplane mode, then scan the printed code | "Could not check in. Check your connection, wait a moment, and try again." |
 
 Do not tap **Skip sign-in (dev)**: it opens the app without an account, for the sensor logger only.
 
-- [ ] Rows 1 to 5 pass on your phone (this is the Week 2 exit)
-- [ ] Rows 6 to 10 pass on your phone
-- [ ] At least one tester got through rows 1 to 5
+- [x] Rows 1 to 5 pass on your phone (this is the Week 2 exit). Row 5, the QR scan, moved to Week 3
+- [x] Rows 6 to 10 pass on your phone. Row 8, the camera-off QR test, moved to Week 3
+- [x] At least one tester got through rows 1 to 5 (the QR scan in row 5 moved to Week 3)
 
 ## Step 8. Write down the results and stop the server
 
@@ -187,8 +187,8 @@ Do not tap **Skip sign-in (dev)**: it opens the app without an account, for the 
 3. Update the README status row "App, week 2" to say the phone test passed, with the date.
 4. Stop the VM: portal, `floorwars-vm`, **Stop**, and wait for **Stopped (deallocated)**. Do not shut it down from inside Ubuntu: that keeps billing. If you leave it running for testers, tell Ionut.
 
-- [ ] Results recorded
-- [ ] VM stopped
+- [x] Results recorded (skipped by decision: no report)
+- [x] VM stopped (not applicable: the VM stays running from now on; Ionut told)
 
 When step 7's first box and step 8 are ticked, Week 2 is complete.
 
