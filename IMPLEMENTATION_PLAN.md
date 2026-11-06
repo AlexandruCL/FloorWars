@@ -96,7 +96,7 @@ Out of scope (PDF): indoor positioning of individual staircases, payments, chat,
 | Point values and the diminishing curve | Start at 1 point per verified step, halving after 300 steps in an hour, tune. | Ours |
 | Floor-equivalent (display only) | 20 verified steps = 1 floor-equivalent, so a team with 200 steps in a building shows "10 floors". An estimate, about 6 steps per metre times a 3.3 m storey, tuned from real data. Never a real storey number, and no building floor data is used. Every screen that shows it says "floors (estimate)". | Ours |
 | Check-in validity | 90 minutes from check-in. Segments are attributed to the building of the active check-in. | PDF |
-| Segment attribution | A segment needs an active check-in to count. | PDF |
+| Segment attribution | A segment needs an active check-in to count. It belongs to the check-in active when the climb started, even if it ends after `valid_until` or uploads after a new check-in. | PDF, edge cases ours |
 | Per-user limits | At most 60 segment uploads per hour and at most 600 verified steps per 10 minutes. These double as anti-cheat signals. | PDF, adapted (ours) |
 | Segment bounds | `steps` between 1 and 2000; `ascent_m` between 2.0 and 120.0; a segment counts only if its pressure change matches its steps (section 3.2). | PDF, adapted (ours) |
 | Age | Users under 18 are not accepted. | PDF |
@@ -135,7 +135,7 @@ PostgreSQL 18 + PostGIS       Valkey: ZINCRBY leaderboards, PUBLISH building_fli
 
 1. Building context is set by QR or geofence check-in (valid 90 minutes).
 2. Phone sensors emit pressure and step events.
-3. The segmenter detects an ascent window, computes features and `stair_prob`.
+3. The segmenter detects an ascent window, computes features and `stair_prob` (a constant 1.0 with the rules classifier, which gives no probability).
 4. The segment is stored in the Room outbox with a client UUID.
 5. The sync worker sends `POST /v1/segments` as a batch with an `Idempotency-Key`.
 6. The API validates schema and plausibility rules.
@@ -228,7 +228,7 @@ Deliberately not used: Firebase as a platform (database, auth, analytics, crashl
 The PDF rejected cross-platform frameworks because their sensor plugins rarely sample reliably in the background. We keep React Native and remove that risk this way:
 
 - The Kotlin service owns sensor registration, the segmenter, the classifier and persistence. The JS runtime may be killed at any moment, and nothing about detection depends on it.
-- The native module exposes a small API to JS: `start()`, `stop()`, `getStatus()`, `getPending(limit)`, `markSynced(ids)`, `setConfig(json)`, `startLogging(label)`, `stopLogging()`, plus events for status changes.
+- The native module exposes a small API to JS: `start()`, `stop()`, `getStatus()`, `getPending(limit)`, `markSynced(ids)`, `setConfig(json)`, `startLogging(label)`, `stopLogging()`, plus events for status changes. In Week 3 `setActiveCheckin` and `clearActiveCheckin` drive the sensors; `start()`, `stop()` and `setConfig(json)` arrive in Week 5, with the service toggle and the config override.
 - The segmenter is a pure Kotlin class with no Android imports, so JUnit can replay recorded traces in CI.
 - Pin the React Native version in Week 1 and do not upgrade during the project.
 - Use no Expo Go. A development build is required either way.
@@ -336,7 +336,7 @@ Segment upload body (one item, ours):
 
 Raw pressure or step streams never appear in any request.
 
-Error handling rules (PDF): explicit timeouts (connect 10 s, read 20 s). Never retry 4xx. Retry 5xx and network errors with exponential backoff and jitter. A duplicate UUID is treated as success.
+Error handling rules (PDF): explicit timeouts (connect 10 s, read 20 s). Never retry 4xx, except 429 after its `Retry-After`. Retry 5xx and network errors with exponential backoff and jitter. A duplicate UUID is treated as success.
 
 ---
 
@@ -489,7 +489,7 @@ The team implements authentication; libraries are used only for cryptographic pr
 - A background sync job (WorkManager) retries with exponential backoff and jitter, on unmetered or validated networks where appropriate.
 - The server treats duplicate UUIDs as success (`INSERT ... ON CONFLICT DO NOTHING`), so a retry after a lost response never double-counts.
 - Reads are cached with a timestamp and shown with a "last updated" label when offline.
-- Timeouts are explicit (connect 10 s, read 20 s). 4xx is never retried; 5xx and network errors are.
+- Timeouts are explicit (connect 10 s, read 20 s). 4xx is never retried, except 429 after its `Retry-After`; 5xx and network errors are.
 
 ### 7.11 Security checklist
 
@@ -619,10 +619,10 @@ Goal: a real stair climb in a building becomes points on the server.
 - Wire the segmenter into the live service: real sensor events, wake-lock strategy, sampling rate selection (10 to 25 Hz), batching to save battery.
 - Native Room/SQLite outbox: segments with client UUID, status, check-in id, `has_barometer`. Module API `getPending(limit)` and `markSynced(ids)`.
 - Attribute segments to the building of the active check-in.
-- JS sync worker: batched `POST /v1/segments` with `Idempotency-Key`, exponential backoff with jitter, per-segment accepted or rejected handling. Triggered by WorkManager or background-fetch and on app foreground.
-- Status screen: service running, last segment, pending count, battery-optimisation hint.
-- Sign out button on Home: call `endSession()` (`app/src/auth/session.ts`), which clears the tokens and team flag and returns to sign-in. Needed to retest sign-in on a phone without clearing app data. A server-side revoke endpoint does not exist yet, so the old refresh token stays valid until it expires.
-- Verify the service survives screen-off and app swipe-away on both phones. Log a "sessions with gaps" metric.
+- JS sync worker: batched `POST /v1/segments` with `Idempotency-Key`, exponential backoff with jitter, per-segment accepted or rejected handling. Triggered by a WorkManager job that wakes the JS worker through Headless JS, and on app foreground.
+- Status screen: service running, active check-in, last segment, pending count, last sync result, "Sync now", offline state, battery-optimisation hint.
+- Sign out button on Home: call `endSession()` (`app/src/auth/session.ts`), which clears the tokens and team flag and returns to sign-in. Needed to retest sign-in on a phone without clearing app data. A server-side revoke endpoint does not exist yet, so the old refresh token stays valid until it expires. Sign-out deletes segments not yet uploaded and clears the active check-in, so a different user cannot inherit them.
+- Verify the service survives screen-off and app swipe-away on both phones. Log a "sessions with gaps" metric, on the phone only in Week 3; it needs an upload endpoint before the pilot.
 - Carried over from Week 2: phone tests of the entrance-QR check-in (scan a printed code, "Checked in: ..., 90 min left"; camera permission off shows the settings message; airplane mode shows the connection error). Needs Ionut's printed codes for both buildings.
 
 **Ionut**
@@ -632,6 +632,7 @@ Goal: a real stair climb in a building becomes points on the server.
 - Scoring: points per verified stair step with diminishing returns per hour.
 - Valkey: `ZINCRBY` leaderboards, `PUBLISH building_flipped`, token bucket (60 uploads/hour, 600 verified steps/10 minutes).
 - `GET /v1/buildings/{id}/standings` (owner and team standings in one query) and `GET /v1/leaderboards`.
+- `GET /v1/buildings` (in the contract, not built yet): the app needs it to show building names after a check-in.
 - Fake-segment script. Replay `/traces` through the server plausibility rules as a pytest case.
 
 Wednesday check: run one real climb through the real service, API and database as early in the week as possible, even if it is ugly. Surprises (field names, time zones, auth edges) surface here.
@@ -856,7 +857,7 @@ Our 6 weeks map onto this as: Week 1 = M1, Week 2 and 3 = M2, Week 4 = M3, Week 
 | Confirm the Azure for Students credit amount and eligibility | Ionut | Week 1 |
 | Domain: student-pack domain or a cheap one | Ionut | Week 1 |
 | Exact university e-mail domain(s) for the allow-list | Ionut | Week 2 |
-| Background sync trigger: WorkManager from the native module or a JS background-fetch library | Cristea | Week 3 |
+| Background sync trigger: decided 2026-11-06, WorkManager from the native module, waking the JS worker through Headless JS | Cristea | Week 3 |
 | Point values and diminishing-returns curve | Both | Week 3 |
 | CI precision threshold for the trace-replay gate | Cristea | Week 2 |
 | Accessible contribution mode rules | Both | Week 4 |
