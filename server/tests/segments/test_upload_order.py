@@ -4,6 +4,8 @@ Timestamps are fixed once per test: ``api_world.climb(minutes_ago=...)`` reads t
 and that drift would shrink the gaps the replays depend on.
 """
 
+import json
+import threading
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta
@@ -14,11 +16,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.dialects.postgresql import Range
 
+from app.segments import service
+from app.segments.schemas import SegmentBatch, SegmentBatchResult
 from tests.helpers import TEST_DB_URL, TEST_VALKEY_URL
 from tests.segments.api_world import Climber, World, climb, make_world, scalar, utcnow
 
 pytestmark = pytest.mark.skipif(not TEST_VALKEY_URL, reason="FLOORWARS_TEST_VALKEY_URL not set")
 
+JOIN_TIMEOUT_S = 20
 # A real check-in lasts 90 minutes; both replays fit inside one.
 CHECKIN = timedelta(minutes=90)
 # 3 steps/s is the cadence limit: the most steps a climb of the longest duration can hold.
@@ -264,3 +269,70 @@ def test_a_big_climb_sent_by_another_user_changes_nothing(world: World) -> None:
     assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
     assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 1
     assert scalar(world.client, "SELECT points FROM team_building_score") == 330
+
+
+# Concurrent uploads of one user: the user lock makes the later batch see the earlier one.
+
+
+def _race(world: World, user: Climber, *items: dict[str, Any]) -> list[SegmentBatchResult]:
+    """One ``upload_batch`` per item, each with its own thread, session and connection."""
+    barrier = threading.Barrier(len(items), timeout=JOIN_TIMEOUT_S)
+    results: list[SegmentBatchResult] = []
+    errors: list[Exception] = []
+
+    def worker(item: dict[str, Any]) -> None:
+        segment = {"checkin_id": str(user.checkin_id), "building_id": user.building_id, **item}
+        payload = {"device_id": str(user.device_id), "segments": [segment]}
+        try:
+            batch = SegmentBatch.model_validate_json(json.dumps(payload))
+            with world.client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
+                db.connection()  # connected before the barrier: neither gets a head start
+                barrier.wait()
+                results.append(service.upload_batch(db, user.user_id, batch))
+        except Exception as exc:  # reported by the assertion below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(item,)) for item in items]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(JOIN_TIMEOUT_S)
+        assert not thread.is_alive(), "a transaction is stuck"
+    assert not errors, errors[:1]
+    return results
+
+
+def _one_verified_one_rejected(results: list[SegmentBatchResult]) -> str:
+    """The reason of the one rejected upload, whichever of the two won."""
+    accepted = [a for r in results for a in r.accepted]
+    rejected = [x for r in results for x in r.rejected]
+    assert (len(accepted), len(rejected)) == (1, 1), results
+    return rejected[0].reason
+
+
+def test_racing_uploads_of_overlapping_climbs_verify_one(world: World) -> None:
+    now = utcnow()
+    user = _checked_in(world, now)
+    start = now - timedelta(minutes=10)
+    results = _race(world, user, _at(start), _at(start + timedelta(seconds=10)))
+    assert _one_verified_one_rejected(results) == "overlap"
+    assert scalar(world.client, "SELECT count(*) FROM climb_segment WHERE status = 'verified'") == 1
+    assert scalar(world.client, "SELECT rule FROM fraud_flag") == "overlap"
+    assert scalar(world.client, "SELECT points FROM team_building_score") == 60
+
+
+def test_racing_uploads_cannot_pass_the_step_cap_together(world: World) -> None:
+    now = utcnow()
+    user = _checked_in(world, now)
+    start = now - timedelta(minutes=10)
+    big: dict[str, Any] = {
+        "steps": 400,
+        "ascent_m": 80.0,
+        "duration_s": 160.0,
+        "vert_speed_mps": 0.5,
+    }
+    results = _race(world, user, _at(start, **big), _at(start + timedelta(minutes=3), **big))
+    assert _one_verified_one_rejected(results) == "rate_limit"
+    assert scalar(world.client, "SELECT count(*) FROM climb_segment WHERE status = 'verified'") == 1
+    assert scalar(world.client, "SELECT rule FROM fraud_flag") == "rate_limit"
+    assert scalar(world.client, "SELECT points FROM team_building_score") == 350  # 300 + 100 / 2
