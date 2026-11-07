@@ -8,6 +8,13 @@ device, list the teams, read the active season, join a team (an existing members
 check in with the entrance QR token, then refresh the tokens and test reuse detection (takes
 about 25 s). Standard library only. Tokens and the code are never printed. It creates or
 updates a real account, so use your own e-mail address.
+
+With --upload (needs --qr-token-file) it also runs the Week 3 segment flow right after the
+check-in: upload a valid fake segment (expect accepted with points), upload it again (accepted
+without points), upload a segment with a bad steps-per-metre ratio (expect rejected as
+pressure_steps_mismatch), then read GET /buildings/{id}/standings and show each team's points
+before and after, so the team that gained shows even when it joined earlier. The fake segments
+are synthetic test data and add real points to your team in that building.
 """
 
 from __future__ import annotations
@@ -15,15 +22,18 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import random
 import sys
 import time
 import urllib.error
 import urllib.request
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 TIMEOUT_S = 20
+FAKE_SEGMENTS_DIR = Path(__file__).resolve().parents[1] / "fake_segments"
 
 
 def call(
@@ -32,6 +42,7 @@ def call(
     path: str,
     body: dict[str, Any] | None = None,
     token: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> tuple[int, Any]:
     if not base.startswith(("http://", "https://")):
         raise SystemExit("error: --base-url must start with http:// or https://")
@@ -42,6 +53,8 @@ def call(
         request.add_header("Content-Type", "application/json")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
+    for name, value in (headers or {}).items():
+        request.add_header(name, value)
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:  # noqa: S310
             raw = response.read()
@@ -66,13 +79,110 @@ def step(ok: bool, name: str, detail: str = "") -> bool:
     return ok
 
 
+def team_points(standings: Any) -> dict[str, int]:
+    """Points per team code from a BuildingStandings body."""
+    if not isinstance(standings, dict):
+        return {}
+    return {t["code"]: t["points"] for t in standings.get("teams") or []}
+
+
+def upload_checks(base: str, access: str, device_id: str, checkin: dict[str, Any]) -> bool:
+    """The Week 3 segment flow for a fresh check-in. Prints OK or FAIL lines, never a token."""
+    sys.path.insert(0, str(FAKE_SEGMENTS_DIR))
+    import fake_segments  # sibling tool, imported only for --upload
+
+    building_id = checkin["building_id"]
+    valid_from = datetime.fromisoformat(checkin["valid_from"])
+    # Inside the check-in's validity, and not in the future beyond the server's 5 minute skew.
+    started_at = max(datetime.now(UTC) - timedelta(seconds=5), valid_from + timedelta(seconds=1))
+    rng = random.SystemRandom()
+
+    def upload(segment: dict[str, Any]) -> tuple[int, Any]:
+        return call(
+            "POST",
+            base,
+            "/segments",
+            {"device_id": device_id, "segments": [segment]},
+            access,
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+        )
+
+    def make(kind: str, at: datetime) -> dict[str, Any]:
+        return fake_segments.make_segment(
+            kind, rng, checkin_id=checkin["id"], building_id=building_id, started_at=at
+        )
+
+    def accepted_by_id(status: int, result: Any) -> dict[str, Any]:
+        if status != 200 or not isinstance(result, dict):
+            return {}
+        return {a["id"]: a for a in result.get("accepted") or []}
+
+    status, before = call("GET", base, f"/buildings/{building_id}/standings", token=access)
+    if not step(status == 200, "standings before", f"HTTP {status}"):
+        return False
+
+    good = make("stairs", started_at)
+    status, result = upload(good)
+    first = accepted_by_id(status, result).get(good["id"])
+    scored = first is not None and "points" in first
+    if not step(
+        scored,
+        "upload a valid segment (fresh Idempotency-Key)",
+        f"{first['steps_scored']} steps scored, {first['points']} points"
+        if first is not None and scored
+        else f"HTTP {status} {problem(result)}",
+    ):
+        return False
+
+    status, result = upload(good)
+    again = accepted_by_id(status, result).get(good["id"])
+    if not step(
+        again is not None and "points" not in again,
+        "upload it again: accepted without points",
+        f"HTTP {status}" + ("" if again is not None else f" {problem(result)}"),
+    ):
+        return False
+
+    bad = make("bad_ratio", started_at + timedelta(seconds=1))
+    status, result = upload(bad)
+    rejected = {}
+    if status == 200 and isinstance(result, dict):
+        rejected = {r["id"]: r["reason"] for r in result.get("rejected") or []}
+    if not step(
+        rejected.get(bad["id"]) == "pressure_steps_mismatch",
+        "upload a bad-ratio segment: rejected as pressure_steps_mismatch",
+        f"reason {rejected.get(bad['id'])}" if status == 200 else f"HTTP {status}",
+    ):
+        return False
+
+    status, after = call("GET", base, f"/buildings/{building_id}/standings", token=access)
+    if not step(status == 200, "standings after", f"HTTP {status}"):
+        return False
+    owner = (after.get("owner") or {}).get("code", "nobody")
+    old, new = team_points(before), team_points(after)
+    gained = {code: (old.get(code, 0), pts) for code, pts in new.items() if pts != old.get(code, 0)}
+    shown = ", ".join(f"{code} {was} -> {now}" for code, (was, now) in gained.items())
+    return step(
+        bool(gained),
+        f"building {building_id} standings (owner: {owner})",
+        shown or "no team gained points",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--base-url", default="https://api.floorwars.me")
     parser.add_argument("--email", required=True)
     parser.add_argument("--qr-token-file", type=Path, help="a tools/qr/out/<id>.token.txt file")
     parser.add_argument("--team-id", type=int, help="team to join (default: the first team)")
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="after the check-in, run the segment upload flow (needs --qr-token-file)",
+    )
     args = parser.parse_args()
+    if args.upload and not args.qr_token_file:
+        parser.error("--upload needs --qr-token-file: the segments belong to a check-in")
     base = args.base_url.rstrip("/") + "/v1"
 
     status, _ = call("POST", base, "/auth/otp", {"email": args.email})
@@ -135,6 +245,8 @@ def main() -> int:
             if status == 201
             else f"HTTP {status} {problem(checkin)}",
         ):
+            return 1
+        if args.upload and not upload_checks(base, access, device["id"], checkin):
             return 1
 
     status, rotated = call(
