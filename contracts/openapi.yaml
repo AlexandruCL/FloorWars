@@ -10,7 +10,7 @@ info:
       building_id with scope building, or no active season when season_id is omitted). Season,
       building and team ids in the request are at most 2147483647 (422 above that): season_id and
       building_id of GET /leaderboards, the SeasonId and BuildingId path parameters, and team_id
-      of JoinRequest.
+      of JoinRequest. 422 ValidationError listed on GET /buildings/{id}/standings.
     - 0.5.0-draft (2026-11-07): week 3 segments. SegmentBatch requires device_id (uuid), the device the
       app registered at sign-in; the server answers 403 for a device that is not the signed-in user's.
       New rejection reasons started_at_range, season_inactive and no_team. 403 and 503 listed on
@@ -310,6 +310,7 @@ paths:
               schema: { $ref: '#/components/schemas/BuildingStandings' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /leaderboards:
     get:
