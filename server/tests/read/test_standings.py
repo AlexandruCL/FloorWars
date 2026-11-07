@@ -6,6 +6,8 @@ from httpx import Response
 from tests.helpers import auth_headers
 from tests.read.seed import World, add_segment, seed, set_owner
 
+INT4_MAX = 2147483647
+
 
 def _get(client: TestClient, world: World, building_id: int) -> Response:
     headers = auth_headers(client.app, world.users["AC"])
@@ -92,3 +94,34 @@ def test_standings_require_token(client: TestClient) -> None:
 def test_invalid_id_is_422(client: TestClient) -> None:
     world = seed(client)
     assert _get(client, world, 0).status_code == 422
+
+
+def test_id_above_the_int4_range_is_422(client: TestClient) -> None:
+    world = seed(client)
+    assert _get(client, world, INT4_MAX + 1).status_code == 422
+    assert _get(client, world, INT4_MAX).status_code == 404
+
+
+# The same bound on the ids of the join route, which reads the same tables.
+
+
+def _join(client: TestClient, world: World, season_id: int, team_id: int) -> Response:
+    headers = auth_headers(client.app, world.users["AC"])
+    return client.post(f"/v1/seasons/{season_id}/join", json={"team_id": team_id}, headers=headers)
+
+
+def test_join_with_a_season_above_the_int4_range_is_422(client: TestClient) -> None:
+    world = seed(client)
+    assert _join(client, world, INT4_MAX + 1, world.team_ids["AC"]).status_code == 422
+    assert _join(client, world, INT4_MAX, world.team_ids["AC"]).status_code == 404
+
+
+def test_join_with_a_team_above_the_int4_range_is_refused_by_the_schema(
+    client: TestClient,
+) -> None:
+    world = seed(client)
+    too_large = _join(client, world, world.season_id, INT4_MAX + 1)
+    assert too_large.status_code == 422
+    assert not too_large.json()["type"].endswith("team-not-found")
+    at_the_bound = _join(client, world, world.season_id, INT4_MAX)
+    assert at_the_bound.json()["type"].endswith("team-not-found")

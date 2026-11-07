@@ -144,6 +144,15 @@ def test_extreme_speed_is_stored_as_a_rejected_row(world: World, bad: dict[str, 
     assert scalar(world.client, "SELECT count(*) FROM team_building_score") == 0
 
 
+def test_a_tiny_stair_prob_is_stored_as_zero_and_the_climb_verified(world: World) -> None:
+    # Inside the 0 to 1 rule, too small for a real: the cast must not lose the batch.
+    item = climb(stair_prob=1e-50)
+    result = world.climber().ok(item)
+    assert [a["id"] for a in result["accepted"]] == [item["id"]]
+    assert scalar(world.client, "SELECT status FROM climb_segment") == "verified"
+    assert scalar(world.client, "SELECT stair_prob FROM climb_segment") == 0.0
+
+
 @pytest.mark.parametrize(
     ("bad", "reason"),
     [
@@ -311,6 +320,21 @@ def test_a_leaderboard_error_does_not_fail_or_undo_the_upload(world: World) -> N
         result = service.upload_batch(db, user.user_id, batch, _Board(ValkeyError("down")))
     assert len(result.accepted) == 1
     assert scalar(world.client, "SELECT points FROM team_building_score") == 60
+
+
+def test_an_unexpected_leaderboard_error_is_logged_and_still_answers_success(
+    world: World, caplog: pytest.LogCaptureFixture
+) -> None:
+    # The batch is committed by then: a 500 would tell the client it was lost.
+    user, batch = _batch_for(world)
+    with world.client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
+        result = service.upload_batch(db, user.user_id, batch, _Board(RuntimeError("bug")))
+    assert len(result.accepted) == 1
+    assert [f.to_team for f in result.flips] == ["AC"]
+    assert scalar(world.client, "SELECT points FROM team_building_score") == 60
+    record = next(r for r in caplog.records if r.message == "leaderboard update failed")
+    assert record.levelname == "ERROR"
+    assert record.exc_info is not None
 
 
 def test_flip_time_is_iso_and_aware(world: World) -> None:

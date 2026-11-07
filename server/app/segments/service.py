@@ -156,7 +156,7 @@ def _row(
         ascent_m=item.ascent_m,
         duration_s=item.duration_s,
         vert_speed_mps=rules.storable_real(item.vert_speed_mps),
-        stair_prob=item.stair_prob,
+        stair_prob=rules.storable_real(item.stair_prob),
         classifier_version=item.classifier_version,
         started_at=item.started_at,
     )
@@ -242,8 +242,8 @@ def _notify(board: Leaderboards, scored: list[ScoredSegment], flips: list[Flip])
             board.record_verified(segment)
         for flip in flips:
             board.publish_flip(flip)
-    except ValkeyError:
-        logger.warning("leaderboard update failed", extra={"flips": len(flips)})
+    except Exception:
+        logger.exception("leaderboard update failed", extra={"flips": len(flips)})
 
 
 def upload_batch(

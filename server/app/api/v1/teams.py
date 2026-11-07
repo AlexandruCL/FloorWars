@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import CurrentUser, DbSession
 from app.api.problems import problem_doc
+from app.constants import MAX_ID
 from app.teams import service
 
 router = APIRouter(tags=["teams"])
@@ -31,7 +32,7 @@ class SeasonOut(BaseModel):
 class JoinRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    team_id: Annotated[int, Field(ge=1, strict=True)]
+    team_id: Annotated[int, Field(ge=1, le=MAX_ID, strict=True)]
 
 
 class TeamMembershipOut(BaseModel):
@@ -73,7 +74,7 @@ def get_active_season(db: DbSession) -> SeasonOut:
     operation_id="joinSeason",
 )
 def join_season(
-    id: Annotated[int, Path(ge=1)], body: JoinRequest, user: CurrentUser, db: DbSession
+    id: Annotated[int, Path(ge=1, le=MAX_ID)], body: JoinRequest, user: CurrentUser, db: DbSession
 ) -> TeamMembershipOut:
     """Pick a team for the season; one team per user per season."""
     service.join_season(db, user.id, id, body.team_id)

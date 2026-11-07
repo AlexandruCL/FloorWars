@@ -1,10 +1,13 @@
 """``GET /v1/leaderboards``: individual, team and building boards for a season.
 
 Served from the Valkey sorted sets of ``app.leaderboards``. When Valkey is not configured or
-fails, the board is computed from ``climb_segment`` (season totals). When a key is missing, the
-season is rebuilt once from the database and the key read again.
+fails, the board is computed from ``climb_segment`` (season totals). When a key is missing and the
+database holds points for that board, the season is rebuilt once and the key read again; without
+points the board is empty and nothing is rebuilt.
 
 ``scope=building`` ranks the **teams** in that building for the season (spec section 8).
+
+Problem types (404): ``season-not-found``, ``building-not-found``, ``no-active-season``.
 """
 
 import logging
@@ -19,6 +22,8 @@ from sqlalchemy.orm import Session
 from app import leaderboards as lb
 from app.api.deps import CurrentUser, DbSession
 from app.api.problems import ProblemError, problem_doc
+from app.checkins.repository import building_exists
+from app.constants import MAX_ID
 from app.teams import service as teams_service
 from app.valkey import ValkeyClient, ValkeyError
 
@@ -84,6 +89,8 @@ def _from_valkey(
         key = lb.building_key(season_id, building_id)
     entries = lb.top(vk, key, limit)
     if entries is None:  # never built or evicted: rebuild the season once, then read again
+        if not _from_database(db, scope, season_id, building_id, 1):
+            return []  # no points: a rebuild would not create the key, so it would repeat
         lb.rebuild(db, vk, season_id)
         entries = lb.top(vk, key, limit)
     return entries
@@ -111,7 +118,10 @@ def _names(db: Session, scope: Scope, members: list[str]) -> dict[str, str]:
     response_model=LeaderboardOut,
     responses={
         401: problem_doc("Missing or invalid access token."),
-        404: problem_doc("No season is active and ``season_id`` was not given."),
+        404: problem_doc(
+            "Unknown season (``season-not-found``) or building (``building-not-found``), or no "
+            "season is active and ``season_id`` was not given (``no-active-season``)."
+        ),
         422: problem_doc("Bad query, or ``scope=building`` without ``building_id``."),
     },
     operation_id="getLeaderboard",
@@ -121,8 +131,8 @@ def get_leaderboard(
     _user: CurrentUser,
     db: DbSession,
     scope: Scope,
-    season_id: Annotated[int | None, Query(ge=1)] = None,
-    building_id: Annotated[int | None, Query(ge=1)] = None,
+    season_id: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
+    building_id: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> LeaderboardOut:
     """The best ``limit`` users or teams by points of verified segments."""
@@ -132,6 +142,12 @@ def get_leaderboard(
         building_id = None
     if season_id is None:
         season_id = teams_service.active_season(db).id
+    else:
+        teams_service.require_season(db, season_id)
+    if building_id is not None and not building_exists(db, building_id):
+        raise ProblemError(
+            404, detail="No such building.", type_=teams_service.TYPE_PREFIX + "building-not-found"
+        )
 
     vk: ValkeyClient | None = getattr(request.app.state, "valkey", None)
     entries: list[tuple[str, int]] | None = None

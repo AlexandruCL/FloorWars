@@ -250,9 +250,9 @@ Third normal form. The only derived data are `team_building_score` and `building
 | `team_membership` | `user_id PK/FK`, `season_id PK/FK`, `team_id FK` | Composite PK gives exactly one team per user per season. |
 | `building` | `id int PK`, `name text`, `footprint geometry(Polygon, 4326)` with GiST | No floor count or heights: the app does not need building floor data. |
 | `checkin` | `id uuid PK`, `user_id FK`, `building_id FK`, `method text` (`qr` or `geofence`), `valid_during tstzrange` | |
-| `climb_segment` | `id uuid` (client-generated), `device_id`, `user_id FK`, `team_id FK`, `season_id FK`, `checkin_id FK`, `building_id FK`, `steps_scored smallint`, `points int`, `ascent_m real`, `vert_speed_mps real`, `steps int`, `stair_prob real`, `status text` (`verified`, `rejected`), `reject_reason text NULL`, `started_at timestamptz` (partition key, monthly), PK `(id, started_at)` | Core fact table, partitioned by month. Rejected segments are stored with their reason. |
-| `segment_receipt` | `device_id`, `id`, `user_id FK`, `status`, `reject_reason`, `steps_scored`, `created_at`, PK `(device_id, id)` | Unpartitioned, makes uploads idempotent (a partitioned table cannot enforce `UNIQUE(device_id, id)` without the partition key). |
-| `fraud_flag` | `id bigint PK`, `segment_id`, `segment_started_at`, `user_id FK`, `rule text`, `created_at`, `resolved_at` | No foreign key to `climb_segment`, so dropping a partition is never blocked. |
+| `climb_segment` | `id uuid` (client-generated), `device_id`, `user_id FK`, `team_id FK`, `season_id FK`, `checkin_id FK`, `building_id FK`, `steps_scored smallint`, `points int`, `ascent_m real`, `vert_speed_mps real`, `steps int`, `stair_prob real`, `status text` (`verified`, `rejected`), `reject_reason text NULL`, `started_at timestamptz` (partition key, monthly), PK `(id, started_at)` | Core fact table, partitioned by month. Rejected segments are stored with their reason. Index on `checkin_id` (0005_fk_indexes). |
+| `segment_receipt` | `device_id`, `id`, `user_id FK`, `status`, `reject_reason`, `steps_scored`, `created_at`, PK `(device_id, id)` | Unpartitioned, makes uploads idempotent (a partitioned table cannot enforce `UNIQUE(device_id, id)` without the partition key). Index on `user_id` (0005_fk_indexes). |
+| `fraud_flag` | `id bigint PK`, `segment_id`, `segment_started_at`, `user_id FK`, `rule text`, `created_at`, `resolved_at` | No foreign key to `climb_segment`, so dropping a partition is never blocked. Index on `user_id` (0005_fk_indexes). |
 | `team_building_score` | `season_id`, `building_id`, `team_id` (composite PK), `points int`, `steps int` | Derived. Season totals. |
 | `building_claim` | `season_id`, `building_id` (composite PK), `team_id FK NULL` (null = unowned), `claimed_at NULL` | Derived. Current owner per season and building, from the rolling 7 days. |
 | `game_event` | `id bigint PK`, `kind` (`building_flipped`, `season_state`), `season_id`, `building_id`, `from_team`, `to_team`, `payload jsonb`, `created_at` | Append-only, written in the claim transaction (7.2.1). |
@@ -445,7 +445,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ### 7.4 Reverse proxy
 
-Caddy 2 terminates TLS with auto-renewed Let's Encrypt certificates, sets HSTS and security headers, applies per-IP request limits, and load-balances across the two API replicas with active health checks. Nginx with certbot is an acceptable equivalent.
+Caddy 2 terminates TLS with auto-renewed Let's Encrypt certificates, sets HSTS and security headers, applies per-IP request limits, caps request bodies at 1MB (413 from the proxy), and load-balances across the two API replicas. It retries refused connections on the next replica but ejects no replica: active checks do not run on dynamic upstreams, and passive checks would let an oversized body eject a replica. Nginx with certbot is an acceptable equivalent.
 
 ### 7.5 Secrets and configuration
 

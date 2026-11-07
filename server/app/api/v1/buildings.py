@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.api.deps import CurrentUser, DbSession
 from app.api.problems import ProblemError, problem_doc
 from app.api.v1.teams import TeamOut
+from app.constants import MAX_ID
 from app.db.models import Building, BuildingClaim, Team
 from app.segments import claim
 from app.teams import service as teams_service
@@ -58,11 +59,12 @@ def list_buildings(_user: CurrentUser, db: DbSession) -> list[BuildingOut]:
     responses={
         401: problem_doc("Missing or invalid access token."),
         404: problem_doc("Unknown building (``building-not-found``) or no active season."),
+        422: problem_doc("``id`` is outside 1 to 2147483647."),
     },
     operation_id="getBuildingStandings",
 )
 def get_building_standings(
-    id: Annotated[int, Path(ge=1)], _user: CurrentUser, db: DbSession
+    id: Annotated[int, Path(ge=1, le=MAX_ID)], _user: CurrentUser, db: DbSession
 ) -> BuildingStandingsOut:
     """Owner of a building and every team's points in it over the rolling 7 days."""
     if db.get(Building, id) is None:

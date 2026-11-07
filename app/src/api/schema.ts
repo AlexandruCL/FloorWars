@@ -217,7 +217,9 @@ export interface paths {
         };
         /**
          * Individual, team or building leaderboard
-         * @description Served from Valkey sorted sets. Ranked by points from verified stair steps.
+         * @description Served from Valkey sorted sets. Ranked by points from verified stair steps. 404 for an unknown
+         *     season_id, an unknown building_id with scope building, or no active season when season_id is
+         *     omitted.
          */
         get: operations["getLeaderboard"];
         put?: never;
@@ -1161,6 +1163,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     getLeaderboard: {
@@ -1191,6 +1194,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationError"];
         };
     };

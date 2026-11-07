@@ -1,9 +1,16 @@
 """Segment upload route: ``POST /v1/segments`` (contract 0.5.0-draft, ``uploadSegments``).
 
 Thin handler: validation by ``app.segments.schemas``, the flow in ``app.segments.service``. The
-upload bucket is a dependency so that it runs after authentication and before the body is
-validated: a client sending invalid batches still spends its tokens. The response drops unset
-fields, so ``points`` is absent for a repeat while a ``from_team`` of null stays.
+response drops unset fields, so ``points`` is absent for a repeat while a ``from_team`` of null
+stays.
+
+Order of a request, set by FastAPI: the whole body is read and, if declared as JSON, parsed before
+any dependency runs. Malformed JSON therefore answers 422 (400 if it is not valid UTF-8) with or
+without a valid token, and spends no upload token. Otherwise authentication runs (401), then the
+upload bucket (429), and only then is the body validated against the schema, along with
+``Idempotency-Key``: a client sending schema-invalid batches must be signed in and still spends its
+tokens. An empty body or one not declared as JSON takes this second path. The app has no body size
+limit; the proxy sets it.
 
 Problem types: see ``app.segments.service``.
 """

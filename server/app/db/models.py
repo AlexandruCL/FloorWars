@@ -250,6 +250,7 @@ class ClimbSegment(Base):
         ),
         Index("ix_climb_segment_user_id_started_at", "user_id", text("started_at DESC")),
         Index("ix_climb_segment_season_id_team_id", "season_id", "team_id"),
+        Index("ix_climb_segment_checkin_id", "checkin_id"),  # 0005_fk_indexes
         {"postgresql_partition_by": "RANGE (started_at)"},
     )
 
@@ -278,6 +279,7 @@ class SegmentReceipt(Base):
     """The answer given for ``(device_id, id)``: decides resends, also for unstored rejections."""
 
     __tablename__ = "segment_receipt"
+    __table_args__ = (Index("ix_segment_receipt_user_id", "user_id"),)  # 0005_fk_indexes
 
     device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
@@ -298,6 +300,7 @@ class FraudFlag(Base):
             "created_at",
             postgresql_where=text("resolved_at IS NULL"),
         ),
+        Index("ix_fraud_flag_user_id", "user_id"),  # 0005_fk_indexes
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)

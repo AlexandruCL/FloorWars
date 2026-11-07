@@ -114,6 +114,16 @@ def test_upload_bucket_is_per_user_and_counts_invalid_requests(client: TestClien
     assert client.post("/v1/segments", json={}, headers=_user_headers(client)).status_code == 422
 
 
+@pytest.mark.skipif(not TEST_VALKEY_URL, reason="FLOORWARS_TEST_VALKEY_URL not set")
+def test_malformed_json_answers_before_auth_and_spends_no_token(client: TestClient) -> None:
+    json_type = {"Content-Type": "application/json"}
+    _assert_problem(client.post("/v1/segments", content=b"{", headers=json_type), 422)
+    headers = {**_user_headers(client), **json_type}
+    for _ in range(rules.UPLOADS_PER_HOUR + 1):
+        assert client.post("/v1/segments", content=b"{", headers=headers).status_code == 422
+    assert client.post("/v1/segments", json={}, headers=headers).status_code == 422
+
+
 class _Limiter:
     def __init__(self, failure: Exception | None = None) -> None:
         self.failure = failure
