@@ -105,7 +105,7 @@ DB=fresh_check
 docker exec -e PGPASSWORD=$SU_PW "$CONTAINER" psql -h localhost -U postgres -d postgres -qc "drop database if exists $DB" >/dev/null
 docker exec -e PGPASSWORD=$SU_PW "$CONTAINER" psql -h localhost -U postgres -d postgres -qc "create database $DB" >/dev/null
 # extensions are a superuser step (the migrator has no CREATE on the database)
-psql_as $DB postgres $SU_PW "create extension postgis; create extension citext" >/dev/null
+psql_as $DB postgres $SU_PW "create extension postgis; create extension citext; create extension btree_gist" >/dev/null
 apply_roles $DB
 alembic_as $DB floorwars_migrator $MIG_PW upgrade head || fail "fresh: alembic upgrade head as migrator"
 alembic_as $DB floorwars_migrator $MIG_PW check || fail "fresh: alembic check as migrator"
