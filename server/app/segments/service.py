@@ -19,6 +19,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
+from app import leaderboards
 from app.api.problems import forbidden, service_unavailable, too_many_requests, unauthorized
 from app.auth.ratelimit import RateLimiter
 from app.segments import claim, repository, rules
@@ -77,6 +78,26 @@ class NoLeaderboards:
 
     def publish_flip(self, flip: Flip) -> None:
         pass
+
+
+class ValkeyLeaderboards:
+    """The boards and the flip events of ``app.leaderboards``."""
+
+    def __init__(self, valkey: leaderboards.Commands) -> None:
+        self._valkey = valkey
+
+    def record_verified(self, scored: ScoredSegment) -> None:
+        leaderboards.record_verified(
+            self._valkey,
+            scored.season_id,
+            scored.user_id,
+            scored.team_id,
+            scored.building_id,
+            scored.points,
+        )
+
+    def publish_flip(self, flip: Flip) -> None:
+        leaderboards.publish_flip(self._valkey, flip)
 
 
 def enforce_upload_limit(limiter: RateLimiter | None, user_id: uuid.UUID) -> None:
