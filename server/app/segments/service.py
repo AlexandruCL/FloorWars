@@ -93,9 +93,7 @@ def enforce_upload_limit(limiter: RateLimiter | None, user_id: uuid.UUID) -> Non
         raise too_many_requests("Too many uploads.", decision.retry_after_s)
 
 
-def _from_receipt(
-    receipt: Receipt, user_id: uuid.UUID, result: SegmentBatchResult
-) -> None:
+def _from_receipt(receipt: Receipt, user_id: uuid.UUID, result: SegmentBatchResult) -> None:
     """Answer a repeat from its stored outcome. A receipt of another user is not shown."""
     if receipt.user_id != user_id:
         result.rejected.append(RejectedSegment(id=receipt.id, reason=ID_TAKEN_REASON))
@@ -117,7 +115,8 @@ def _row(
     points: int,
 ) -> SegmentRow:
     # The rules passed 3 and 4 before any row is built, so the team and season exist.
-    assert ctx.team_id is not None and ctx.season_id is not None
+    if ctx.team_id is None or ctx.season_id is None:
+        raise RuntimeError("segment row without a team or season")
     return SegmentRow(
         id=item.id,
         device_id=device_id,
@@ -234,7 +233,8 @@ def upload_batch(
         if reason is not None:
             _reject(db, item, batch.device_id, user_id, reason, ctx, result)
             continue
-        assert ctx is not None
+        if ctx is None:
+            raise RuntimeError("verified segment without a context")
         segment = _accept(db, item, batch.device_id, user_id, ctx, result)
         if segment is not None:
             scored.append(segment)
@@ -248,9 +248,7 @@ def upload_batch(
 
     _notify(board or NoLeaderboards(), scored, flips)
     result.flips = [
-        BuildingFlip(
-            building_id=f.building_id, from_team=f.from_code, to_team=f.to_code, at=f.at
-        )
+        BuildingFlip(building_id=f.building_id, from_team=f.from_code, to_team=f.to_code, at=f.at)
         for f in flips
     ]
     return result
