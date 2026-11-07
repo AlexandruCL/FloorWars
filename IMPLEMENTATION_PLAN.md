@@ -93,12 +93,12 @@ Out of scope (PDF): indoor positioning of individual staircases, payments, chat,
 | Teams | One team per user per season. Teams are faculties (codes such as AC, ETC, MEC) with a colour. | PDF |
 | Building ownership | The team with the most points in that building over the rolling 7 days (by `started_at`) owns it; it is recomputed inside the claim transaction. `team_building_score` keeps season totals for standings history and leaderboards. Ties: the current owner keeps the building and a flip needs strictly more points; if nobody owns it or the owner is not among the tied top teams, the team that reached the tied total first wins. | PDF, adapted (ours) |
 | Points | Per verified stair step. No reward for speed. Diminishing returns per hour. Elevator rides and flat walking score nothing. | PDF, adapted (ours) |
-| Point values and the diminishing curve | Start at 1 point per verified step, halving after 300 steps in an hour, tune. | Ours |
+| Point values and the diminishing curve | Start at 1 point per verified step, halving after 300 steps in an hour (verified steps less than 60 minutes before or after `started_at`), tune. | Ours |
 | Floor-equivalent (display only) | 20 verified steps = 1 floor-equivalent, so a team with 200 steps in a building shows "10 floors". An estimate, about 6 steps per metre times a 3.3 m storey, tuned from real data. Never a real storey number, and no building floor data is used. Every screen that shows it says "floors (estimate)". | Ours |
 | Check-in validity | 90 minutes from check-in. Segments are attributed to the building of the active check-in. | PDF |
 | Segment attribution | A segment needs an active check-in to count. It belongs to the check-in active when the climb started, even if it ends after `valid_until` or uploads after a new check-in. | PDF, edge cases ours |
-| Per-user limits | At most 60 segment uploads per hour and at most 600 verified steps per 10 minutes. These double as anti-cheat signals. | PDF, adapted (ours) |
-| Segment bounds | `steps` between 1 and 2000; `ascent_m` between 2.0 and 120.0; a segment counts only if its pressure change matches its steps (section 3.2). Rejected segments are stored with a reason. Besides the plausibility reasons, an item is rejected as `started_at_range` (older than 7 days or more than 5 minutes ahead), `season_inactive` (no season contains `started_at`) or `no_team` (the user has no team in that season). | PDF, adapted (ours) |
+| Per-user limits | At most 60 segment uploads per hour and at most 600 verified steps per 10 minutes, counted on both sides of `started_at` so upload order cannot bypass the cap. An honest late upload can lose points to climbs already verified after it (accepted). These double as anti-cheat signals. | PDF, adapted (ours) |
+| Segment bounds | `steps` between 1 and 2000; `ascent_m` between 2.0 and 120.0; a segment counts only if its pressure change matches its steps (section 3.2). Rejected segments are stored with a reason. Besides the plausibility reasons, an item is rejected as `started_at_range` (older than 7 days or more than 5 minutes ahead), `season_inactive` (no season contains `started_at`), `no_team` (the user has no team in that season) or `overlap` (its time range overlaps a verified segment of the same user). | PDF, adapted (ours) |
 | Age | Users under 18 are not accepted. | PDF |
 | Accessibility | An accessible contribution mode (points for walking steps or for supporting actions). Copy never shames elevator use. | PDF mitigation, rules ours |
 | Safety | Safety copy in onboarding. No speed rewards. Hourly caps. | PDF |
@@ -179,8 +179,8 @@ Two more rules make a segment Other: a rise with no steps that lasts under 5 s i
 ### 3.4 Anti-cheat layers
 
 1. On-device: classifier rejects non-stair patterns before upload.
-2. Server plausibility: speed, cadence, steps per metre, pressure-steps match, rate limits.
-3. Valkey token bucket per user (60 uploads/hour, 600 verified steps/10 minutes).
+2. Server plausibility: speed, cadence, steps per metre, pressure-steps match, overlap with a verified segment, rate limits (600 verified steps/10 minutes, counted in the database on both sides of `started_at`).
+3. Valkey token bucket per user (60 uploads/hour).
 4. Per-device limits and `fraud_flag` rows reviewed in the admin panel.
 5. Signed expiring QR tokens so photographed codes cannot be reused remotely.
 6. Stretch: Play Integrity attestation against emulators and modified clients.
@@ -250,7 +250,7 @@ Third normal form. The only derived data are `team_building_score` and `building
 | `team_membership` | `user_id PK/FK`, `season_id PK/FK`, `team_id FK` | Composite PK gives exactly one team per user per season. |
 | `building` | `id int PK`, `name text`, `footprint geometry(Polygon, 4326)` with GiST | No floor count or heights: the app does not need building floor data. |
 | `checkin` | `id uuid PK`, `user_id FK`, `building_id FK`, `method text` (`qr` or `geofence`), `valid_during tstzrange` | |
-| `climb_segment` | `id uuid` (client-generated), `device_id`, `user_id FK`, `team_id FK`, `season_id FK`, `checkin_id FK`, `building_id FK`, `steps_scored smallint`, `points int`, `ascent_m real`, `vert_speed_mps real`, `steps int`, `stair_prob real`, `status text` (`verified`, `rejected`), `reject_reason text NULL`, `started_at timestamptz` (partition key, monthly), PK `(id, started_at)` | Core fact table, partitioned by month. Rejected segments are stored with their reason. Index on `checkin_id` (0005_fk_indexes). |
+| `climb_segment` | `id uuid` (client-generated), `device_id`, `user_id FK`, `team_id FK`, `season_id FK`, `checkin_id FK`, `building_id FK`, `steps_scored smallint`, `points int`, `ascent_m real`, `duration_s real`, `vert_speed_mps real`, `steps int`, `stair_prob real`, `status text` (`verified`, `rejected`), `reject_reason text NULL`, `started_at timestamptz` (partition key, monthly), PK `(id, started_at)` | Core fact table, partitioned by month. Rejected segments are stored with their reason. Index on `checkin_id` (0005_fk_indexes). |
 | `segment_receipt` | `device_id`, `id`, `user_id FK`, `status`, `reject_reason`, `steps_scored`, `created_at`, PK `(device_id, id)` | Unpartitioned, makes uploads idempotent (a partitioned table cannot enforce `UNIQUE(device_id, id)` without the partition key). Index on `user_id` (0005_fk_indexes). |
 | `fraud_flag` | `id bigint PK`, `segment_id`, `segment_started_at`, `user_id FK`, `rule text`, `created_at`, `resolved_at` | No foreign key to `climb_segment`, so dropping a partition is never blocked. Index on `user_id` (0005_fk_indexes). |
 | `team_building_score` | `season_id`, `building_id`, `team_id` (composite PK), `points int`, `steps int` | Derived. Season totals. |
@@ -274,7 +274,7 @@ Our additions (not in the PDF ER diagram): a `config` table of versioned classif
 | Index | Query it supports |
 |---|---|
 | `climb_segment (building_id, started_at DESC) WHERE status = 'verified'` (partial, per partition) | Recompute a building's owner from the last 7 days of verified climbs. |
-| `climb_segment (user_id, started_at DESC)` | Personal history screen; per-user rate checks ("more than 600 steps in 10 minutes?"). |
+| `climb_segment (user_id, started_at DESC)` | Personal history screen; per-user rate checks ("more than 600 steps within 10 minutes of `started_at`, either side?"); the overlap check. |
 | `building USING GIST (footprint)` | Geofence check-in: `ST_Contains(footprint, ST_SetSRID(ST_MakePoint(lon, lat), 4326))` or `ST_DWithin` with a 30 m tolerance. |
 | PK `team_building_score (season_id, building_id, team_id)` | Increment a team's score (`INSERT ... ON CONFLICT DO UPDATE`). |
 | PK `building_claim (season_id, building_id)` | Read or lock the current owner; render building standings in one query. |
@@ -504,7 +504,7 @@ Input validation at the API boundary (Pydantic v2 strict). Parameterised SQL onl
 - Data minimisation: raw sensor streams never leave the phone. Only per-segment features (ascent, duration, steps, vertical speed, classifier score) are uploaded. Location is used only at check-in, never tracked continuously.
 - Encryption: TLS 1.3 in transit; LUKS-encrypted database volume; encrypted pgBackRest repository; tokens in the Android Keystore.
 - Input validation: Pydantic strict models with bounded numeric ranges. Server-side plausibility rules mirror the client rules. Signed, expiring QR tokens prevent photographed codes from being reused remotely.
-- Rate limiting: Caddy per-IP limits; a Valkey token bucket per user (at most 60 segment uploads per hour and 600 verified steps per 10 minutes).
+- Rate limiting: Caddy per-IP limits; a Valkey token bucket per user (at most 60 segment uploads per hour); at most 600 verified steps per 10 minutes, counted in the database on both sides of `started_at`.
 - Health-adjacent data: activity data is personal data under GDPR. The privacy notice states purpose. Raw segments are kept for 12 months. Users can export or delete everything. Users under 18 are not accepted.
 - Safety by design: points never reward speed, only verified stair steps with a matching pressure change, with diminishing returns per hour, so the game never encourages running on stairs.
 - Admin panel: team IPs only plus admin role in the JWT.
@@ -629,10 +629,10 @@ Goal: a real stair climb in a building becomes points on the server.
 
 **Ionut**
 - Migrations: `climb_segment` (monthly range partitions, PK `(id, started_at)`, CHECKs), `segment_receipt` (idempotency), `fraud_flag`, `team_building_score`, `building_claim`, the indexes in 5.3, the next-month partition job.
-- `POST /v1/segments`: Pydantic strict batch; server plausibility rules (speed, cadence, steps/m, pressure-steps match, per-user rate); status `verified` or `rejected`; `fraud_flag` for rejects.
+- `POST /v1/segments`: Pydantic strict batch; server plausibility rules (speed, cadence, steps/m, pressure-steps match, overlap, per-user rate); status `verified` or `rejected`; `fraud_flag` for rejects.
 - Claim transaction as in 3.1, with a concurrency test (parallel climbs in one building).
 - Scoring: points per verified stair step with diminishing returns per hour.
-- Valkey: `ZINCRBY` leaderboards, `PUBLISH building_flipped`, token bucket (60 uploads/hour, 600 verified steps/10 minutes).
+- Valkey: `ZINCRBY` leaderboards, `PUBLISH building_flipped`, token bucket (60 uploads/hour).
 - `GET /v1/buildings/{id}/standings` (owner and team standings in one query) and `GET /v1/leaderboards`.
 - `GET /v1/buildings` (in the contract, not built yet): the app needs it to show building names after a check-in.
 - Fake-segment script. Replay `/traces` through the server plausibility rules as a pytest case.

@@ -80,8 +80,9 @@ Dates are when the decision was made. The rule that is in force is in the plan a
 | 2026-11-07 | Rejected segments are stored with `reject_reason`, so the history can show why. Out-of-bounds numbers are rejected per item; 422 is only for a body that is not a valid batch. | Plan 2, 5.1 |
 | 2026-11-07 | Contract 0.5.0-draft: new rejection reasons `started_at_range`, `season_inactive`, `no_team`, and a required batch-level `device_id` checked against the signed-in user (403 `device-unknown`). | `contracts/openapi.yaml`, plan 2 |
 | 2026-11-07 | Caddy caps request bodies at 1MB and ejects no replica. Replaces the 2026-10-22 "active checks" wording: active checks do not run on `dynamic` upstreams, and passive checks let two oversized anonymous requests eject both replicas. Refused connections are still retried on the next replica. | `infra/caddy/Caddyfile` |
+| 2026-11-07 | Contract 0.6.0-draft: the caps count both sides of `started_at` (600 verified steps within 10 minutes, the 300-step points curve within 60 minutes), so upload order cannot bypass them, and `overlap` is a new rejection reason for a climb whose time range overlaps a verified climb of the same user. Accepted trade-off: an honest late upload can lose points, because climbs already verified after it count too. | `contracts/openapi.yaml`, plan 2 |
 
-Starting values are ours and tunable from real data: 1 point per verified step, halving after 300 steps in an hour, at most 600 verified steps per 10 minutes per user, 20 steps per floor-equivalent.
+Starting values are ours and tunable from real data: 1 point per verified step, halving after 300 steps in an hour, at most 600 verified steps per 10 minutes per user (both counted on both sides of `started_at`), 20 steps per floor-equivalent.
 
 ## Repository layout
 

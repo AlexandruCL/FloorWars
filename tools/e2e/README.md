@@ -24,4 +24,6 @@ Needs `--qr-token-file`, because the segments belong to the check-in. Right afte
 
 The fake segments come from `tools/fake_segments` and are synthetic test data, but the accepted one adds real points to your team in that building. Run it against the local test stack or the VM only on your own account.
 
+Rerunning `--upload` on the same account too soon fails step 2 with `overlap`, because the new climb overlaps the verified one from the previous run. That climb lasts up to 3 minutes: wait that long, or use another account.
+
 Tests of the flow against an in-memory fake of the endpoints: `python -m pytest -q tools/e2e`.
