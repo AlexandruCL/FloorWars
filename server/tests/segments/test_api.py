@@ -144,6 +144,15 @@ def test_extreme_speed_is_stored_as_a_rejected_row(world: World, bad: dict[str, 
     assert scalar(world.client, "SELECT count(*) FROM team_building_score") == 0
 
 
+def test_a_tiny_stair_prob_is_stored_as_zero_and_the_climb_verified(world: World) -> None:
+    # Inside the 0 to 1 rule, too small for a real: the cast must not lose the batch.
+    item = climb(stair_prob=1e-50)
+    result = world.climber().ok(item)
+    assert [a["id"] for a in result["accepted"]] == [item["id"]]
+    assert scalar(world.client, "SELECT status FROM climb_segment") == "verified"
+    assert scalar(world.client, "SELECT stair_prob FROM climb_segment") == 0.0
+
+
 @pytest.mark.parametrize(
     ("bad", "reason"),
     [

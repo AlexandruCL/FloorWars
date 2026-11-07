@@ -153,7 +153,8 @@ def check_item(
 
 def storable_real(value: float) -> float:
     """``value`` as a PostgreSQL ``real`` accepts it: a finite float8 outside its range makes the
-    cast fail, which would lose the whole batch. Only a rejected row can hold such a value."""
+    cast fail, which would lose the whole batch. Any stored row can hold such a value: a rejected
+    one a huge or tiny speed, a verified one a tiny ``stair_prob`` (it passes the 0 to 1 rule)."""
     if not math.isfinite(value):
         return value
     if abs(value) > 3.4e38:

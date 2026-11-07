@@ -156,7 +156,7 @@ def _row(
         ascent_m=item.ascent_m,
         duration_s=item.duration_s,
         vert_speed_mps=rules.storable_real(item.vert_speed_mps),
-        stair_prob=item.stair_prob,
+        stair_prob=rules.storable_real(item.stair_prob),
         classifier_version=item.classifier_version,
         started_at=item.started_at,
     )
