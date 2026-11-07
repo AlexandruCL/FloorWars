@@ -19,6 +19,7 @@ from tests.segments.api_world import (
     TSTZRANGE_SQL,
     World,
     climb,
+    climb_at,
     clock_hour,
     make_world,
     scalar,
@@ -98,8 +99,8 @@ def test_items_run_in_started_at_order_whatever_the_request_order(world: World) 
         "vert_speed_mps": 0.4,
     }
     hour = clock_hour()
-    late = climb(started_at=(hour + timedelta(minutes=40)).isoformat(), **big)
-    early = climb(started_at=(hour + timedelta(minutes=10)).isoformat(), **big)
+    late = climb_at(hour + timedelta(minutes=40), **big)
+    early = climb_at(hour + timedelta(minutes=10), **big)
     accepted = {a["id"]: a["points"] for a in user.ok(late, early)["accepted"]}
     assert accepted == {early["id"]: 200, late["id"]: 150}
     assert scalar(world.client, "SELECT points FROM team_building_score") == 350
@@ -115,9 +116,9 @@ def test_hourly_points_count_earlier_batches(world: World) -> None:
         "vert_speed_mps": 0.4,
     }
     hour = clock_hour()
-    user.ok(climb(started_at=(hour + timedelta(minutes=10)).isoformat(), **big))
+    user.ok(climb_at(hour + timedelta(minutes=10), **big))
     # 280 earlier in the hour, so 20 full and 40 halved.
-    later = climb(started_at=(hour + timedelta(minutes=40)).isoformat())
+    later = climb_at(hour + timedelta(minutes=40))
     assert user.ok(later)["accepted"][0]["points"] == 40
 
 
@@ -163,9 +164,9 @@ def test_upload_order_cannot_bypass_the_hourly_halving(world: World) -> None:
         "vert_speed_mps": 0.4,
     }
     hour = clock_hour()
-    user.ok(climb(started_at=(hour + timedelta(minutes=40)).isoformat(), **big))
+    user.ok(climb_at(hour + timedelta(minutes=40), **big))
     # 280 later in the hour, so 20 full and 40 halved.
-    earlier = climb(started_at=(hour + timedelta(minutes=10)).isoformat())
+    earlier = climb_at(hour + timedelta(minutes=10))
     assert user.ok(earlier)["accepted"][0]["points"] == 40
 
 

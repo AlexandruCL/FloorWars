@@ -24,6 +24,11 @@ def _ago(minutes: float) -> datetime:
     return utcnow() - timedelta(minutes=minutes)
 
 
+def climb_at(when: datetime, **overrides: Any) -> dict[str, Any]:
+    """``climb`` starting at ``when``."""
+    return climb(started_at=when.isoformat(), **overrides)
+
+
 def clock_hour(hours_ago: int = 1) -> datetime:
     """The start of a whole UTC hour in the past. Points count per clock hour, so a test summing
     steps must not depend on the minute it runs in. ``hours_ago=1`` is inside the default check-in

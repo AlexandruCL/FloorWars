@@ -184,7 +184,7 @@ def _check(
     if reason is not None:
         return reason, None
     ctx = repository.load_context(db, user_id, item.checkin_id, item.started_at)
-    reason = rules.check_before_limits(item, ctx, user_id=user_id, now=now)
+    reason = rules.check_state_and_physics(item, ctx, user_id)
     if reason is not None:
         return reason, ctx
     recent = repository.verified_steps_around(db, user_id, item.started_at, rules.RATE_WINDOW)
@@ -209,7 +209,7 @@ def _is_flagged(
         return False
     if reason == "rate_limit":
         earlier = repository.verified_steps_before(db, user_id, item.started_at, rules.RATE_WINDOW)
-        return earlier + item.steps > rules.VERIFIED_STEPS_PER_10_MIN
+        return rules.over_step_cap(item, earlier)
     if reason == "overlap":
         return repository.overlaps_verified(
             db, user_id, item.started_at, item.duration_s, device_id=device_id
@@ -294,16 +294,7 @@ def upload_batch(
 ) -> SegmentBatchResult:
     """Process one batch in one transaction and answer per item."""
     now = now or datetime.now(UTC)
-    try:
-        locked = repository.lock_user(db, user_id)
-    except repository.UserBusy:
-        # Expected when several batches of one user queue up; nothing is stored, the client retries.
-        logger.info("upload waited too long for the user lock")
-        raise service_unavailable(
-            "Another upload of yours is still running.",
-            retry_after_s=repository.LOCK_TIMEOUT_MS // 1000,
-        ) from None
-    if not locked:
+    if not repository.lock_user(db, user_id):
         raise unauthorized("Invalid or expired access token.")
     if not repository.device_belongs(db, user_id, batch.device_id):
         raise forbidden("This device is not registered to you.", type_=DEVICE_UNKNOWN)

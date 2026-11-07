@@ -19,7 +19,16 @@ from sqlalchemy.dialects.postgresql import Range
 from app.segments import repository, service
 from app.segments.schemas import SegmentBatch, SegmentBatchResult
 from tests.helpers import TEST_DB_URL, TEST_VALKEY_URL
-from tests.segments.api_world import Climber, World, climb, clock_hour, make_world, scalar, utcnow
+from tests.segments.api_world import (
+    Climber,
+    World,
+    climb,
+    climb_at,
+    clock_hour,
+    make_world,
+    scalar,
+    utcnow,
+)
 
 pytestmark = pytest.mark.skipif(not TEST_VALKEY_URL, reason="FLOORWARS_TEST_VALKEY_URL not set")
 
@@ -66,8 +75,7 @@ def world(make_app: Callable[..., TestClient]) -> World:
     return make_world(make_app())
 
 
-def _at(when: datetime, **overrides: Any) -> dict[str, Any]:
-    return climb(started_at=when.isoformat(), **overrides)
+_at = climb_at
 
 
 def _checked_in(world: World, now: datetime) -> Climber:
@@ -231,7 +239,7 @@ def test_a_batch_waiting_too_long_for_the_user_lock_answers_503_and_stores_nothi
             )
             waited = user.post(item, key="waits")
             assert waited.status_code == 503
-            assert waited.headers["Retry-After"] == "1"
+            assert waited.headers["Retry-After"] == "5"
     finally:
         engine.dispose()
     assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 0

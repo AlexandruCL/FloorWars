@@ -20,7 +20,6 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -40,29 +39,19 @@ from app.segments.rules import DURATION_MAX_S, OVERLAP_TOLERANCE
 # Far above a normal batch (about 1 s), and below the 30 s wait for a pooled connection, so batches
 # queued on one user cannot starve other users of connections.
 LOCK_TIMEOUT_MS = 5000
-LOCK_NOT_AVAILABLE = "55P03"
-
-
-class UserBusy(Exception):
-    """Another batch of the user held its lock longer than ``LOCK_TIMEOUT_MS``. The transaction
-    has failed and must be rolled back."""
 
 
 def lock_user(db: Session, user_id: uuid.UUID) -> bool:
     """``SELECT ... FROM "user" WHERE id = :id FOR UPDATE``. False if the user is gone.
 
-    Waits at most ``LOCK_TIMEOUT_MS`` (``UserBusy`` beyond it). Only this wait is limited: later
+    Waits at most ``LOCK_TIMEOUT_MS``; beyond it PostgreSQL raises ``lock_not_available``, which
+    ``app.api.problems`` answers with 503 and ``Retry-After``. Only this wait is limited: later
     locks of the transaction (claim and score rows, shared with other users) keep the previous
     setting.
     """
     previous = db.scalar(select(func.current_setting("lock_timeout")))
     db.execute(select(func.set_config("lock_timeout", f"{LOCK_TIMEOUT_MS}ms", True)))
-    try:
-        found = db.scalars(select(User.id).where(User.id == user_id).with_for_update()).first()
-    except OperationalError as exc:
-        if getattr(exc.orig, "sqlstate", None) == LOCK_NOT_AVAILABLE:
-            raise UserBusy from exc
-        raise
+    found = db.scalars(select(User.id).where(User.id == user_id).with_for_update()).first()
     db.execute(select(func.set_config("lock_timeout", previous, True)))
     return found is not None
 

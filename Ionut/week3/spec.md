@@ -45,7 +45,9 @@ Indexes on `climb_segment` (created on the parent): `(building_id, started_at DE
 
 **Points** for a verified segment with `s` steps and `h` = the user's verified steps with `started_at` in the same UTC clock hour as this segment's (earlier items of the same batch included; a fixed hour makes a verified segment's points independent of upload order, apart from rounding per climb; whether it passes rule 9 still depends on order): `full = max(0, min(s, 300 - h))`, `points = floor(full * 1.0 + (s - full) * 0.5)`. `steps_scored = s` for verified, 0 for rejected.
 
-## 4. Rules and reasons (pure function `rules.check_item(item, ctx)`; fixed order, first failure wins)
+## 4. Rules and reasons (pure functions; fixed order, first failure wins)
+
+`rules.check_item` runs all of them. The service runs the same parts with its queries in between: `check_bounds` (1, 2), `check_state_and_physics` (3 to 7), `check_limits` (8, 9).
 
 1. `started_at_range`: `started_at` older than 7 days or more than 5 minutes in the future.
 2. `steps_range`: `steps` outside 1..2000. `ascent_range`: `ascent_m` outside 2.0..120.0. `duration`: `duration_s` outside 5..180 (NaN or infinity count as outside). `stair_prob_range`: `stair_prob` outside 0..1 or not finite (added after `duration`, same fraud flag as the other range rules). A `stair_prob` in range but too small for `real` (below 1e-37) passes and is stored as 0. `classifier_version` longer than 64 characters or with control characters is a 422 for the batch (contract `maxLength`/`pattern`).
