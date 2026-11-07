@@ -155,6 +155,7 @@ def overlaps_verified(
 
     Segments that only touch at an end do not overlap (``rules.OVERLAP_TOLERANCE``). A verified
     segment lasts at most ``rules.DURATION_MAX_S``, which bounds the range of ``started_at`` read.
+    Lowering that constant hides longer climbs already stored, until they leave the upload range.
     """
     end = started_at + timedelta(seconds=duration_s)
     stored_end = ClimbSegment.started_at + ClimbSegment.duration_s * literal_column(
@@ -178,8 +179,8 @@ def overlaps_verified(
 def insert_segment(db: Session, row: SegmentRow) -> bool:
     """Insert one row; False if ``(id, started_at)`` already exists (nothing is changed then).
 
-    That happens when a segment arrives under another device id, so its receipt does not match.
-    ``received_at`` is left to the database default.
+    ``segment_exists`` catches a resend earlier, so this only happens when a concurrent upload
+    stores the same segment first. ``received_at`` is left to the database default.
     """
     stmt = (
         pg_insert(ClimbSegment)

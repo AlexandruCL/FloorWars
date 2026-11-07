@@ -851,7 +851,7 @@ components:
       properties:
         accepted:
           type: array
-          description: 'Inferred: accepted segments, including repeats of already stored ones.'
+          description: 'Inferred: accepted segments, including repeats from the device that stored them. A resend of a stored segment from another device is rejected as no_checkin.'
           items: { $ref: '#/components/schemas/AcceptedSegment' }
         rejected:
           type: array
@@ -876,7 +876,7 @@ components:
         points:
           type: integer
           minimum: 0
-          description: 'Inferred: points added by this segment after the hourly diminishing returns. Omitted for a repeat of an already stored segment.'
+          description: 'Inferred: points added by this segment after the hourly diminishing returns. Omitted for a repeat from the device that stored the segment.'
 
     RejectedSegment:
       type: object

@@ -560,7 +560,7 @@ export interface components {
             segments: components["schemas"]["Segment"][];
         };
         SegmentBatchResult: {
-            /** @description Inferred: accepted segments, including repeats of already stored ones. */
+            /** @description Inferred: accepted segments, including repeats from the device that stored them. A resend of a stored segment from another device is rejected as no_checkin. */
             accepted: components["schemas"]["AcceptedSegment"][];
             /** @description Inferred: rejected segments with the failed rule. */
             rejected: components["schemas"]["RejectedSegment"][];
@@ -573,7 +573,7 @@ export interface components {
             id: string;
             /** @description Inferred: verified stair steps credited for this segment (steps_scored in the data model). */
             steps_scored: number;
-            /** @description Inferred: points added by this segment after the hourly diminishing returns. Omitted for a repeat of an already stored segment. */
+            /** @description Inferred: points added by this segment after the hourly diminishing returns. Omitted for a repeat from the device that stored the segment. */
             points?: number;
         };
         /** @description Inferred: the shape of a rejected item. */

@@ -1,4 +1,6 @@
-"""Upload order earns nothing, one person climbs once at a time, a resend never counts as a climb.
+"""Newest-first upload earns nothing, one person climbs once at a time, a resend is not a climb.
+
+Upload order can still change the points total (see the known limit below).
 
 Timestamps are fixed once per test: ``api_world.climb(minutes_ago=...)`` reads the clock per call,
 and that drift would shrink the gaps the replays depend on.
@@ -136,6 +138,25 @@ def test_replaying_long_climbs_newest_first_hits_the_rate_limit(world: World) ->
     assert scalar(world.client, "SELECT steps FROM team_building_score") == 2700
     flags = "SELECT count(*) FROM fraud_flag WHERE rule = 'rate_limit'"
     assert scalar(world.client, flags) == 15
+
+
+def test_known_limit_upload_order_can_still_change_the_points_total(world: World) -> None:
+    """Pins a documented limit (README decision log), not a goal: points are fixed at upload."""
+    now = utcnow()
+    climb_300 = {"steps": 300, "ascent_m": 50.0, "duration_s": 150.0, "vert_speed_mps": 1 / 3}
+
+    def climbs() -> list[dict[str, Any]]:
+        return [_at(now - timedelta(minutes=m), **climb_300) for m in (62, 31, 1)]
+
+    oldest, middle, newest = climbs()
+    accepted, rejected = _replay(_checked_in(world, now), [oldest, middle, newest])
+    assert rejected == {}
+    assert sum(accepted.values()) == 600
+
+    oldest, middle, newest = climbs()
+    accepted, rejected = _replay(_checked_in(world, now), [oldest, newest, middle])
+    assert rejected == {}
+    assert sum(accepted.values()) == 750
 
 
 # Overlap.
