@@ -92,7 +92,10 @@ export const segment: Schemas['Segment'] = {
   stair_prob: 0.93,
   classifier_version: 'rules-1',
 };
-export const batch: JsonBody<'/segments', 'post'> = { segments: [segment] };
+export const batch: JsonBody<'/segments', 'post'> = {
+  device_id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+  segments: [segment],
+};
 export const segmentHeaders: paths['/segments']['post']['parameters']['header'] =
   { 'Idempotency-Key': 'batch-1' };
 // @ts-expect-error Idempotency-Key is required

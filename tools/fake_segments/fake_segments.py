@@ -75,9 +75,7 @@ def _elevator_values(rng):
     ascent = round(rng.uniform(6.0, 40.0), 1)
     speed = rng.uniform(1.2, 2.5)
     duration = round(ascent / speed, 1)
-    steps = max(
-        STEPS_MIN, round(ascent * rng.uniform(0.0, 0.5))
-    )  # under 1 step per metre
+    steps = max(STEPS_MIN, round(ascent * rng.uniform(0.0, 0.5)))  # under 1 step per metre
     return ascent, duration, steps, round(rng.uniform(0.01, 0.2), 2)
 
 
@@ -137,20 +135,21 @@ def make_segments(kind, rng, *, count, checkin_id, building_id, start):
     return segments
 
 
-def make_batches(segments, batch_size, rng):
-    """Split into SegmentBatch bodies, each with a new Idempotency-Key."""
+def make_batches(segments, batch_size, rng, device_id=None):
+    """Split into SegmentBatch bodies (contract 0.5.0: device_id), each with a new Idempotency-Key."""
+    device_id = device_id or make_uuid(rng)
     if not 1 <= batch_size <= MAX_BATCH:
         raise ValueError(f"batch size must be 1 to {MAX_BATCH}")
     return [
         {
             "idempotency_key": make_uuid(rng),
-            "body": {"segments": segments[i : i + batch_size]},
+            "body": {"device_id": device_id, "segments": segments[i : i + batch_size]},
         }
         for i in range(0, len(segments), batch_size)
     ]
 
 
-def make_batch(kind, rng, *, count, checkin_id, building_id, start):
+def make_batch(kind, rng, *, count, checkin_id, building_id, start, device_id=None):
     """A single SegmentBatch body with count segments."""
     segs = make_segments(
         kind,
@@ -160,7 +159,7 @@ def make_batch(kind, rng, *, count, checkin_id, building_id, start):
         building_id=building_id,
         start=start,
     )
-    return {"segments": segs}
+    return {"device_id": device_id or make_uuid(rng), "segments": segs}
 
 
 def passes_scoring_rule(seg):
@@ -179,9 +178,7 @@ def post_batch(base_url, token, key, body):
     """POST one batch. Returns (status, parsed JSON or raw text). Connect 10 s, read 20 s."""
     parts = urlsplit(base_url.rstrip("/") + "/segments")
     conn_cls = (
-        http.client.HTTPSConnection
-        if parts.scheme == "https"
-        else http.client.HTTPConnection
+        http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
     )
     conn = conn_cls(parts.hostname, parts.port, timeout=CONNECT_TIMEOUT_S)
     try:
@@ -234,9 +231,7 @@ def parse_start(value, seeded):
 
 
 def build_parser():
-    p = argparse.ArgumentParser(
-        description="Post fake climb segments to POST /segments."
-    )
+    p = argparse.ArgumentParser(description="Post fake climb segments to POST /segments.")
     p.add_argument(
         "--base-url",
         default=DEFAULT_BASE_URL,
@@ -255,8 +250,9 @@ def build_parser():
     )
     p.add_argument("--checkin-id", default=None, help="check-in UUID (default: random)")
     p.add_argument(
-        "--count", type=int, default=5, help="segments to generate (default 5)"
+        "--device-id", default=None, help="device UUID registered at sign-in (default: random)"
     )
+    p.add_argument("--count", type=int, default=5, help="segments to generate (default 5)")
     p.add_argument(
         "--batch-size",
         type=int,
@@ -264,18 +260,14 @@ def build_parser():
         help=f"segments per request, 1-{MAX_BATCH}",
     )
     p.add_argument("--seed", type=int, default=None, help="seed for a reproducible run")
-    p.add_argument(
-        "--kind", choices=KINDS, default="stairs", help="segment kind (default stairs)"
-    )
+    p.add_argument("--kind", choices=KINDS, default="stairs", help="segment kind (default stairs)")
     p.add_argument(
         "--start",
         default=None,
         help="first started_at: ISO time or 'now' "
         "(default now; with --seed a fixed 2026-11-02T10:00:00Z)",
     )
-    p.add_argument(
-        "--dry-run", action="store_true", help="print the batches as JSON, send nothing"
-    )
+    p.add_argument("--dry-run", action="store_true", help="print the batches as JSON, send nothing")
     p.add_argument(
         "--repeat-last",
         action="store_true",
@@ -307,7 +299,7 @@ def main(argv=None):
         building_id=args.building_id,
         start=start,
     )
-    batches = make_batches(segments, args.batch_size, rng)
+    batches = make_batches(segments, args.batch_size, rng, args.device_id)
 
     if args.dry_run:
         print(json.dumps({"batches": batches}, indent=2))
