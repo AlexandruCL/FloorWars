@@ -6,7 +6,7 @@ on the caller's connection, so it sees the earlier items of the same transaction
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import and_, exists, func, insert, literal, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -122,14 +122,17 @@ def load_context(
     )
 
 
-def verified_steps_between(db: Session, user_id: uuid.UUID, start: datetime, end: datetime) -> int:
-    """Verified steps of the user with ``started_at`` in ``(start, end]``."""
+def verified_steps_around(db: Session, user_id: uuid.UUID, at: datetime, window: timedelta) -> int:
+    """Verified steps of the user with ``started_at`` in ``(at - window, at + window)``.
+
+    Both sides count, so uploading the newest climb first cannot bypass a limit.
+    """
     total = db.scalar(
         select(func.coalesce(func.sum(ClimbSegment.steps_scored), 0)).where(
             ClimbSegment.user_id == user_id,
             ClimbSegment.status == STATUS_VERIFIED,
-            ClimbSegment.started_at > start,
-            ClimbSegment.started_at <= end,
+            ClimbSegment.started_at > at - window,
+            ClimbSegment.started_at < at + window,
         )
     )
     return int(total or 0)

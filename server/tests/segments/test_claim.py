@@ -581,7 +581,6 @@ def test_different_buildings_do_not_block_each_other(engine: Engine, arena: Aren
 def test_batches_of_one_user_are_serialised_by_the_user_lock(engine: Engine, arena: Arena) -> None:
     """With the user lock, the second batch's hourly steps include the first batch's segment."""
     user_id = arena.players["AC"].user_id
-    start, end = arena.now - timedelta(hours=1), arena.now
     first_holds_lock = threading.Event()
     first_may_commit = threading.Event()
     seen: dict[str, int] = {}
@@ -598,7 +597,9 @@ def test_batches_of_one_user_are_serialised_by_the_user_lock(engine: Engine, are
         assert first_holds_lock.wait(JOIN_TIMEOUT_S)
         with Session(engine) as db:
             assert repository.lock_user(db, user_id)
-            seen["steps"] = repository.verified_steps_between(db, user_id, start, end)
+            seen["steps"] = repository.verified_steps_around(
+                db, user_id, arena.now, timedelta(hours=1)
+            )
             db.commit()
 
     threads = (threading.Thread(target=first), threading.Thread(target=second))

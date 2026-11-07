@@ -141,7 +141,8 @@ def check_item(
 ) -> RejectReason | None:
     """The first failed rule, or None for a verified segment.
 
-    ``recent_verified_steps``: the user's verified steps in ``(started_at - 10 min, started_at]``.
+    ``recent_verified_steps``: the user's verified steps with ``started_at`` in
+    ``(started_at - 10 min, started_at + 10 min)``.
     """
     reason = check_bounds(item, now) or _check_state(item, ctx, user_id) or _check_physics(item)
     if reason is not None:

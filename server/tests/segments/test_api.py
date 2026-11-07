@@ -127,6 +127,55 @@ def test_600_verified_steps_per_ten_minutes(world: World) -> None:
     assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 3
 
 
+def test_upload_order_cannot_bypass_the_rate_limit(world: World) -> None:
+    user = world.climber()
+    big: dict[str, Any] = {
+        "steps": 300,
+        "ascent_m": 60.0,
+        "duration_s": 120.0,
+        "vert_speed_mps": 0.5,
+    }
+    newest, middle, oldest = (climb(minutes_ago=m, **big) for m in (3, 6, 9))
+    user.ok(newest)
+    user.ok(middle)
+    assert user.ok(oldest)["rejected"] == [{"id": oldest["id"], "reason": "rate_limit"}]
+    assert scalar(world.client, "SELECT steps FROM team_building_score") == 600
+
+
+def test_upload_order_cannot_bypass_the_hourly_halving(world: World) -> None:
+    user = world.climber()
+    big: dict[str, Any] = {
+        "steps": 280,
+        "ascent_m": 56.0,
+        "duration_s": 140.0,
+        "vert_speed_mps": 0.4,
+    }
+    user.ok(climb(minutes_ago=1, **big))
+    # 280 later, so 20 full and 40 halved.
+    assert user.ok(climb(minutes_ago=30))["accepted"][0]["points"] == 40
+
+
+def test_the_windows_are_open_at_both_ends(world: World) -> None:
+    user = world.climber()
+    big: dict[str, Any] = {
+        "steps": 540,
+        "ascent_m": 100.0,
+        "duration_s": 180.0,
+        "vert_speed_mps": 0.55,
+    }
+    base = utcnow() - timedelta(minutes=30)
+
+    def at(delta: timedelta, **fields: Any) -> dict[str, Any]:
+        return climb(started_at=(base + delta).isoformat(), **fields)
+
+    assert user.ok(at(timedelta(minutes=10), **big))["accepted"]
+    # Exactly 10 minutes before the first: neither counts the other.
+    assert user.ok(at(timedelta(0), **big))["accepted"]
+    # Inside both windows.
+    between = at(timedelta(minutes=5))
+    assert user.ok(between)["rejected"] == [{"id": between["id"], "reason": "rate_limit"}]
+
+
 @pytest.mark.parametrize(
     "bad",
     [

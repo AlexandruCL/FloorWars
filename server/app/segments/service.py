@@ -170,9 +170,7 @@ def _check(
     if reason is not None:
         return reason, None
     ctx = repository.load_context(db, user_id, item.checkin_id, item.started_at)
-    recent = repository.verified_steps_between(
-        db, user_id, item.started_at - rules.RATE_WINDOW, item.started_at
-    )
+    recent = repository.verified_steps_around(db, user_id, item.started_at, rules.RATE_WINDOW)
     reason = rules.check_item(item, ctx, user_id=user_id, now=now, recent_verified_steps=recent)
     return reason, ctx
 
@@ -203,9 +201,7 @@ def _accept(
     result: SegmentBatchResult,
 ) -> ScoredSegment | None:
     """Store and score a verified item. None when another device already stored this segment."""
-    prior = repository.verified_steps_between(
-        db, user_id, item.started_at - rules.POINTS_WINDOW, item.started_at
-    )
+    prior = repository.verified_steps_around(db, user_id, item.started_at, rules.POINTS_WINDOW)
     points = claim.points_for(item.steps, prior)
     row = _row(item, device_id, user_id, ctx, None, points)
     if not repository.insert_segment(db, row):
