@@ -97,7 +97,7 @@ Out of scope (PDF): indoor positioning of individual staircases, payments, chat,
 | Floor-equivalent (display only) | 20 verified steps = 1 floor-equivalent, so a team with 200 steps in a building shows "10 floors". An estimate, about 6 steps per metre times a 3.3 m storey, tuned from real data. Never a real storey number, and no building floor data is used. Every screen that shows it says "floors (estimate)". | Ours |
 | Check-in validity | 90 minutes from check-in. Segments are attributed to the building of the active check-in. | PDF |
 | Segment attribution | A segment needs an active check-in to count. It belongs to the check-in active when the climb started, even if it ends after `valid_until` or uploads after a new check-in. | PDF, edge cases ours |
-| Per-user limits | At most 60 segment uploads per hour and at most 600 verified steps per 10 minutes, counted on both sides of `started_at` so upload order cannot bypass the cap. An honest late upload can lose points to climbs already verified after it (accepted). These double as anti-cheat signals. | PDF, adapted (ours) |
+| Per-user limits | At most 60 segment uploads per hour and at most 600 verified steps per 10 minutes, counted on both sides of `started_at` so upload order cannot bypass the cap. The points total can still depend on upload order. An honest late upload can lose points to climbs already verified after it (decided). Open for the owners to review: it can also be rejected as `rate_limit` with a fraud flag, and two phones recording one climb under different ids get `overlap` with a flag (README decisions, 2026-11-07). These double as anti-cheat signals. | PDF, adapted (ours) |
 | Segment bounds | `steps` between 1 and 2000; `ascent_m` between 2.0 and 120.0; a segment counts only if its pressure change matches its steps (section 3.2). Rejected segments are stored with a reason. Besides the plausibility reasons, an item is rejected as `started_at_range` (older than 7 days or more than 5 minutes ahead), `season_inactive` (no season contains `started_at`), `no_team` (the user has no team in that season) or `overlap` (its time range overlaps a verified segment of the same user). | PDF, adapted (ours) |
 | Age | Users under 18 are not accepted. | PDF |
 | Accessibility | An accessible contribution mode (points for walking steps or for supporting actions). Copy never shames elevator use. | PDF mitigation, rules ours |
@@ -139,7 +139,7 @@ PostgreSQL 18 + PostGIS       Valkey: ZINCRBY leaderboards, PUBLISH building_fli
 4. The segment is stored in the Room outbox with a client UUID.
 5. The sync worker sends `POST /v1/segments` as a batch with an `Idempotency-Key`.
 6. The API validates schema and plausibility rules.
-7. One transaction: lock the user row, check `device_id` belongs to the user, then per item in ascending `started_at` insert a `segment_receipt` (`ON CONFLICT DO NOTHING`; a known receipt is answered from it), run the rules and insert the segment.
+7. One transaction: lock the user row, check `device_id` belongs to the user, then per item in ascending `started_at` insert a `segment_receipt` (`ON CONFLICT DO NOTHING`; a known receipt is answered from it, and a stored segment sent from another device is rejected as `no_checkin`), run the rules and insert the segment.
 8. Upsert `team_building_score` once per (season, building, team) in ascending order (+points).
 9. For each affected (season, building) in ascending order: insert the `building_claim` row if missing, `SELECT ... FOR UPDATE` it, recompute the owner from verified segments of the rolling 7 days (tie rule in section 2), write `game_event` on a flip. Commit.
 10. After the commit, best effort: `ZINCRBY` season leaderboards, `PUBLISH building_flipped`. A Valkey error is logged and ignored; leaderboards are rebuildable.
@@ -338,7 +338,7 @@ Segment upload body (one item, ours):
 
 Raw pressure or step streams never appear in any request.
 
-Error handling rules (PDF): explicit timeouts (connect 10 s, read 20 s). Never retry 4xx, except 429 after its `Retry-After`. Retry 5xx and network errors with exponential backoff and jitter. A duplicate UUID is treated as success.
+Error handling rules (PDF): explicit timeouts (connect 10 s, read 20 s). Never retry 4xx, except 429 after its `Retry-After`. Retry 5xx and network errors with exponential backoff and jitter. A duplicate UUID from the same device is treated as success; a resend of a stored segment from another device is rejected as `no_checkin`.
 
 ---
 
@@ -489,7 +489,7 @@ The team implements authentication; libraries are used only for cryptographic pr
 
 - Every write goes into a local outbox (Room/SQLite) with a client-generated UUID that doubles as the idempotency key.
 - A background sync job (WorkManager) retries with exponential backoff and jitter, on unmetered or validated networks where appropriate.
-- The server treats duplicate UUIDs as success (`INSERT ... ON CONFLICT DO NOTHING`), so a retry after a lost response never double-counts.
+- The server treats duplicate UUIDs from the same device as success (`INSERT ... ON CONFLICT DO NOTHING`), so a retry after a lost response never double-counts. A resend of a stored segment from another device is rejected as `no_checkin` and scores nothing.
 - Reads are cached with a timestamp and shown with a "last updated" label when offline.
 - Timeouts are explicit (connect 10 s, read 20 s). 4xx is never retried, except 429 after its `Retry-After`; 5xx and network errors are.
 
