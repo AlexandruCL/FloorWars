@@ -38,10 +38,11 @@ def ensure_partitions(
     for index in range(first - 1, first + months_ahead + 1):
         start, end = _month_start(current.year, index), _month_start(current.year, index + 1)
         name = f"climb_segment_{start:%Y%m}"
-        # Name and bounds come from the dates above; DDL takes no bound parameters.
+        # Name and bounds come from the dates above; DDL takes no bound parameters. Qualified
+        # because infra/sql/roles.sql puts pg_catalog first in the superuser's search_path.
         conn.execute(
             text(
-                f"CREATE TABLE IF NOT EXISTS {name} PARTITION OF climb_segment "
+                f"CREATE TABLE IF NOT EXISTS public.{name} PARTITION OF public.climb_segment "
                 f"FOR VALUES FROM ('{start:%Y-%m-%d} 00:00:00+00') "
                 f"TO ('{end:%Y-%m-%d} 00:00:00+00')"
             )

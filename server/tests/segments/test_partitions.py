@@ -77,6 +77,13 @@ def test_ensure_is_idempotent(conn: Connection) -> None:
     assert _partitions(conn) == before
 
 
+def test_partitions_go_to_public_whatever_the_search_path(conn: Connection) -> None:
+    # infra/sql/roles.sql sets this search_path for the superuser, who could run the CLI.
+    conn.execute(text("SET LOCAL search_path = pg_catalog, public"))
+    names = ensure_partitions(conn, months_ahead=0, now=FAR)
+    assert _partitions(conn) >= set(names)
+
+
 def test_months_ahead_controls_the_range(conn: Connection) -> None:
     assert ensure_partitions(conn, months_ahead=0, now=FAR) == [
         "climb_segment_203105",
