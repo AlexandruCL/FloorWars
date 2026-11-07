@@ -56,6 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.access_tokens = build_access_tokens(settings)
     app.state.mail_sender = build_mail_sender(settings)
     # None without FLOORWARS_VALKEY_URL: POST /v1/auth/otp then answers 503 (fails closed).
+    app.state.valkey = valkey
     app.state.rate_limiter = ValkeyRateLimiter(valkey) if valkey is not None else None
     install_problem_handlers(app)
 

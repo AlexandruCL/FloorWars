@@ -7,9 +7,16 @@ below. To add one (for example ``teams.py`` or ``checkins.py``): create the modu
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth, checkins, teams
+from app.api.v1 import auth, buildings, checkins, leaderboards, segments, teams
 
-_FEATURE_ROUTERS = (auth.router, teams.router, checkins.router)
+_FEATURE_ROUTERS = (
+    auth.router,
+    teams.router,
+    checkins.router,
+    segments.router,
+    buildings.router,
+    leaderboards.router,
+)
 
 router = APIRouter(prefix="/v1")
 for _feature in _FEATURE_ROUTERS:
