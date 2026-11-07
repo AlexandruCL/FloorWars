@@ -544,6 +544,11 @@ export interface components {
             classifier_version: string;
         };
         SegmentBatch: {
+            /**
+             * Format: uuid
+             * @description Inferred: the device id the app sent in DeviceInfo at sign-in. Neither the token nor a segment carries it. The server checks that it belongs to the signed-in user (403 otherwise) and keys idempotency on (device_id, segment id).
+             */
+            device_id: string;
             /** @description Inferred: the 100-item batch limit. */
             segments: components["schemas"]["Segment"][];
         };
@@ -573,12 +578,14 @@ export interface components {
              *     pressure_steps_mismatch: steps per metre of ascent outside 4 to 8 (elevator, flat walking, shaking).
              *     ascent_range: ascent_m outside 2.0 to 120.0. steps_range: steps outside 1 to 2000.
              *     speed: vertical speed outside 0.1 to 0.9 m/s. cadence: implausible step rate.
+             *     started_at_range: started_at older than 7 days or more than 5 minutes in the future.
+             *     season_inactive: no season was running at started_at. no_team: the user had no team in that season.
              *     duration: window outside 5 s to 3 min. rate_limit: the user is over 600 verified steps per
              *     10 minutes (over 60 uploads per hour returns 429 for the whole batch). no_checkin: no check-in valid at started_at. building_mismatch:
              *     building_id differs from the check-in's building.
              * @enum {string}
              */
-            reason: "pressure_steps_mismatch" | "ascent_range" | "steps_range" | "speed" | "cadence" | "duration" | "rate_limit" | "no_checkin" | "building_mismatch";
+            reason: "pressure_steps_mismatch" | "ascent_range" | "steps_range" | "speed" | "cadence" | "duration" | "rate_limit" | "no_checkin" | "building_mismatch" | "started_at_range" | "season_inactive" | "no_team";
         };
         /** @description A claimable building. No floor count or heights (the app needs no building floor data). */
         Building: {
@@ -1096,8 +1103,18 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            /** @description Inferred: device_id is not a device of the signed-in user (problem type device-unknown). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             422: components["responses"]["ValidationError"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     listBuildings: {
