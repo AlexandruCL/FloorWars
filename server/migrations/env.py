@@ -6,6 +6,7 @@ Migrations run with their own synchronous psycopg engine (``NullPool``); the app
 engine from ``app/db/session.py``.
 """
 
+import re
 from logging.config import fileConfig
 from typing import Any
 
@@ -27,6 +28,10 @@ target_metadata = Base.metadata
 # installs postgis_topology and postgis_tiger_geocoder). They are not ours; never report them.
 POSTGIS_TABLES = frozenset({"spatial_ref_sys", "geometry_columns", "geography_columns"})
 POSTGIS_SCHEMAS = frozenset({"tiger", "tiger_data", "topology"})
+# Monthly partitions of climb_segment are created at run time (app/segments/partitions.py) and
+# have no model; reflection lists each one as a table, which would read as drift. The parent
+# table is still compared, and its columns, constraints and indexes apply to every partition.
+PARTITION_TABLE = re.compile(r"climb_segment_\d{6}")
 
 
 def include_object(
@@ -35,6 +40,8 @@ def include_object(
     if type_ == "table" and reflected and compare_to is None:
         schema = getattr(obj, "schema", None)
         if name in POSTGIS_TABLES or schema in POSTGIS_SCHEMAS:
+            return False
+        if name is not None and PARTITION_TABLE.fullmatch(name):
             return False
     return True
 
