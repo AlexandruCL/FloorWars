@@ -75,7 +75,7 @@ def test_partial_success(world: World) -> None:
     result = user.ok(good, flat, unknown)
     assert [a["id"] for a in result["accepted"]] == [good["id"]]
     assert {r["id"]: r["reason"] for r in result["rejected"]} == {
-        flat["id"]: "cadence",
+        flat["id"]: "pressure_steps_mismatch",
         unknown["id"]: "no_checkin",
     }
 
