@@ -240,7 +240,7 @@ def test_deleting_a_user_removes_their_segment_data(db: Session, world: World) -
 def test_a_partition_drop_is_not_blocked_by_fraud_flags(db: Session, world: World) -> None:
     db.execute(
         text(
-            "CREATE TABLE climb_segment_203106 PARTITION OF climb_segment "
+            "CREATE TABLE public.climb_segment_203106 PARTITION OF public.climb_segment "
             "FOR VALUES FROM ('2031-06-01 00:00:00+00') TO ('2031-07-01 00:00:00+00')"
         )
     )
@@ -248,7 +248,7 @@ def test_a_partition_drop_is_not_blocked_by_fraud_flags(db: Session, world: Worl
     row = _rejected(world, started_at=started_at)
     repository.insert_segment(db, row)
     repository.add_fraud_flag(db, row.id, started_at, world.user_id, "speed")
-    db.execute(text("DROP TABLE climb_segment_203106"))
+    db.execute(text("DROP TABLE public.climb_segment_203106"))
     assert db.execute(text("SELECT count(*) FROM fraud_flag")).scalar_one() == 1
 
 

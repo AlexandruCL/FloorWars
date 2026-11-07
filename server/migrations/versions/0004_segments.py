@@ -44,7 +44,8 @@ def _create_partitions() -> None:
         start, end = _month_start(now.year, index), _month_start(now.year, index + 1)
         # Dates generated above; DDL takes no bound parameters.
         op.execute(
-            f"CREATE TABLE IF NOT EXISTS climb_segment_{start:%Y%m} PARTITION OF climb_segment "
+            f"CREATE TABLE IF NOT EXISTS public.climb_segment_{start:%Y%m} "
+            "PARTITION OF public.climb_segment "
             f"FOR VALUES FROM ('{start:%Y-%m-%d} 00:00:00+00') TO ('{end:%Y-%m-%d} 00:00:00+00')"
         )
 
