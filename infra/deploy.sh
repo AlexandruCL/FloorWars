@@ -144,10 +144,6 @@ release() {
   decrypt_secrets || return 1
 
   export API_TAG="$sha"
-  # Caddy reads its config once, so a changed Caddyfile needs a new container. The hash is a label
-  # of the caddy service: Compose recreates it when the hash changes, and only then.
-  CADDYFILE_SHA256=$(sha256sum "$INFRA_DIR/caddy/Caddyfile" | cut -d' ' -f1) || return 1
-  export CADDYFILE_SHA256
   # the postgres image (uid 999) must be able to traverse its bind-mounted parent dir
   install -d -m 0700 -o 999 -g 999 "$DATA_DIR/postgres"
   compose pull --quiet || { log "image pull failed (is root logged in to ghcr.io?)"; return 1; }
@@ -164,6 +160,14 @@ release() {
   compose up -d --remove-orphans --wait --wait-timeout "$HEALTH_TIMEOUT" || {
     log "services not healthy within ${HEALTH_TIMEOUT}s"
     compose ps >&2 || true
+    return 1
+  }
+
+  # Caddy reads its config once. The caddy folder is mounted, so the container sees the checked-out
+  # Caddyfile, and a reload applies it without dropping connections (a no-op when unchanged). An
+  # invalid file fails the reload while Caddy keeps serving the previous config.
+  compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || {
+    log "caddy reload failed; caddy keeps its previous config"
     return 1
   }
 }
