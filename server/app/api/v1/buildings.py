@@ -58,6 +58,7 @@ def list_buildings(_user: CurrentUser, db: DbSession) -> list[BuildingOut]:
     responses={
         401: problem_doc("Missing or invalid access token."),
         404: problem_doc("Unknown building (``building-not-found``) or no active season."),
+        422: problem_doc("``id`` is outside 1 to 2147483647."),
     },
     operation_id="getBuildingStandings",
 )

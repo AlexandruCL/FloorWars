@@ -5,11 +5,12 @@ response drops unset fields, so ``points`` is absent for a repeat while a ``from
 stays.
 
 Order of a request, set by FastAPI: the whole body is read and, if declared as JSON, parsed before
-any dependency runs. Malformed JSON therefore answers 422 with or without a valid token, and spends
-no upload token. Otherwise authentication runs (401), then the upload bucket (429), and only then
-is the body validated against the schema, along with ``Idempotency-Key``: a client sending
-schema-invalid batches must be signed in and still spends its tokens. An empty body or one not
-declared as JSON takes this second path. The app has no body size limit; the proxy sets it.
+any dependency runs. Malformed JSON therefore answers 422 (400 if it is not valid UTF-8) with or
+without a valid token, and spends no upload token. Otherwise authentication runs (401), then the
+upload bucket (429), and only then is the body validated against the schema, along with
+``Idempotency-Key``: a client sending schema-invalid batches must be signed in and still spends its
+tokens. An empty body or one not declared as JSON takes this second path. The app has no body size
+limit; the proxy sets it.
 
 Problem types: see ``app.segments.service``.
 """
