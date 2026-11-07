@@ -21,7 +21,7 @@ Binding for every Week 3 session. Source: `IMPLEMENTATION_PLAN.md` sections 2, 3
 | `building_claim` | `season_id`, `building_id` (composite PK, FKs), `team_id int NULL FK team` (null = unowned), `claimed_at timestamptz NULL`. The row is created (`INSERT ... ON CONFLICT DO NOTHING`) before it is locked, so the first two climbs in a building cannot race. |
 | `game_event` | `id bigint GENERATED ALWAYS AS IDENTITY PK`, `kind text NOT NULL CHECK (kind IN ('building_flipped','season_state'))`, `season_id int NULL`, `building_id int NULL`, `from_team int NULL`, `to_team int NULL`, `payload jsonb NOT NULL DEFAULT '{}'`, `created_at timestamptz NOT NULL DEFAULT now()`. Index `(created_at)`. Written inside the claim transaction (plan 7.2.1). |
 
-Indexes on `climb_segment` (created on the parent): `(building_id, started_at DESC) WHERE status = 'verified'`, `(user_id, started_at DESC)`, `(season_id, team_id)` for season totals. Foreign keys, ownership of existing objects and grants: the migrator creates the tables, so `ALTER DEFAULT PRIVILEGES` from `infra/sql/roles.sql` already gives `floorwars_app` its DML rights; verify with `infra/sql/check_roles.sh` (session A).
+Indexes on `climb_segment` (created on the parent): `(building_id, started_at DESC) WHERE status = 'verified'`, `(user_id, started_at DESC)`, `(season_id, team_id)` for season totals. Migration `0005_fk_indexes` adds indexes on the foreign keys scanned when a user is deleted: `climb_segment(checkin_id)`, `segment_receipt(user_id)`, `fraud_flag(user_id)`. Foreign keys, ownership of existing objects and grants: the migrator creates the tables, so `ALTER DEFAULT PRIVILEGES` from `infra/sql/roles.sql` already gives `floorwars_app` its DML rights; verify with `infra/sql/check_roles.sh` (session A).
 
 **Partitions:** `app/segments/partitions.py` has `ensure_partitions(conn, months_ahead=2, now=None)` (idempotent, `CREATE TABLE IF NOT EXISTS climb_segment_YYYYMM PARTITION OF ...`). The migration creates the current month and the next two. A CLI `python -m app.segments.partitions` runs it (needs the migrator role). Scheduling is Week 5 (Celery beat): leave a TODO in the README. No default partition: a `started_at` outside the partitioned range is rejected as `started_at_range` before the insert.
 
@@ -47,7 +47,7 @@ Indexes on `climb_segment` (created on the parent): `(building_id, started_at DE
 ## 4. Rules and reasons (pure function `rules.check_item(item, ctx)`; fixed order, first failure wins)
 
 1. `started_at_range`: `started_at` older than 7 days or more than 5 minutes in the future.
-2. `steps_range`: `steps` outside 1..2000. `ascent_range`: `ascent_m` outside 2.0..120.0. `duration`: `duration_s` outside 5..180 (NaN or infinity count as outside). `stair_prob_range`: `stair_prob` outside 0..1 or not finite (added after `duration`, same fraud flag as the other range rules). `classifier_version` longer than 64 characters or with control characters is a 422 for the batch (contract `maxLength`/`pattern`).
+2. `steps_range`: `steps` outside 1..2000. `ascent_range`: `ascent_m` outside 2.0..120.0. `duration`: `duration_s` outside 5..180 (NaN or infinity count as outside). `stair_prob_range`: `stair_prob` outside 0..1 or not finite (added after `duration`, same fraud flag as the other range rules). A `stair_prob` in range but too small for `real` (below 1e-37) passes and is stored as 0. `classifier_version` longer than 64 characters or with control characters is a 422 for the batch (contract `maxLength`/`pattern`).
 3. `no_checkin`: `checkin_id` unknown, belongs to another user, or `started_at` not inside its `valid_during`. `building_mismatch`: `building_id` differs from the check-in's building.
 4. `season_inactive`: no season contains `started_at`. `no_team`: the user has no membership in that season.
 5. `speed`: `vert_speed_mps` outside 0.1..0.9, or inconsistent with `ascent_m / duration_s` by more than 20 percent.
@@ -93,7 +93,7 @@ rolling_points(db, season_id, building_id, now) -> list[TeamPoints]   # same que
 
 - Keys: `fw:lb:s{season}:users` (member user id), `fw:lb:s{season}:teams` (member team id), `fw:lb:s{season}:b{building}:teams` (member team id); score = season points. `PUBLISH` channel `fw:events`, message JSON `{"type":"building_flipped","event_id":N,"building_id":..,"from_team":"AC","to_team":"ETC","at":"..."}`.
 - `record_verified(vk, season_id, user_id, team_id, building_id, points)`, `publish_flip(vk, flip)`, `rebuild(db, vk, season_id)` (from `climb_segment`, season totals, idempotent), `top(...)`. B calls the first two behind a small `Protocol`, with a no-op default when Valkey is not configured.
-- Reads fall back to a database aggregate when Valkey is down or a key is missing (then rebuild once).
+- Reads fall back to a database aggregate when Valkey is down. On a missing key: if the database holds points for that board, rebuild the season once and read again; without points the board is empty and nothing is rebuilt.
 
 ## 8. Read endpoints (owned by C)
 

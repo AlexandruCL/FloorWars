@@ -321,10 +321,11 @@ upkeep for a team of two with no users yet. Consequences to keep in mind:
 ## 13. Week 3 deploy
 
 - The deploy runs migration `0004_segments` through the `migrate` service (migration role), like earlier migrations. It creates `climb_segment` partitions for the current month and the next two.
+- The same `migrate` run applies `0005_fk_indexes`: three indexes (`climb_segment(checkin_id)`, `segment_receipt(user_id)`, `fraud_flag(user_id)`), built in the migration's transaction, so writes to those tables wait until it commits.
 - `btree_gist` already exists (created in the superuser setup, `infra/sql/roles.sql`); the migration does not create extensions.
 - New partitions are created by the migrator, not the app role. Run it monthly until Celery beat does it (Week 5):
   `docker compose ... run --rm migrate python -m app.segments.partitions`
-- After a Valkey restart or data loss the leaderboards are empty: rebuild them from the database with `rebuild` (`server/app/leaderboards.py`, per season). Reads fall back to the database meanwhile.
+- After a Valkey restart or data loss the leaderboard keys are gone. A read that finds a board's key missing rebuilds the season once from the database (`rebuild`, `server/app/leaderboards.py`) if that board has points; without points it answers an empty board and rebuilds nothing. While Valkey is unreachable, reads are computed from the database.
 
 **Wednesday check (Ionut):**
 
