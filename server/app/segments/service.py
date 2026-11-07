@@ -162,6 +162,17 @@ def _row(
     )
 
 
+def _id_taken(
+    db: Session,
+    item: Segment,
+    device_id: uuid.UUID,
+    user_id: uuid.UUID,
+    result: SegmentBatchResult,
+) -> None:
+    repository.insert_receipt(db, device_id, item.id, user_id, STATUS_REJECTED, ID_TAKEN_REASON, 0)
+    result.rejected.append(RejectedSegment(id=item.id, reason=ID_TAKEN_REASON))
+
+
 def _check(
     db: Session, item: Segment, user_id: uuid.UUID, now: datetime
 ) -> tuple[rules.RejectReason | None, ItemContext | None]:
@@ -208,15 +219,13 @@ def _accept(
     ctx: ItemContext,
     result: SegmentBatchResult,
 ) -> ScoredSegment | None:
-    """Store and score a verified item. None when another device already stored this segment."""
+    """Store and score a verified item. None when a concurrent upload stored this segment first:
+    ``repository.segment_exists`` runs earlier, but holds no lock against other users."""
     prior = repository.verified_steps_around(db, user_id, item.started_at, rules.POINTS_WINDOW)
     points = claim.points_for(item.steps, prior)
     row = _row(item, device_id, user_id, ctx, None, points)
     if not repository.insert_segment(db, row):
-        repository.insert_receipt(
-            db, device_id, item.id, user_id, STATUS_REJECTED, ID_TAKEN_REASON, 0
-        )
-        result.rejected.append(RejectedSegment(id=item.id, reason=ID_TAKEN_REASON))
+        _id_taken(db, item, device_id, user_id, result)
         return None
     repository.insert_receipt(db, device_id, item.id, user_id, STATUS_VERIFIED, None, item.steps)
     result.accepted.append(AcceptedSegment(id=item.id, steps_scored=item.steps, points=points))
@@ -270,6 +279,11 @@ def upload_batch(
         receipt = repository.get_receipt(db, batch.device_id, item.id)
         if receipt is not None:
             _from_receipt(receipt, user_id, result)
+            continue
+        # Before the rules: a resend of a stored segment is not a new climb, so it must not be
+        # judged, flagged or counted against itself.
+        if repository.segment_exists(db, item.id, item.started_at):
+            _id_taken(db, item, batch.device_id, user_id, result)
             continue
         reason, ctx = _check(db, item, user_id, now)
         if reason is not None:

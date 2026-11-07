@@ -139,6 +139,15 @@ def verified_steps_around(db: Session, user_id: uuid.UUID, at: datetime, window:
     return int(total or 0)
 
 
+def segment_exists(db: Session, id: uuid.UUID, started_at: datetime) -> bool:
+    """Whether ``(id, started_at)`` is stored, for any user and with any status."""
+    return bool(
+        db.scalar(
+            select(exists().where(ClimbSegment.id == id, ClimbSegment.started_at == started_at))
+        )
+    )
+
+
 def overlaps_verified(
     db: Session, user_id: uuid.UUID, started_at: datetime, duration_s: float
 ) -> bool:
