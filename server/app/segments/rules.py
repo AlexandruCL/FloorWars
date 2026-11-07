@@ -141,13 +141,13 @@ def check_item(
     user_id: uuid.UUID,
     now: datetime,
     recent_verified_steps: int,
-    overlaps_verified: bool = False,
+    overlaps_verified: bool,
 ) -> RejectReason | None:
     """The first failed rule, or None for a verified segment.
 
     ``recent_verified_steps``: the user's verified steps with ``started_at`` in
     ``(started_at - 10 min, started_at + 10 min)``. ``overlaps_verified``: whether the climb shares
-    time with a verified segment of the user. The default is for callers judging a climb alone.
+    time with a verified segment of the user.
     """
     reason = check_bounds(item, now) or _check_state(item, ctx, user_id) or _check_physics(item)
     if reason is not None:

@@ -63,6 +63,7 @@ def first_failed_reason(item: dict[str, Any]) -> str | None:
         user_id=USER_ID,
         now=segment.started_at + timedelta(minutes=1),
         recent_verified_steps=0,
+        overlaps_verified=False,
     )
 
 
