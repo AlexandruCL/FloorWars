@@ -7,9 +7,10 @@ info:
 
     Changelog:
     - 0.6.1-draft (2026-11-07): the hourly points curve counts the user's verified steps in the same
-      UTC clock hour as started_at, so the points total no longer depends on upload order. POST
-      /segments also answers 503 when a batch waits more than 5 s for an earlier batch of the same
-      user (nothing is stored; retry later).
+      UTC clock hour as started_at, so a verified segment's points no longer depend on upload
+      order (whether it passes the 600-step cap still can). POST /segments also answers 503 with
+      Retry-After when a batch waits more than 5 s for an earlier batch of the same user (nothing
+      is stored; retry later).
     - 0.6.0-draft (2026-11-07): new rejection reason overlap (the climb overlaps a verified climb of
       the same user). The 600-step cap now counts verified steps on both sides of started_at, so
       upload order cannot bypass it; the hourly points curve counts both sides too, but the points
