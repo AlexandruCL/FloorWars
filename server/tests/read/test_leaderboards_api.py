@@ -1,6 +1,6 @@
 """``GET /v1/leaderboards``: the three scopes, the database fallback, the lazy rebuild."""
 
-from collections.abc import Iterator
+from collections.abc import Callable
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,14 +13,12 @@ from tests.read.seed import World, add_segment, seed
 
 
 @pytest.fixture
-def valkey_client(client: TestClient) -> Iterator[ValkeyClient]:
-    """The app's Valkey (``app.state.valkey``; set here so the test does not depend on main.py)."""
+def valkey_client(client: TestClient) -> ValkeyClient:
+    """The app's own Valkey client (``app.state.valkey``, closed with the app)."""
     if not TEST_VALKEY_URL:
         pytest.skip("FLOORWARS_TEST_VALKEY_URL not set")
-    vk = ValkeyClient(TEST_VALKEY_URL)
-    client.app.state.valkey = vk  # type: ignore[attr-defined]
-    yield vk
-    vk.close()
+    vk: ValkeyClient = client.app.state.valkey  # type: ignore[attr-defined]
+    return vk
 
 
 def _populate(client: TestClient) -> World:
@@ -44,7 +42,9 @@ def _rows(response: Response) -> list[tuple[int, str, int]]:
     return [(e["rank"], e["name"], e["points"]) for e in response.json()["entries"]]
 
 
-def test_team_board_from_database_without_valkey(client: TestClient) -> None:
+def test_team_board_from_database_without_valkey(make_app: Callable[..., TestClient]) -> None:
+    client = make_app(valkey_url=None)
+    assert client.app.state.valkey is None  # type: ignore[attr-defined]
     world = _populate(client)
     response = _board(client, world, scope="team")
     assert response.json()["season_id"] == world.season_id
