@@ -154,7 +154,8 @@ export interface paths {
         /**
          * Upload a batch of climb segments
          * @description Idempotent. Segments are inserted ON CONFLICT DO NOTHING on (device, id), so a re-sent segment
-         *     counts as accepted. Server plausibility checks repeat the on-device rules (plan 3.3, 3.4).
+         *     counts as accepted. A resend from another device is rejected as no_checkin and scores nothing.
+         *     Server plausibility checks repeat the on-device rules (plan 3.3, 3.4).
          *     A segment scores only if its steps match its pressure change (about 4 to 8 steps per metre of
          *     ascent); points go to the building of the active check-in, and the building's owner is
          *     recomputed in the same transaction. Building flips caused by the batch are returned in flips.
@@ -588,7 +589,8 @@ export interface components {
              *     less than 10 minutes before or after this segment's, plus its own steps, are above 600 (over 60
              *     uploads per hour returns 429 for the whole batch). overlap: [started_at, started_at + duration_s)
              *     overlaps that of a verified segment of the same user; climbs that only touch at an end do not
-             *     overlap (1 ms tolerance for real rounding). no_checkin: no check-in valid at started_at.
+             *     overlap (1 ms tolerance for real rounding). no_checkin: no check-in valid at started_at, or
+             *     the segment id is already stored (a resend from another device, or another user's id).
              *     building_mismatch: building_id differs from the check-in's building.
              * @enum {string}
              */
