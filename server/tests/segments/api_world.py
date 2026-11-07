@@ -24,6 +24,18 @@ def _ago(minutes: float) -> datetime:
     return utcnow() - timedelta(minutes=minutes)
 
 
+def climb_at(when: datetime, **overrides: Any) -> dict[str, Any]:
+    """``climb`` starting at ``when``."""
+    return climb(started_at=when.isoformat(), **overrides)
+
+
+def clock_hour(hours_ago: int = 1) -> datetime:
+    """The start of a whole UTC hour in the past. Points count per clock hour, so a test summing
+    steps must not depend on the minute it runs in. ``hours_ago=1`` is inside the default check-in
+    of ``World.climber``."""
+    return utcnow().replace(minute=0, second=0, microsecond=0) - timedelta(hours=hours_ago)
+
+
 def climb(minutes_ago: float = 1.0, **overrides: Any) -> dict[str, Any]:
     """A verified climb: 60 steps, 12 m in 30 s. ``checkin_id`` and ``building_id`` get added by
     ``Climber.post``."""

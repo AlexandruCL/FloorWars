@@ -3,7 +3,7 @@
 import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -344,6 +344,33 @@ def test_verified_steps_ignores_rejected_and_other_users(db: Session, world: Wor
     repository.insert_segment(db, _row(world, started_at=at))
     assert repository.verified_steps_around(db, world.user_id, at, window) == 40
     assert repository.verified_steps_around(db, uuid.uuid4(), at, window) == 0
+
+
+def test_lock_user_limits_only_its_own_wait(db: Session, world: World) -> None:
+    before = db.scalar(text("SHOW lock_timeout"))
+    assert repository.lock_user(db, world.user_id)
+    # Claim and score rows are shared with other users: their waits keep the previous setting.
+    assert db.scalar(text("SHOW lock_timeout")) == before
+
+
+def test_verified_steps_before_counts_only_the_earlier_side(db: Session, world: World) -> None:
+    at = world.started_at
+    window, tick = timedelta(minutes=1), timedelta(milliseconds=1)
+    repository.insert_segment(db, _row(world, started_at=at, steps=40, steps_scored=40))
+    assert repository.verified_steps_before(db, world.user_id, at + tick, window) == 40
+    assert repository.verified_steps_before(db, world.user_id, at, window) == 0
+    assert repository.verified_steps_before(db, world.user_id, at + window, window) == 0
+
+
+def test_verified_steps_in_hour_is_one_utc_clock_hour(db: Session, world: World) -> None:
+    at = world.started_at
+    start = at.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+    hour, tick = timedelta(hours=1), timedelta(milliseconds=1)
+    repository.insert_segment(db, _row(world, started_at=at, steps=40, steps_scored=40))
+    for same_hour in (start, start + hour - tick, at.astimezone(timezone(timedelta(hours=2)))):
+        assert repository.verified_steps_in_hour(db, world.user_id, same_hour) == 40
+    for other_hour in (start - tick, start + hour):
+        assert repository.verified_steps_in_hour(db, world.user_id, other_hour) == 0
 
 
 @pytest.mark.parametrize(

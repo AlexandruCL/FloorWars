@@ -162,6 +162,14 @@ release() {
     compose ps >&2 || true
     return 1
   }
+
+  # Caddy reads its config once. The caddy folder is mounted, so the container sees the checked-out
+  # Caddyfile, and a reload applies it without dropping connections (a no-op when unchanged). An
+  # invalid file fails the reload while Caddy keeps serving the previous config.
+  compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || {
+    log "caddy reload failed; caddy keeps its previous config"
+    return 1
+  }
 }
 
 checkout() {

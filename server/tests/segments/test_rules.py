@@ -231,7 +231,7 @@ def test_rule_order_first_failure_wins() -> None:
 
 
 @pytest.mark.parametrize(
-    ("steps", "nearby", "points"),
+    ("steps", "hour_steps", "points"),
     [
         (0, 0, 0),
         (299, 0, 299),
@@ -243,13 +243,13 @@ def test_rule_order_first_failure_wins() -> None:
         (300, 100, 250),
         (301, 100, 250),  # floor(250.5)
         (100, 300, 50),
-        (100, 500, 50),  # nearby steps beyond 300 do not lower it further
+        (100, 500, 50),  # steps of the hour beyond 300 do not lower it further
         (1, 299, 1),
         (1, 300, 0),  # floor(0.5)
     ],
 )
-def test_points_formula(steps: int, nearby: int, points: int) -> None:
-    assert claim.points_for(steps, nearby) == points
+def test_points_formula(steps: int, hour_steps: int, points: int) -> None:
+    assert claim.points_for(steps, hour_steps) == points
 
 
 def test_reason_sets_are_real_reasons() -> None:

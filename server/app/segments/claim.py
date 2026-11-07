@@ -57,10 +57,9 @@ ROLLING_POINTS_SQL = text(
 )
 
 
-def points_for(steps: int, nearby_steps: int) -> int:
-    """Points of a verified segment, given the user's other verified steps within an hour of it,
-    on either side."""
-    full = max(0, min(steps, FULL_POINT_STEPS_PER_HOUR - nearby_steps))
+def points_for(steps: int, hour_steps: int) -> int:
+    """Points of a verified segment, given the user's other verified steps in its UTC clock hour."""
+    full = max(0, min(steps, FULL_POINT_STEPS_PER_HOUR - hour_steps))
     return math.floor(full + (steps - full) * REDUCED_POINT_PER_STEP)
 
 

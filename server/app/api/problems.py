@@ -33,6 +33,9 @@ logger = logging.getLogger("floorwars.api")
 
 PROBLEM_JSON = "application/problem+json"
 ABOUT_BLANK = "about:blank"
+# SQLSTATE of a lock wait cut off by lock_timeout, and how long a client should wait before a retry.
+LOCK_NOT_AVAILABLE = "55P03"
+LOCK_RETRY_AFTER_S = 5
 
 
 class Problem(BaseModel):
@@ -128,9 +131,14 @@ def conflict(detail: str, *, type_: str = ABOUT_BLANK) -> ProblemError:
     return ProblemError(409, detail=detail, type_=type_)
 
 
+def _retry_after(seconds: int) -> dict[str, str]:
+    """``Retry-After`` in whole seconds, at least 1."""
+    return {"Retry-After": str(max(1, seconds))}
+
+
 def too_many_requests(detail: str, retry_after_s: int | None = None) -> ProblemError:
     """429, with ``Retry-After`` in whole seconds when known (contract ``TooManyRequests``)."""
-    headers = {"Retry-After": str(max(1, retry_after_s))} if retry_after_s is not None else None
+    headers = _retry_after(retry_after_s) if retry_after_s is not None else None
     return ProblemError(429, detail=detail, headers=headers)
 
 
@@ -168,6 +176,14 @@ async def _database_error_handler(_: Request, exc: Exception) -> JSONResponse:
     # server does not log the exception again.
     err = cast(DBAPIError, exc)
     diag = getattr(err.orig, "diag", None)
+    if getattr(err.orig, "sqlstate", None) == LOCK_NOT_AVAILABLE:
+        # A lock_timeout ran out: requests queued on one row, not an outage.
+        logger.info("lock wait timed out", extra={"table": getattr(diag, "table_name", None)})
+        return problem_response(
+            503,
+            detail="Busy with another request; retry later.",
+            headers=_retry_after(LOCK_RETRY_AFTER_S),
+        )
     logger.error(
         "database error",
         extra={

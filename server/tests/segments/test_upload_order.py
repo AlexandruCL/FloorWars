@@ -1,6 +1,4 @@
-"""Newest-first upload earns nothing, one person climbs once at a time, a resend is not a climb.
-
-Upload order can still change the points total (see the known limit below).
+"""Upload order earns nothing, one person climbs once at a time, a resend is not a climb.
 
 Timestamps are fixed once per test: ``api_world.climb(minutes_ago=...)`` reads the clock per call,
 and that drift would shrink the gaps the replays depend on.
@@ -18,16 +16,31 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.dialects.postgresql import Range
 
-from app.segments import service
+from app.segments import repository, service
 from app.segments.schemas import SegmentBatch, SegmentBatchResult
 from tests.helpers import TEST_DB_URL, TEST_VALKEY_URL
-from tests.segments.api_world import Climber, World, climb, make_world, scalar, utcnow
+from tests.segments.api_world import (
+    Climber,
+    World,
+    climb,
+    climb_at,
+    clock_hour,
+    make_world,
+    scalar,
+    utcnow,
+)
 
 pytestmark = pytest.mark.skipif(not TEST_VALKEY_URL, reason="FLOORWARS_TEST_VALKEY_URL not set")
 
 JOIN_TIMEOUT_S = 20
-# A real check-in lasts 90 minutes; both replays fit inside one.
-CHECKIN = timedelta(minutes=90)
+# Longer than a real check-in (90 minutes): it must hold whole clock hours at any time of day.
+CHECKIN = timedelta(hours=3)
+THREE_HUNDRED: dict[str, Any] = {
+    "steps": 300,
+    "ascent_m": 50.0,
+    "duration_s": 150.0,
+    "vert_speed_mps": 1 / 3,
+}
 # 3 steps/s is the cadence limit: the most steps a climb of the longest duration can hold.
 LONG_CLIMB: dict[str, Any] = {
     "steps": 540,
@@ -62,8 +75,7 @@ def world(make_app: Callable[..., TestClient]) -> World:
     return make_world(make_app())
 
 
-def _at(when: datetime, **overrides: Any) -> dict[str, Any]:
-    return climb(started_at=when.isoformat(), **overrides)
+_at = climb_at
 
 
 def _checked_in(world: World, now: datetime) -> Climber:
@@ -97,7 +109,8 @@ def test_replaying_short_climbs_newest_first_gets_the_hourly_halving(world: Worl
     user = _checked_in(world, now)
     # Exactly the upload bucket (60 per hour). No climb sees 10 others closer than 10 minutes, so
     # none hits the rate limit: the first 5 reach 300 steps at full points, the other 55 are halved.
-    items = [_at(now - timedelta(minutes=1 + i)) for i in range(60)]
+    hour = clock_hour()
+    items = [_at(hour + timedelta(minutes=59 - i)) for i in range(60)]
     accepted, rejected = _replay(user, items)
     assert rejected == {}
     assert [accepted[item["id"]] for item in items] == [60] * 5 + [30] * 55
@@ -112,7 +125,8 @@ def test_replaying_long_climbs_newest_first_hits_the_rate_limit(world: World) ->
     # Each climb ends where the next newer one starts, so they touch and do not overlap. One climb
     # fits per 10 minute window: every 4th passes (12 minutes apart), the first with 300 full
     # points and 240 halved (420), the others all halved (270).
-    items = [_at(now - timedelta(minutes=4 + 3 * i), **LONG_CLIMB) for i in range(20)]
+    hour = clock_hour()
+    items = [_at(hour + timedelta(minutes=57 - 3 * i), **LONG_CLIMB) for i in range(20)]
     accepted, rejected = _replay(user, items)
     passed = items[::4]
     assert [accepted[item["id"]] for item in passed] == [420, 270, 270, 270, 270]
@@ -122,27 +136,125 @@ def test_replaying_long_climbs_newest_first_hits_the_rate_limit(world: World) ->
     assert set(rejected.values()) == {"rate_limit"}
     assert scalar(world.client, "SELECT points FROM team_building_score") == 1500
     assert scalar(world.client, "SELECT steps FROM team_building_score") == 2700
+    # Later climbs caused every rejection, so none is flagged. The chronological replay below is.
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
+
+
+def test_replaying_long_climbs_oldest_first_scores_the_same_and_flags(world: World) -> None:
+    now = utcnow()
+    user = _checked_in(world, now)
+    hour = clock_hour()
+    items = [_at(hour + timedelta(minutes=3 * i), **LONG_CLIMB) for i in range(20)]
+    accepted, rejected = _replay(user, items)
+    assert sum(accepted.values()) == 1500
+    assert set(rejected.values()) == {"rate_limit"}
     flags = "SELECT count(*) FROM fraud_flag WHERE rule = 'rate_limit'"
     assert scalar(world.client, flags) == 15
 
 
-def test_known_limit_upload_order_can_still_change_the_points_total(world: World) -> None:
-    """Pins a documented limit (README decision log), not a goal: points are fixed at upload."""
+@pytest.mark.parametrize(
+    "order",
+    [(0, 1, 2), (2, 1, 0), (0, 2, 1), (1, 0, 2)],
+    ids=["chronological", "newest first", "middle last", "middle first"],
+)
+def test_points_do_not_depend_on_upload_order(world: World, order: tuple[int, int, int]) -> None:
     now = utcnow()
-    climb_300 = {"steps": 300, "ascent_m": 50.0, "duration_s": 150.0, "vert_speed_mps": 1 / 3}
+    user = _checked_in(world, now)
+    hour = clock_hour(2)
+    # Two in one clock hour (300 + 150), one in the next (300).
+    items = [_at(hour + timedelta(minutes=m), **THREE_HUNDRED) for m in (10, 41, 72)]
+    accepted, rejected = _replay(user, [items[i] for i in order])
+    assert rejected == {}
+    assert sum(accepted.values()) == 750
 
-    def climbs() -> list[dict[str, Any]]:
-        return [_at(now - timedelta(minutes=m), **climb_300) for m in (62, 31, 1)]
 
-    oldest, middle, newest = climbs()
-    accepted, rejected = _replay(_checked_in(world, now), [oldest, middle, newest])
+def test_known_limit_climbs_on_both_sides_of_a_clock_hour_both_get_full_points(
+    world: World,
+) -> None:
+    """Pins a documented limit (README decision log), not a goal: the curve restarts each hour."""
+    now = utcnow()
+    user = _checked_in(world, now)
+    next_hour = clock_hour()
+    before, after = (_at(next_hour + timedelta(minutes=m), **THREE_HUNDRED) for m in (-4, 1))
+    accepted, rejected = _replay(user, [before, after])
     assert rejected == {}
     assert sum(accepted.values()) == 600
 
-    oldest, middle, newest = climbs()
-    accepted, rejected = _replay(_checked_in(world, now), [oldest, newest, middle])
-    assert rejected == {}
-    assert sum(accepted.values()) == 750
+
+# Flags: a rejection that can hit an honest user is not flagged.
+
+
+def test_a_late_upload_rejected_only_because_of_later_climbs_is_not_flagged(world: World) -> None:
+    now = utcnow()
+    user = _checked_in(world, now)
+    hour = clock_hour()
+    first, middle, last = (_at(hour + timedelta(minutes=m), **THREE_HUNDRED) for m in (0, 9, 18))
+    user.ok(first)
+    user.ok(last)
+    assert user.ok(middle)["rejected"] == [{"id": middle["id"], "reason": "rate_limit"}]
+    assert _reject_reason(world, middle) == "rate_limit"
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
+
+
+def test_a_second_phone_recording_one_climb_is_rejected_without_a_flag(world: World) -> None:
+    now = utcnow()
+    user = _checked_in(world, now)
+    first = _at(now - timedelta(minutes=10))
+    copy = {**first, "id": str(uuid.uuid4())}
+    user.ok(first)
+    result = user.ok(copy, device_id=world.second_device(user))
+    assert result["rejected"] == [{"id": copy["id"], "reason": "overlap"}]
+    assert _reject_reason(world, copy) == "overlap"
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
+
+
+# Finding 9, the cheap parts.
+
+
+def test_an_item_failing_the_pure_rules_runs_no_query_over_the_users_climbs(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(*_: Any, **__: Any) -> None:
+        raise AssertionError("queried the user's climbs for an item already rejected")
+
+    monkeypatch.setattr(repository, "overlaps_verified", fail)
+    monkeypatch.setattr(repository, "verified_steps_around", fail)
+    item = climb(steps=500)
+    result = world.climber().ok(item)
+    assert result["rejected"] == [{"id": item["id"], "reason": "pressure_steps_mismatch"}]
+
+
+def test_a_batch_waiting_too_long_for_the_user_lock_answers_503_and_stores_nothing(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(repository, "LOCK_TIMEOUT_MS", 100)
+    user = world.climber()
+    item = climb()
+    assert TEST_DB_URL
+    engine = create_engine(TEST_DB_URL)
+    try:
+        with engine.begin() as holder:
+            holder.execute(
+                text('SELECT id FROM "user" WHERE id = :u FOR UPDATE'), {"u": user.user_id}
+            )
+            waited = user.post(item, key="waits")
+            assert waited.status_code == 503
+            assert waited.headers["Retry-After"] == "5"
+    finally:
+        engine.dispose()
+    assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 0
+    assert scalar(world.client, "SELECT count(*) FROM segment_receipt") == 0
+    assert user.ok(item, key="retry")["accepted"]
+
+
+def test_two_climbs_with_one_start_are_handled_in_id_order(world: World) -> None:
+    now = utcnow()
+    user = _checked_in(world, now)
+    start = now - timedelta(minutes=10)
+    low, high = sorted((_at(start), _at(start)), key=lambda c: uuid.UUID(c["id"]))
+    result = user.ok(high, low)
+    assert [a["id"] for a in result["accepted"]] == [low["id"]]
+    assert result["rejected"] == [{"id": high["id"], "reason": "overlap"}]
 
 
 # Overlap.

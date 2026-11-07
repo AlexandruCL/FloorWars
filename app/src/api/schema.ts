@@ -166,6 +166,8 @@ export interface paths {
          *     returned in rejected and does not fail the batch; 422 is for a body that is not a valid batch.
          *     Rate limits (plan 2, 3.4): 60 uploads per hour per user, and 600 verified steps per 10 minutes
          *     per user, counted on both sides of started_at so that upload order cannot bypass the cap.
+         *     Points: 1 per verified step up to 300 verified steps of the user in one UTC clock hour (by
+         *     started_at), then 0.5.
          */
         post: operations["uploadSegments"];
         delete?: never;
@@ -573,7 +575,7 @@ export interface components {
             id: string;
             /** @description Inferred: verified stair steps credited for this segment (steps_scored in the data model). */
             steps_scored: number;
-            /** @description Inferred: points added by this segment after the hourly diminishing returns. Omitted for a repeat from the device that stored the segment. */
+            /** @description Inferred: points added by this segment after the diminishing returns of its UTC clock hour. Omitted for a repeat from the device that stored the segment. */
             points?: number;
         };
         /** @description Inferred: the shape of a rejected item. */
