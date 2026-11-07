@@ -219,7 +219,7 @@ def test_an_item_failing_the_pure_rules_runs_no_query_over_the_users_climbs(
 def test_a_batch_waiting_too_long_for_the_user_lock_answers_503_and_stores_nothing(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(repository, "LOCK_TIMEOUT", "100ms")
+    monkeypatch.setattr(repository, "LOCK_TIMEOUT_MS", 100)
     user = world.climber()
     item = climb()
     assert TEST_DB_URL
@@ -229,7 +229,9 @@ def test_a_batch_waiting_too_long_for_the_user_lock_answers_503_and_stores_nothi
             holder.execute(
                 text('SELECT id FROM "user" WHERE id = :u FOR UPDATE'), {"u": user.user_id}
             )
-            assert user.post(item, key="waits").status_code == 503
+            waited = user.post(item, key="waits")
+            assert waited.status_code == 503
+            assert waited.headers["Retry-After"] == "1"
     finally:
         engine.dispose()
     assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 0

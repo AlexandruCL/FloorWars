@@ -189,14 +189,7 @@ def _check(
         return reason, ctx
     recent = repository.verified_steps_around(db, user_id, item.started_at, rules.RATE_WINDOW)
     overlaps = repository.overlaps_verified(db, user_id, item.started_at, item.duration_s)
-    reason = rules.check_item(
-        item,
-        ctx,
-        user_id=user_id,
-        now=now,
-        recent_verified_steps=recent,
-        overlaps_verified=overlaps,
-    )
+    reason = rules.check_limits(item, recent_verified_steps=recent, overlaps_verified=overlaps)
     return reason, ctx
 
 
@@ -207,9 +200,11 @@ def _is_flagged(
     user_id: uuid.UUID,
     reason: rules.RejectReason,
 ) -> bool:
-    """Whether a rejection goes to review. Two reasons can hit an honest user, so they count only
-    in the case that cannot: climbs that started earlier already fill the cap, and one phone
-    recorded both overlapping climbs. Late uploads and a second phone are rejected, not flagged."""
+    """Whether a rejection goes to review. Two reasons often hit honest users, so they are flagged
+    only in their more suspicious case: climbs that started earlier already fill the cap, or one
+    device recorded both overlapping climbs. A late upload and a second phone are rejected without
+    a flag. Interim: a client that uploads newest first or uses a second device id also avoids the
+    flag (it still scores nothing)."""
     if reason in rules.NOT_FRAUD:
         return False
     if reason == "rate_limit":
@@ -299,7 +294,16 @@ def upload_batch(
 ) -> SegmentBatchResult:
     """Process one batch in one transaction and answer per item."""
     now = now or datetime.now(UTC)
-    if not repository.lock_user(db, user_id):
+    try:
+        locked = repository.lock_user(db, user_id)
+    except repository.UserBusy:
+        # Expected when several batches of one user queue up; nothing is stored, the client retries.
+        logger.info("upload waited too long for the user lock")
+        raise service_unavailable(
+            "Another upload of yours is still running.",
+            retry_after_s=repository.LOCK_TIMEOUT_MS // 1000,
+        ) from None
+    if not locked:
         raise unauthorized("Invalid or expired access token.")
     if not repository.device_belongs(db, user_id, batch.device_id):
         raise forbidden("This device is not registered to you.", type_=DEVICE_UNKNOWN)

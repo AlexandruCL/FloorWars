@@ -20,6 +20,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -38,19 +39,32 @@ from app.segments.rules import DURATION_MAX_S, OVERLAP_TOLERANCE
 
 # Far above a normal batch (about 1 s), and below the 30 s wait for a pooled connection, so batches
 # queued on one user cannot starve other users of connections.
-LOCK_TIMEOUT = "5s"
+LOCK_TIMEOUT_MS = 5000
+LOCK_NOT_AVAILABLE = "55P03"
+
+
+class UserBusy(Exception):
+    """Another batch of the user held its lock longer than ``LOCK_TIMEOUT_MS``. The transaction
+    has failed and must be rolled back."""
 
 
 def lock_user(db: Session, user_id: uuid.UUID) -> bool:
     """``SELECT ... FROM "user" WHERE id = :id FOR UPDATE``. False if the user is gone.
 
-    Sets ``lock_timeout`` for the rest of the transaction. A wait beyond it raises
-    ``OperationalError``, which ``app.api.problems`` answers with 503, and nothing is stored.
+    Waits at most ``LOCK_TIMEOUT_MS`` (``UserBusy`` beyond it). Only this wait is limited: later
+    locks of the transaction (claim and score rows, shared with other users) keep the previous
+    setting.
     """
-    db.execute(select(func.set_config("lock_timeout", LOCK_TIMEOUT, True)))
-    return (
-        db.scalars(select(User.id).where(User.id == user_id).with_for_update()).first() is not None
-    )
+    previous = db.scalar(select(func.current_setting("lock_timeout")))
+    db.execute(select(func.set_config("lock_timeout", f"{LOCK_TIMEOUT_MS}ms", True)))
+    try:
+        found = db.scalars(select(User.id).where(User.id == user_id).with_for_update()).first()
+    except OperationalError as exc:
+        if getattr(exc.orig, "sqlstate", None) == LOCK_NOT_AVAILABLE:
+            raise UserBusy from exc
+        raise
+    db.execute(select(func.set_config("lock_timeout", previous, True)))
+    return found is not None
 
 
 def device_belongs(db: Session, user_id: uuid.UUID, device_id: uuid.UUID) -> bool:

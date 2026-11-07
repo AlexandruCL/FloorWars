@@ -134,8 +134,10 @@ def too_many_requests(detail: str, retry_after_s: int | None = None) -> ProblemE
     return ProblemError(429, detail=detail, headers=headers)
 
 
-def service_unavailable(detail: str) -> ProblemError:
-    return ProblemError(503, detail=detail)
+def service_unavailable(detail: str, retry_after_s: int | None = None) -> ProblemError:
+    """503, with ``Retry-After`` in whole seconds when known."""
+    headers = {"Retry-After": str(max(1, retry_after_s))} if retry_after_s is not None else None
+    return ProblemError(503, detail=detail, headers=headers)
 
 
 # Exception handlers.

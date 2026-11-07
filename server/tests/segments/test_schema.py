@@ -346,6 +346,13 @@ def test_verified_steps_ignores_rejected_and_other_users(db: Session, world: Wor
     assert repository.verified_steps_around(db, uuid.uuid4(), at, window) == 0
 
 
+def test_lock_user_limits_only_its_own_wait(db: Session, world: World) -> None:
+    before = db.scalar(text("SHOW lock_timeout"))
+    assert repository.lock_user(db, world.user_id)
+    # Claim and score rows are shared with other users: their waits keep the previous setting.
+    assert db.scalar(text("SHOW lock_timeout")) == before
+
+
 def test_verified_steps_before_counts_only_the_earlier_side(db: Session, world: World) -> None:
     at = world.started_at
     window, tick = timedelta(minutes=1), timedelta(milliseconds=1)

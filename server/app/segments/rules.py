@@ -156,9 +156,15 @@ def check_item(
     ``(started_at - 10 min, started_at + 10 min)``. ``overlaps_verified``: whether the climb shares
     time with a verified segment of the user.
     """
-    reason = check_before_limits(item, ctx, user_id=user_id, now=now)
-    if reason is not None:
-        return reason
+    return check_before_limits(item, ctx, user_id=user_id, now=now) or check_limits(
+        item, recent_verified_steps=recent_verified_steps, overlaps_verified=overlaps_verified
+    )
+
+
+def check_limits(
+    item: "Segment", *, recent_verified_steps: int, overlaps_verified: bool
+) -> RejectReason | None:
+    """Rules 8 and 9, for an item that passed ``check_before_limits``."""
     if overlaps_verified:
         return "overlap"
     if recent_verified_steps + item.steps > VERIFIED_STEPS_PER_10_MIN:
