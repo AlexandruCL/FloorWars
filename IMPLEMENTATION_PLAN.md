@@ -91,14 +91,14 @@ Out of scope (PDF): indoor positioning of individual staircases, payments, chat,
 |---|---|---|
 | Season length | Two-week rounds. A one-week "Faculty Wars Week" season is used for the launch. | PDF |
 | Teams | One team per user per season. Teams are faculties (codes such as AC, ETC, MEC) with a colour. | PDF |
-| Building ownership | The team with the most points in that building over the rolling 7 days owns it. | PDF, adapted (ours) |
+| Building ownership | The team with the most points in that building over the rolling 7 days (by `started_at`) owns it; it is recomputed inside the claim transaction. `team_building_score` keeps season totals for standings history and leaderboards. Ties: the current owner keeps the building and a flip needs strictly more points; if nobody owns it or the owner is not among the tied top teams, the team that reached the tied total first wins. | PDF, adapted (ours) |
 | Points | Per verified stair step. No reward for speed. Diminishing returns per hour. Elevator rides and flat walking score nothing. | PDF, adapted (ours) |
 | Point values and the diminishing curve | Start at 1 point per verified step, halving after 300 steps in an hour, tune. | Ours |
 | Floor-equivalent (display only) | 20 verified steps = 1 floor-equivalent, so a team with 200 steps in a building shows "10 floors". An estimate, about 6 steps per metre times a 3.3 m storey, tuned from real data. Never a real storey number, and no building floor data is used. Every screen that shows it says "floors (estimate)". | Ours |
 | Check-in validity | 90 minutes from check-in. Segments are attributed to the building of the active check-in. | PDF |
 | Segment attribution | A segment needs an active check-in to count. It belongs to the check-in active when the climb started, even if it ends after `valid_until` or uploads after a new check-in. | PDF, edge cases ours |
 | Per-user limits | At most 60 segment uploads per hour and at most 600 verified steps per 10 minutes. These double as anti-cheat signals. | PDF, adapted (ours) |
-| Segment bounds | `steps` between 1 and 2000; `ascent_m` between 2.0 and 120.0; a segment counts only if its pressure change matches its steps (section 3.2). | PDF, adapted (ours) |
+| Segment bounds | `steps` between 1 and 2000; `ascent_m` between 2.0 and 120.0; a segment counts only if its pressure change matches its steps (section 3.2). Rejected segments are stored with a reason. Besides the plausibility reasons, an item is rejected as `started_at_range` (older than 7 days or more than 5 minutes ahead), `season_inactive` (no season contains `started_at`) or `no_team` (the user has no team in that season). | PDF, adapted (ours) |
 | Age | Users under 18 are not accepted. | PDF |
 | Accessibility | An accessible contribution mode (points for walking steps or for supporting actions). Copy never shames elevator use. | PDF mitigation, rules ours |
 | Safety | Safety copy in onboarding. No speed rewards. Hourly caps. | PDF |
@@ -139,10 +139,10 @@ PostgreSQL 18 + PostGIS       Valkey: ZINCRBY leaderboards, PUBLISH building_fli
 4. The segment is stored in the Room outbox with a client UUID.
 5. The sync worker sends `POST /v1/segments` as a batch with an `Idempotency-Key`.
 6. The API validates schema and plausibility rules.
-7. Transaction begins. Insert the segment `ON CONFLICT DO NOTHING`.
-8. Upsert `team_building_score` (+points for the verified steps).
-9. `SELECT ... FROM building_claim WHERE season_id = $1 AND building_id = $2 FOR UPDATE`, then set the owner to the team with the highest score. Commit.
-10. `ZINCRBY` season leaderboards, `PUBLISH building_flipped`.
+7. One transaction: lock the user row, check `device_id` belongs to the user, then per item in ascending `started_at` insert a `segment_receipt` (`ON CONFLICT DO NOTHING`; a known receipt is answered from it), run the rules and insert the segment.
+8. Upsert `team_building_score` once per (season, building, team) in ascending order (+points).
+9. For each affected (season, building) in ascending order: insert the `building_claim` row if missing, `SELECT ... FOR UPDATE` it, recompute the owner from verified segments of the rolling 7 days (tie rule in section 2), write `game_event` on a flip. Commit.
+10. After the commit, best effort: `ZINCRBY` season leaderboards, `PUBLISH building_flipped`. A Valkey error is logged and ignored; leaderboards are rebuildable.
 11. Response `200 {accepted, rejected, flips}`.
 12. The WebSocket hub pushes `"AC took the Politehnica building"` to connected phones; the event is stored in `game_event`, so phones that were offline get it on reconnect or at their next poll and show a local notification (7.2.1).
 
@@ -250,21 +250,23 @@ Third normal form. The only derived data are `team_building_score` and `building
 | `team_membership` | `user_id PK/FK`, `season_id PK/FK`, `team_id FK` | Composite PK gives exactly one team per user per season. |
 | `building` | `id int PK`, `name text`, `footprint geometry(Polygon, 4326)` with GiST | No floor count or heights: the app does not need building floor data. |
 | `checkin` | `id uuid PK`, `user_id FK`, `building_id FK`, `method text` (`qr` or `geofence`), `valid_during tstzrange` | |
-| `climb_segment` | `id uuid` (client-generated), `device_id FK`, `user_id FK`, `checkin_id FK`, `building_id FK`, `steps_scored smallint`, `ascent_m real`, `vert_speed_mps real`, `steps smallint`, `stair_prob real`, `status text` (`pending`, `verified`, `rejected`), `started_at timestamptz` (partition key, monthly), `UNIQUE(device_id, id)` | Core fact table. |
-| `fraud_flag` | `id bigint PK`, `segment_id FK`, `rule text`, `created_at`, `resolved_at` | |
-| `team_building_score` | `season_id`, `building_id`, `team_id` (composite PK), `points int` | Derived. |
-| `building_claim` | `season_id`, `building_id` (composite PK), `team_id FK`, `claimed_at` | Derived. Current owner per season and building. |
+| `climb_segment` | `id uuid` (client-generated), `device_id`, `user_id FK`, `team_id FK`, `season_id FK`, `checkin_id FK`, `building_id FK`, `steps_scored smallint`, `points int`, `ascent_m real`, `vert_speed_mps real`, `steps int`, `stair_prob real`, `status text` (`verified`, `rejected`), `reject_reason text NULL`, `started_at timestamptz` (partition key, monthly), PK `(id, started_at)` | Core fact table, partitioned by month. Rejected segments are stored with their reason. |
+| `segment_receipt` | `device_id`, `id`, `user_id FK`, `status`, `reject_reason`, `steps_scored`, `created_at`, PK `(device_id, id)` | Unpartitioned, makes uploads idempotent (a partitioned table cannot enforce `UNIQUE(device_id, id)` without the partition key). |
+| `fraud_flag` | `id bigint PK`, `segment_id`, `segment_started_at`, `user_id FK`, `rule text`, `created_at`, `resolved_at` | No foreign key to `climb_segment`, so dropping a partition is never blocked. |
+| `team_building_score` | `season_id`, `building_id`, `team_id` (composite PK), `points int`, `steps int` | Derived. Season totals. |
+| `building_claim` | `season_id`, `building_id` (composite PK), `team_id FK NULL` (null = unowned), `claimed_at NULL` | Derived. Current owner per season and building, from the rolling 7 days. |
+| `game_event` | `id bigint PK`, `kind` (`building_flipped`, `season_state`), `season_id`, `building_id`, `from_team`, `to_team`, `payload jsonb`, `created_at` | Append-only, written in the claim transaction (7.2.1). |
 | `refresh_token` | `id uuid PK`, `user_id FK`, `token_hash bytea UNIQUE`, `family_id uuid`, `revoked_at` | |
 | `otp_challenge` | `id uuid PK`, `email citext`, `code_hash bytea` (`sha256(salt \|\| code)`), `salt bytea`, `attempts smallint CHECK 0..5`, `expires_at`, `consumed_at`, `created_at` | Ours (7.9). Unique partial index on `email WHERE consumed_at IS NULL`: one active code per e-mail; a new request supersedes the old one. |
 
-Our additions (not in the PDF ER diagram): a `config` table of versioned classifier thresholds, a season results table, a QR token or signing-key record for rotating entrance codes, and the append-only `game_event` table that feeds notifications (7.2.1).
+Our additions (not in the PDF ER diagram): a `config` table of versioned classifier thresholds, a season results table, a QR token or signing-key record for rotating entrance codes, and `segment_receipt` and the append-only `game_event` table (notifications, 7.2.1).
 
 ### 5.2 Constraints
 
-- `CHECK (steps_scored BETWEEN 1 AND 2000)`
+- `CHECK (steps_scored BETWEEN 0 AND 2000)` (0 for rejected segments)
 - `CHECK (ascent_m BETWEEN 2.0 AND 120.0)`
 - `CHECK (stair_prob BETWEEN 0 AND 1)`
-- `UNIQUE (device_id, id)` on segments, so uploads are idempotent
+- `PRIMARY KEY (device_id, id)` on `segment_receipt`, so uploads are idempotent
 - Foreign keys from user-owned tables use `ON DELETE CASCADE`, so GDPR account deletion is a single statement.
 
 ### 5.3 Indexes and the queries they serve
@@ -626,7 +628,7 @@ Goal: a real stair climb in a building becomes points on the server.
 - Carried over from Week 2: phone tests of the entrance-QR check-in (scan a printed code, "Checked in: ..., 90 min left"; camera permission off shows the settings message; airplane mode shows the connection error). Needs Ionut's printed codes for both buildings.
 
 **Ionut**
-- Migrations: `climb_segment` (monthly range partitions, `UNIQUE(device_id, id)`, CHECKs), `fraud_flag`, `team_building_score`, `building_claim`, the indexes in 5.3, the next-month partition job.
+- Migrations: `climb_segment` (monthly range partitions, PK `(id, started_at)`, CHECKs), `segment_receipt` (idempotency), `fraud_flag`, `team_building_score`, `building_claim`, the indexes in 5.3, the next-month partition job.
 - `POST /v1/segments`: Pydantic strict batch; server plausibility rules (speed, cadence, steps/m, pressure-steps match, per-user rate); status `verified` or `rejected`; `fraud_flag` for rejects.
 - Claim transaction as in 3.1, with a concurrency test (parallel climbs in one building).
 - Scoring: points per verified stair step with diminishing returns per hour.
