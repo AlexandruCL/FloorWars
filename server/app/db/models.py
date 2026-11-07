@@ -6,9 +6,12 @@ See ``docs/er_review.md`` for the decisions behind nullability, PK types and del
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from geoalchemy2 import Geography, Geometry, WKBElement
 from sqlalchemy import (
+    REAL,
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -22,7 +25,15 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import BYTEA, CITEXT, TSTZRANGE, UUID, ExcludeConstraint, Range
+from sqlalchemy.dialects.postgresql import (
+    BYTEA,
+    CITEXT,
+    JSONB,
+    TSTZRANGE,
+    UUID,
+    ExcludeConstraint,
+    Range,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.constants import OTP_MAX_ATTEMPTS
@@ -204,3 +215,138 @@ BUILDING_FOOTPRINT_GEOG = cast(Building.footprint, GEOGRAPHY)
 # Functional GiST index for the geofence lookup (0003_checkin). Declared outside ``Building`` so
 # that model stays unchanged; it attaches to the building table all the same.
 Index("ix_building_footprint_geog", BUILDING_FOOTPRINT_GEOG, postgresql_using="gist")
+
+
+# Segments, scores and claims (0004_segments).
+
+
+class ClimbSegment(Base):
+    """One uploaded climb, verified or rejected. Partitioned by month on ``started_at``.
+
+    The partitions (``climb_segment_YYYYMM``) are not models: see ``app/segments/partitions.py``.
+    A partitioned table's primary key must include the partition key, so a resend is recognised
+    by ``segment_receipt``, not by this key.
+    """
+
+    __tablename__ = "climb_segment"
+    __table_args__ = (
+        CheckConstraint("status IN ('verified', 'rejected')", name="status"),
+        CheckConstraint("steps_scored BETWEEN 0 AND 2000", name="steps_scored_range"),
+        CheckConstraint("points >= 0", name="points_not_negative"),
+        CheckConstraint(
+            "status = 'rejected' OR (steps BETWEEN 1 AND 2000 "
+            "AND ascent_m BETWEEN 2.0 AND 120.0 AND stair_prob BETWEEN 0 AND 1)",
+            name="verified_bounds",
+        ),
+        CheckConstraint(
+            "(status = 'rejected') = (reject_reason IS NOT NULL)", name="reject_reason_if_rejected"
+        ),
+        # The owner query: verified segments of one building, newest first.
+        Index(
+            "ix_climb_segment_building_id_started_at",
+            "building_id",
+            text("started_at DESC"),
+            postgresql_where=text("status = 'verified'"),
+        ),
+        Index("ix_climb_segment_user_id_started_at", "user_id", text("started_at DESC")),
+        Index("ix_climb_segment_season_id_team_id", "season_id", "team_id"),
+        {"postgresql_partition_by": "RANGE (started_at)"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
+    team_id: Mapped[int] = mapped_column(ForeignKey("team.id"))
+    season_id: Mapped[int] = mapped_column(ForeignKey("season.id"))
+    checkin_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("checkin.id"))
+    building_id: Mapped[int] = mapped_column(ForeignKey("building.id"))
+    status: Mapped[str] = mapped_column(Text)
+    reject_reason: Mapped[str | None] = mapped_column(Text)
+    steps: Mapped[int] = mapped_column(Integer)
+    steps_scored: Mapped[int] = mapped_column(SmallInteger)
+    points: Mapped[int] = mapped_column(Integer)
+    ascent_m: Mapped[float] = mapped_column(REAL)
+    duration_s: Mapped[float] = mapped_column(REAL)
+    vert_speed_mps: Mapped[float] = mapped_column(REAL)
+    stair_prob: Mapped[float] = mapped_column(REAL)
+    classifier_version: Mapped[str] = mapped_column(Text)
+    received_at: Mapped[datetime] = _created_at()
+
+
+class SegmentReceipt(Base):
+    """The answer given for ``(device_id, id)``: decides resends, also for unstored rejections."""
+
+    __tablename__ = "segment_receipt"
+
+    device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
+    status: Mapped[str] = mapped_column(Text)
+    reject_reason: Mapped[str | None] = mapped_column(Text)
+    steps_scored: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    created_at: Mapped[datetime] = _created_at()
+
+
+class FraudFlag(Base):
+    """A rejection worth reviewing. No FK to ``climb_segment``: a partition drop must not block."""
+
+    __tablename__ = "fraud_flag"
+    __table_args__ = (
+        Index(
+            "ix_fraud_flag_created_at",
+            "created_at",
+            postgresql_where=text("resolved_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    segment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    segment_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
+    rule: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TeamBuildingScore(Base):
+    """Season totals (standings history, leaderboards); ownership uses the rolling window."""
+
+    __tablename__ = "team_building_score"
+    __table_args__ = (CheckConstraint("points >= 0", name="points_not_negative"),)
+
+    season_id: Mapped[int] = mapped_column(ForeignKey("season.id"), primary_key=True)
+    building_id: Mapped[int] = mapped_column(ForeignKey("building.id"), primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("team.id"), primary_key=True)
+    points: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    steps: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+
+
+class BuildingClaim(Base):
+    """The owner of a building in a season; the row every claim transaction locks."""
+
+    __tablename__ = "building_claim"
+
+    season_id: Mapped[int] = mapped_column(ForeignKey("season.id"), primary_key=True)
+    building_id: Mapped[int] = mapped_column(ForeignKey("building.id"), primary_key=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("team.id"))  # NULL = unowned
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GameEvent(Base):
+    """An event written inside the transaction that caused it (plan 7.2.1)."""
+
+    __tablename__ = "game_event"
+    __table_args__ = (
+        CheckConstraint("kind IN ('building_flipped', 'season_state')", name="kind"),
+        Index("ix_game_event_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)
+    season_id: Mapped[int | None] = mapped_column(Integer)
+    building_id: Mapped[int | None] = mapped_column(Integer)
+    from_team: Mapped[int | None] = mapped_column(Integer)
+    to_team: Mapped[int | None] = mapped_column(Integer)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'"))
+    created_at: Mapped[datetime] = _created_at()
