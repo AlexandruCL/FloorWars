@@ -26,6 +26,7 @@ from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 # Mirrors SegmenterParams in Segmenter.kt.
 SMOOTHING_WINDOW_S = 8.0
@@ -100,7 +101,7 @@ def segment_trace(
     *,
     building_id: int = 1,
     checkin_id: str = FAKE_CHECKIN_ID,
-) -> list[dict[str, object]]:
+) -> list[dict[str, Any]]:
     """The segments (SegmentFields items) the Kotlin segmenter would find in a trace."""
     samples = sorted(trace.pressure)
     n = len(samples)
@@ -132,7 +133,7 @@ def segment_trace(
 
     steps = sorted(trace.steps_ns)
     lag_ns = int(STEP_LAG_S * 1e9)
-    segments: list[dict[str, object]] = []
+    segments: list[dict[str, Any]] = []
     for start, end in runs:
         ascent_m = alt[end] - alt[start]
         duration_s = (t[end] - t[start]) / 1e9
