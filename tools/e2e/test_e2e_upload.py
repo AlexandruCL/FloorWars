@@ -1,9 +1,8 @@
-"""Tests of the --upload flow of e2e_check.py against an in-memory fake of the three endpoints.
+﻿"""Tests of the --upload flow of e2e_check.py against an in-memory fake of the three endpoints.
 
 Run: python -m pytest -q tools/e2e
 
-TODO (when POST /segments is on main): point `call` at the FastAPI test app (TestClient) instead of
-FakeServer, so the flow also runs against the real handlers.
+The same flow runs against the real app in server/tests/segments/test_e2e_script.py.
 """
 
 # Test file outside server/, so the server's per-file ignores do not apply (S101 assert).
