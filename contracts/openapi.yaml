@@ -1,11 +1,16 @@
 openapi: 3.1.0
 info:
   title: FloorWars API
-  version: 0.5.0-draft
+  version: 0.5.1-draft
   description: |
     Approved by both members on 2026-10-21. Every later change is a PR reviewed by the other member.
 
     Changelog:
+    - 0.5.1-draft (2026-11-07): 404 NotFound on GET /leaderboards (unknown season_id, unknown
+      building_id with scope building, or no active season when season_id is omitted). Season,
+      building and team ids in the request are at most 2147483647 (422 above that): season_id and
+      building_id of GET /leaderboards, the SeasonId and BuildingId path parameters, and team_id
+      of JoinRequest.
     - 0.5.0-draft (2026-11-07): week 3 segments. SegmentBatch requires device_id (uuid), the device the
       app registered at sign-in; the server answers 403 for a device that is not the signed-in user's.
       New rejection reasons started_at_range, season_inactive and no_team. 403 and 503 listed on
@@ -311,7 +316,10 @@ paths:
       tags: [leaderboards]
       operationId: getLeaderboard
       summary: Individual, team or building leaderboard
-      description: Served from Valkey sorted sets. Ranked by points from verified stair steps.
+      description: |
+        Served from Valkey sorted sets. Ranked by points from verified stair steps. 404 for an unknown
+        season_id, an unknown building_id with scope building, or no active season when season_id is
+        omitted.
       parameters:
         - name: scope
           in: query
@@ -324,12 +332,12 @@ paths:
           in: query
           required: false
           description: 'Inferred: defaults to the active season.'
-          schema: { type: integer, minimum: 1 }
+          schema: { type: integer, minimum: 1, maximum: 2147483647 }
         - name: building_id
           in: query
           required: false
           description: 'Required (422 otherwise) when scope is building, ignored for the other scopes. The building board ranks the teams in that building for the season; entry id and name are the team code.'
-          schema: { type: integer, minimum: 1 }
+          schema: { type: integer, minimum: 1, maximum: 2147483647 }
         - name: limit
           in: query
           required: false
@@ -342,6 +350,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Leaderboard' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationError' }
 
   /me/season-stats:
@@ -527,12 +536,12 @@ components:
       name: id
       in: path
       required: true
-      schema: { type: integer, minimum: 1 }
+      schema: { type: integer, minimum: 1, maximum: 2147483647 }
     BuildingId:
       name: id
       in: path
       required: true
-      schema: { type: integer, minimum: 1 }
+      schema: { type: integer, minimum: 1, maximum: 2147483647 }
 
   responses:
     Unauthorized:
@@ -681,7 +690,7 @@ components:
       type: object
       required: [team_id]
       properties:
-        team_id: { type: integer, minimum: 1 }
+        team_id: { type: integer, minimum: 1, maximum: 2147483647 }
       additionalProperties: false
 
     TeamMembership:
