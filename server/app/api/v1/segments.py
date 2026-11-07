@@ -11,7 +11,7 @@ Problem types: see ``app.segments.service``.
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Request
 
 from app.api.deps import CurrentUser, DbSession, Limiter
 from app.api.problems import problem_doc
@@ -26,6 +26,11 @@ IDEMPOTENCY_KEY_MAX_LEN = 255
 
 def _upload_bucket(user: CurrentUser, limiter: Limiter) -> None:
     service.enforce_upload_limit(limiter, user.id)
+
+
+def _leaderboards(request: Request) -> service.Leaderboards:
+    valkey = request.app.state.valkey
+    return service.ValkeyLeaderboards(valkey) if valkey is not None else service.NoLeaderboards()
 
 
 @router.post(
@@ -49,9 +54,10 @@ def upload_segments(
     ],
     user: CurrentUser,
     db: DbSession,
+    board: Annotated[service.Leaderboards, Depends(_leaderboards)],
 ) -> SegmentBatchResult:
     """Upload a batch of climb segments. Each item is judged on its own; a repeat is success."""
-    result = service.upload_batch(db, user.id, batch)
+    result = service.upload_batch(db, user.id, batch, board)
     logger.info(
         "segment batch",
         extra={
