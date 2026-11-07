@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy.dialects.postgresql import Range
 
-from app.segments import rules
+from app.segments import claim, rules
 from app.segments.models import ItemContext
 from app.segments.schemas import Segment, SegmentBatch
 
@@ -219,6 +219,28 @@ def test_rule_order_first_failure_wins() -> None:
     # 71 steps on 12 m in 20 s: 5.9 steps per metre, 3.55 steps per second, 0.6 m/s.
     assert check(item(duration_s=20.0, vert_speed_mps=0.6, steps=71), recent=9999) == "cadence"
     assert check(item(), recent=9999) == "rate_limit"
+
+
+@pytest.mark.parametrize(
+    ("steps", "prior", "points"),
+    [
+        (0, 0, 0),
+        (299, 0, 299),
+        (300, 0, 300),
+        (301, 0, 300),  # 300 + floor(0.5)
+        (302, 0, 301),
+        (0, 100, 0),
+        (299, 100, 249),  # 200 full, 99 halved: floor(249.5)
+        (300, 100, 250),
+        (301, 100, 250),  # floor(250.5)
+        (100, 300, 50),
+        (100, 500, 50),  # earlier steps beyond 300 do not lower it further
+        (1, 299, 1),
+        (1, 300, 0),  # floor(0.5)
+    ],
+)
+def test_points_formula(steps: int, prior: int, points: int) -> None:
+    assert claim.points_for(steps, prior) == points
 
 
 def test_reason_sets_are_real_reasons() -> None:
