@@ -9,7 +9,8 @@ info:
     - 0.5.0-draft (2026-11-07): week 3 segments. SegmentBatch requires device_id (uuid), the device the
       app registered at sign-in; the server answers 403 for a device that is not the signed-in user's.
       New rejection reasons started_at_range, season_inactive and no_team. 403 and 503 listed on
-      /segments.
+      /segments. New rejection reason stair_prob_range (stair_prob outside 0 to 1, or not finite).
+      classifier_version is at most 64 characters, without control characters.
     - 0.4.1-draft (2026-10-31): 503 ServiceUnavailable on /auth/otp, /auth/verify and /auth/refresh
       (rate limiting fails closed when Valkey is down, mail backend unavailable); 429 on /auth/refresh
       (per-IP limit). Both were already returned by the server.
@@ -804,7 +805,9 @@ components:
           maximum: 1
         classifier_version:
           type: string
-          description: For example rules-1.
+          maxLength: 64
+          pattern: '^[^\x00-\x1f\x7f]*$'
+          description: For example rules-1. At most 64 characters, no control characters.
 
     SegmentBatch:
       type: object
@@ -876,10 +879,12 @@ components:
             - started_at_range
             - season_inactive
             - no_team
+            - stair_prob_range
           description: |
             Inferred: the rule that failed (plan 2, 3.3, 3.4).
             pressure_steps_mismatch: steps per metre of ascent outside 4 to 8 (elevator, flat walking, shaking).
             ascent_range: ascent_m outside 2.0 to 120.0. steps_range: steps outside 1 to 2000.
+            stair_prob_range: stair_prob outside 0 to 1 or not finite.
             speed: vertical speed outside 0.1 to 0.9 m/s. cadence: implausible step rate.
             started_at_range: started_at older than 7 days or more than 5 minutes in the future.
             season_inactive: no season was running at started_at. no_team: the user had no team in that season.

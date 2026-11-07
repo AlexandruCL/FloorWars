@@ -540,7 +540,7 @@ export interface components {
             /** @description Steps detected in the ascent window (plan section 2 bounds). */
             steps: number;
             stair_prob: number;
-            /** @description For example rules-1. */
+            /** @description For example rules-1. At most 64 characters, no control characters. */
             classifier_version: string;
         };
         SegmentBatch: {
@@ -577,6 +577,7 @@ export interface components {
              * @description Inferred: the rule that failed (plan 2, 3.3, 3.4).
              *     pressure_steps_mismatch: steps per metre of ascent outside 4 to 8 (elevator, flat walking, shaking).
              *     ascent_range: ascent_m outside 2.0 to 120.0. steps_range: steps outside 1 to 2000.
+             *     stair_prob_range: stair_prob outside 0 to 1 or not finite.
              *     speed: vertical speed outside 0.1 to 0.9 m/s. cadence: implausible step rate.
              *     started_at_range: started_at older than 7 days or more than 5 minutes in the future.
              *     season_inactive: no season was running at started_at. no_team: the user had no team in that season.
@@ -585,7 +586,7 @@ export interface components {
              *     building_id differs from the check-in's building.
              * @enum {string}
              */
-            reason: "pressure_steps_mismatch" | "ascent_range" | "steps_range" | "speed" | "cadence" | "duration" | "rate_limit" | "no_checkin" | "building_mismatch" | "started_at_range" | "season_inactive" | "no_team";
+            reason: "pressure_steps_mismatch" | "ascent_range" | "steps_range" | "speed" | "cadence" | "duration" | "rate_limit" | "no_checkin" | "building_mismatch" | "started_at_range" | "season_inactive" | "no_team" | "stair_prob_range";
         };
         /** @description A claimable building. No floor count or heights (the app needs no building floor data). */
         Building: {
