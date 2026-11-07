@@ -22,8 +22,8 @@ from sqlalchemy.orm import Session
 from app import leaderboards as lb
 from app.api.deps import CurrentUser, DbSession
 from app.api.problems import ProblemError, problem_doc
-from app.api.v1.teams import MAX_ID
-from app.db.models import Building, Season
+from app.checkins.repository import building_exists
+from app.constants import MAX_ID
 from app.teams import service as teams_service
 from app.valkey import ValkeyClient, ValkeyError
 
@@ -65,21 +65,6 @@ _DB_BOARDS = {
         "GROUP BY team_id HAVING sum(points) > 0 ORDER BY points DESC, member LIMIT :n"
     ),
 }
-_SEASON_HAS_POINTS = text(
-    "SELECT EXISTS (SELECT 1 FROM climb_segment "
-    "WHERE season_id = :s AND status = 'verified' AND points > 0)"
-)
-_BUILDING_HAS_POINTS = text(
-    "SELECT EXISTS (SELECT 1 FROM climb_segment "
-    "WHERE season_id = :s AND building_id = :b AND status = 'verified' AND points > 0)"
-)
-
-
-def _has_points(db: Session, season_id: int, building_id: int | None) -> bool:
-    if building_id is None:
-        return bool(db.execute(_SEASON_HAS_POINTS, {"s": season_id}).scalar_one())
-    params = {"s": season_id, "b": building_id}
-    return bool(db.execute(_BUILDING_HAS_POINTS, params).scalar_one())
 
 
 def _from_database(
@@ -104,8 +89,8 @@ def _from_valkey(
         key = lb.building_key(season_id, building_id)
     entries = lb.top(vk, key, limit)
     if entries is None:  # never built or evicted: rebuild the season once, then read again
-        if not _has_points(db, season_id, building_id):  # a rebuild would not create the key
-            return []
+        if not _from_database(db, scope, season_id, building_id, 1):
+            return []  # no points: a rebuild would not create the key, so it would repeat
         lb.rebuild(db, vk, season_id)
         entries = lb.top(vk, key, limit)
     return entries
@@ -157,11 +142,9 @@ def get_leaderboard(
         building_id = None
     if season_id is None:
         season_id = teams_service.active_season(db).id
-    elif db.get(Season, season_id) is None:
-        raise ProblemError(
-            404, detail="No such season.", type_=teams_service.TYPE_PREFIX + "season-not-found"
-        )
-    if building_id is not None and db.get(Building, building_id) is None:
+    else:
+        teams_service.require_season(db, season_id)
+    if building_id is not None and not building_exists(db, building_id):
         raise ProblemError(
             404, detail="No such building.", type_=teams_service.TYPE_PREFIX + "building-not-found"
         )

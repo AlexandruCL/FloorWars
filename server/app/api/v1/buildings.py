@@ -9,7 +9,8 @@ from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession
 from app.api.problems import ProblemError, problem_doc
-from app.api.v1.teams import MAX_ID, TeamOut
+from app.api.v1.teams import TeamOut
+from app.constants import MAX_ID
 from app.db.models import Building, BuildingClaim, Team
 from app.segments import claim
 from app.teams import service as teams_service

@@ -11,12 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import CurrentUser, DbSession
 from app.api.problems import problem_doc
+from app.constants import MAX_ID
 from app.teams import service
 
 router = APIRouter(tags=["teams"])
-
-# Largest value of an ``integer`` id column. A larger id in a request is refused as a bad request.
-MAX_ID = 2147483647
 
 
 class TeamOut(BaseModel):

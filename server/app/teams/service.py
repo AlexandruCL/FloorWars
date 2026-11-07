@@ -24,9 +24,13 @@ def active_season(db: Session) -> Season:
     return season
 
 
-def join_season(db: Session, user_id: uuid.UUID, season_id: int, team_id: int) -> None:
+def require_season(db: Session, season_id: int) -> None:
     if repository.get_season(db, season_id) is None:
         raise ProblemError(404, detail="No such season.", type_=TYPE_PREFIX + "season-not-found")
+
+
+def join_season(db: Session, user_id: uuid.UUID, season_id: int, team_id: int) -> None:
+    require_season(db, season_id)
     if repository.get_team(db, team_id) is None:
         raise ProblemError(422, detail="No such team.", type_=TYPE_PREFIX + "team-not-found")
     if not repository.is_active(db, season_id):
