@@ -87,10 +87,36 @@ def test_building_board_requires_building_id(client: TestClient) -> None:
     assert _board(client, world, scope="building").status_code == 422
 
 
-@pytest.mark.parametrize("params", [{}, {"scope": "x"}, {"scope": "team", "limit": 101}])
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"scope": "x"},
+        {"scope": "team", "limit": 101},
+        {"scope": "team", "season_id": 2147483648},
+        {"scope": "team", "building_id": 2147483648},
+        {"scope": "building", "building_id": 2147483648},
+    ],
+)
 def test_bad_query_is_422(client: TestClient, params: dict[str, object]) -> None:
     world = seed(client)
     assert _board(client, world, **params).status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("params", "problem"),
+    [
+        ({"scope": "team", "season_id": 2147483647}, "season-not-found"),
+        ({"scope": "building", "building_id": 2147483647}, "building-not-found"),
+    ],
+)
+def test_ids_at_the_int4_bound_are_valid_queries(
+    client: TestClient, params: dict[str, object], problem: str
+) -> None:
+    world = seed(client)
+    response = _board(client, world, **params)
+    assert response.status_code == 404
+    assert response.json()["type"].endswith(problem)
 
 
 def test_building_id_is_ignored_for_other_scopes(client: TestClient) -> None:

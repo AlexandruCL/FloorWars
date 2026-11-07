@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app import leaderboards as lb
 from app.api.deps import CurrentUser, DbSession
 from app.api.problems import ProblemError, problem_doc
+from app.api.v1.teams import MAX_ID
 from app.db.models import Building, Season
 from app.teams import service as teams_service
 from app.valkey import ValkeyClient, ValkeyError
@@ -145,8 +146,8 @@ def get_leaderboard(
     _user: CurrentUser,
     db: DbSession,
     scope: Scope,
-    season_id: Annotated[int | None, Query(ge=1)] = None,
-    building_id: Annotated[int | None, Query(ge=1)] = None,
+    season_id: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
+    building_id: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> LeaderboardOut:
     """The best ``limit`` users or teams by points of verified segments."""

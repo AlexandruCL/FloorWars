@@ -15,6 +15,9 @@ from app.teams import service
 
 router = APIRouter(tags=["teams"])
 
+# Largest value of an ``integer`` id column. A larger id in a request is refused as a bad request.
+MAX_ID = 2147483647
+
 
 class TeamOut(BaseModel):
     id: int
@@ -31,7 +34,7 @@ class SeasonOut(BaseModel):
 class JoinRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    team_id: Annotated[int, Field(ge=1, strict=True)]
+    team_id: Annotated[int, Field(ge=1, le=MAX_ID, strict=True)]
 
 
 class TeamMembershipOut(BaseModel):
@@ -73,7 +76,7 @@ def get_active_season(db: DbSession) -> SeasonOut:
     operation_id="joinSeason",
 )
 def join_season(
-    id: Annotated[int, Path(ge=1)], body: JoinRequest, user: CurrentUser, db: DbSession
+    id: Annotated[int, Path(ge=1, le=MAX_ID)], body: JoinRequest, user: CurrentUser, db: DbSession
 ) -> TeamMembershipOut:
     """Pick a team for the season; one team per user per season."""
     service.join_season(db, user.id, id, body.team_id)
