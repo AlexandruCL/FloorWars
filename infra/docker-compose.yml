@@ -18,6 +18,10 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    labels:
+      # Set by deploy.sh: a new Caddyfile hash makes Compose recreate this container, which is the
+      # only way Caddy picks up a changed file. Unset (manual compose runs) it is empty.
+      fw.caddyfile-sha256: ${CADDYFILE_SHA256:-}
     ports:
       - "80:80"
       - "443:443"

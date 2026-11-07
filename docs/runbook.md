@@ -322,7 +322,8 @@ upkeep for a team of two with no users yet. Consequences to keep in mind:
 
 - The deploy runs migration `0004_segments` through the `migrate` service (migration role), like earlier migrations. It creates `climb_segment` partitions for the current month and the next two.
 - The same `migrate` run applies `0005_fk_indexes`: three indexes (`climb_segment(checkin_id)`, `segment_receipt(user_id)`, `fraud_flag(user_id)`), built in the migration's transaction, so writes to those tables wait until it commits.
-- `deploy.sh` does not apply Caddyfile changes: Compose does not recreate Caddy when only the mounted file changed, and the running container keeps the old file. After a deploy that changes `infra/caddy/Caddyfile` (the 1MB body cap does), run `docker compose ... up -d --force-recreate caddy`. Then check that a POST over 1MB gets 413 and that normal requests still work.
+- Caddy reads its config once at start, and Compose does not recreate it when only the mounted file changed. `deploy.sh` therefore sets the Caddyfile's SHA-256 as a label of the `caddy` service (`CADDYFILE_SHA256`), so Compose recreates Caddy when, and only when, the file changed. Open connections drop during that recreate. The first deploy with the label recreates Caddy once, which also applies the 1MB body cap. Afterwards check that a POST over 1MB gets 413 and that normal requests still work.
+- A manual `docker compose ... up -d` without `CADDYFILE_SHA256` set also recreates Caddy (the label goes empty), with the file as it is on disk. The next deploy recreates it once more.
 - `btree_gist` already exists (created in the superuser setup, `infra/sql/roles.sql`); the migration does not create extensions.
 - New partitions are created by the migrator, not the app role. Run it monthly until Celery beat does it (Week 5):
   `docker compose ... run --rm migrate python -m app.segments.partitions`

@@ -144,6 +144,10 @@ release() {
   decrypt_secrets || return 1
 
   export API_TAG="$sha"
+  # Caddy reads its config once, so a changed Caddyfile needs a new container. The hash is a label
+  # of the caddy service: Compose recreates it when the hash changes, and only then.
+  CADDYFILE_SHA256=$(sha256sum "$INFRA_DIR/caddy/Caddyfile" | cut -d' ' -f1) || return 1
+  export CADDYFILE_SHA256
   # the postgres image (uid 999) must be able to traverse its bind-mounted parent dir
   install -d -m 0700 -o 999 -g 999 "$DATA_DIR/postgres"
   compose pull --quiet || { log "image pull failed (is root logged in to ghcr.io?)"; return 1; }
