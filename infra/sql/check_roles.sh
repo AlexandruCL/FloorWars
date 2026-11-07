@@ -51,6 +51,11 @@ alembic_as floorwars postgres $SU_PW upgrade head
 apply_roles floorwars
 apply_roles floorwars
 ok "roles.sql applied twice (passwords via stdin)"
+# 0004 was applied as the superuser here, before roles.sql: the hand-over must include the
+# partitioned parent, or the migrator can neither create partitions nor downgrade.
+owners=$(psql_as floorwars postgres $SU_PW "select string_agg(distinct pg_catalog.pg_get_userbyid(c.relowner), ',') from pg_catalog.pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p') and c.relname like 'climb\_segment%'")
+[[ "$owners" == "floorwars_migrator" ]] || fail "climb_segment and its partitions owned by: $owners"
+ok "climb_segment and its partitions handed to the migrator"
 
 DB=floorwars
 echo "== app role"
@@ -97,6 +102,18 @@ alembic_as $DB floorwars_migrator $MIG_PW upgrade head || fail "alembic upgrade 
 ok "alembic upgrade head as migrator"
 alembic_as $DB floorwars_migrator $MIG_PW check || fail "alembic check as migrator (drift)"
 ok "alembic check as migrator (no drift)"
+partition="create table public.climb_segment_209901 partition of public.climb_segment for values from ('2099-01-01 00:00:00+00') to ('2099-02-01 00:00:00+00')"
+denied $DB "create a partition" "$partition"
+psql_as $DB floorwars_migrator $MIG_PW "$partition" >/dev/null || fail "migrator cannot create a partition"
+psql_as $DB floorwars_app $APP_PW "select count(*) from public.climb_segment_209901" >/dev/null \
+  || fail "default privileges: app cannot read a migrator-created partition"
+psql_as $DB floorwars_migrator $MIG_PW "drop table public.climb_segment_209901" >/dev/null || fail "migrator cannot drop a partition"
+ok "migrator creates and drops partitions; the app cannot create one but can read it"
+alembic_as $DB floorwars_migrator $MIG_PW downgrade -1 || fail "alembic downgrade -1 as migrator"
+alembic_as $DB floorwars_migrator $MIG_PW upgrade head || fail "alembic upgrade head as migrator, after the downgrade"
+psql_as $DB floorwars_app $APP_PW "insert into game_event (kind) values ('season_state')" >/dev/null \
+  || fail "default privileges: app cannot insert into a table of the latest migration"
+ok "migrator re-applies the latest migration; the app can use its tables"
 psql_as postgres floorwars_app $APP_PW "select 1" >/dev/null 2>&1 && fail "app can connect to the postgres database"
 ok "app cannot connect to the postgres database"
 

@@ -1170,7 +1170,7 @@ export interface operations {
                 scope: "individual" | "team" | "building";
                 /** @description Inferred: defaults to the active season. */
                 season_id?: number;
-                /** @description Inferred: required when scope is building. */
+                /** @description Required (422 otherwise) when scope is building, ignored for the other scopes. The building board ranks the teams in that building for the season; entry id and name are the team code. */
                 building_id?: number;
                 /** @description Inferred. */
                 limit?: number;

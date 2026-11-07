@@ -426,8 +426,8 @@ def _upload(
 def test_two_first_climbs_create_one_claim_and_the_right_owner(
     engine: Engine, arena: Arena
 ) -> None:
-    # Both insert their segment before either recomputes, and neither sees the other's yet. With
-    # no lock, each would decide alone and the two would overwrite each other's claim.
+    # Both insert their segment before either recomputes, and neither sees the other's yet. They
+    # also race to create the claim row: the loser of that insert must still end up correct.
     for _ in range(5):
         with Session(engine) as db:
             db.execute(text("TRUNCATE climb_segment, building_claim, game_event"))
@@ -449,33 +449,20 @@ def test_two_first_climbs_create_one_claim_and_the_right_owner(
             assert last_to == team(arena, "ETC")
 
 
-@pytest.mark.parametrize(
-    ("first", "first_points", "second", "second_points", "final", "second_flip"),
-    [
-        # The second has more points: it must take the building from the first.
-        ("AC", 40, "ETC", 60, "ETC", ("AC", "ETC")),
-        # The second has fewer: deciding without seeing the first, it would steal the building.
-        ("ETC", 60, "AC", 40, "ETC", None),
-    ],
-)
-def test_the_second_claim_waits_and_decides_on_the_first_ones_segments(
-    engine: Engine,
-    arena: Arena,
-    first: str,
-    first_points: int,
-    second: str,
-    second_points: int,
-    final: str,
-    second_flip: tuple[str, str] | None,
-) -> None:
-    """The exact race: the first holds the claim, open; the second must decide after its commit."""
+def _second_waits_for_first(
+    engine: Engine, arena: Arena, first: tuple[str, int], second: tuple[str, int]
+) -> tuple[bool, Flip | None]:
+    """The first climbs and recomputes, then stays open; the second climbs and recomputes.
+
+    Returns whether the second was still waiting while the first was open, and its flip.
+    """
     results: dict[str, Flip | None] = {}
     first_holds_lock = threading.Event()
     first_may_commit = threading.Event()
 
     def holder() -> None:
         with Session(engine) as db:
-            climb(db, arena, first, first_points)
+            climb(db, arena, *first)
             recompute_owner(db, arena.season_id, arena.building_id, arena.now)
             first_holds_lock.set()
             assert first_may_commit.wait(JOIN_TIMEOUT_S)
@@ -484,14 +471,13 @@ def test_the_second_claim_waits_and_decides_on_the_first_ones_segments(
     def challenger() -> None:
         assert first_holds_lock.wait(JOIN_TIMEOUT_S)
         with Session(engine) as db:
-            climb(db, arena, second, second_points)
+            climb(db, arena, *second)
             results["flip"] = recompute_owner(db, arena.season_id, arena.building_id, arena.now)
             db.commit()
 
     threads = (threading.Thread(target=holder), threading.Thread(target=challenger))
     for thread in threads:
         thread.start()
-    # The challenger must still be waiting while the holder is open.
     assert first_holds_lock.wait(JOIN_TIMEOUT_S)
     threads[1].join(SETTLE_S)
     blocked = threads[1].is_alive()
@@ -499,11 +485,49 @@ def test_the_second_claim_waits_and_decides_on_the_first_ones_segments(
     for thread in threads:
         thread.join(JOIN_TIMEOUT_S)
         assert not thread.is_alive(), "a transaction is stuck"
+    return blocked, results["flip"]
 
+
+def test_two_climbs_that_only_win_together_flip_the_building(engine: Engine, arena: Arena) -> None:
+    """Only ``FOR UPDATE`` on the claim guards this case.
+
+    AC's first climb does not flip, so it never updates the claim row and only the row lock can
+    make the second wait (``ON CONFLICT`` waits for a writer of the row, not for a row lock).
+    Without it each transaction sees 40 points of its own against ETC's 50, and no flip happens
+    although AC ends with 80.
+    """
+    with Session(engine) as db:
+        climb(db, arena, "ETC", 50)
+        recompute_owner(db, arena.season_id, arena.building_id, arena.now)
+        db.commit()
+    blocked, flip = _second_waits_for_first(engine, arena, ("AC", 40), ("AC", 40))
+    assert blocked, "the second claim did not wait for the first"
+    assert flip is not None
+    assert (flip.from_code, flip.to_code) == ("ETC", "AC")
+    with Session(engine) as db:
+        assert owner(db, arena) == team(arena, "AC")
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "second_flip"),
+    [
+        # The second has more points: it takes the building from the first.
+        (("AC", 40), ("ETC", 60), ("AC", "ETC")),
+        # The second has fewer: deciding without seeing the first, it would steal the building.
+        (("ETC", 60), ("AC", 40), None),
+    ],
+)
+def test_first_two_claims_in_a_building_decide_in_order(
+    engine: Engine,
+    arena: Arena,
+    first: tuple[str, int],
+    second: tuple[str, int],
+    second_flip: tuple[str, str] | None,
+) -> None:
+    blocked, flip = _second_waits_for_first(engine, arena, first, second)
     assert blocked, "the second claim did not wait for the first"
     with Session(engine) as db:
-        assert owner(db, arena) == team(arena, final)
-    flip = results["flip"]
+        assert owner(db, arena) == team(arena, "ETC")
     assert ((flip.from_code, flip.to_code) if flip else None) == second_flip
 
 

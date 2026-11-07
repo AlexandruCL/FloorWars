@@ -74,7 +74,10 @@ BEGIN
       AND c.relkind IN ('r', 'p', 'S')
       AND c.relname <> 'spatial_ref_sys'
       AND pg_catalog.pg_get_userbyid(c.relowner) <> 'floorwars_migrator'
-      AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d WHERE d.objid = c.oid AND d.deptype = 'i')
+      -- objsubid = 0: the object itself (an identity sequence), not one of its columns. A
+      -- partitioned table's key column depends internally on the table and must not exclude it.
+      AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d
+                      WHERE d.objid = c.oid AND d.objsubid = 0 AND d.deptype = 'i')
     ORDER BY c.relkind DESC, c.relname
   LOOP
     IF r.relkind = 'S' THEN

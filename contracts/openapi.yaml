@@ -328,7 +328,7 @@ paths:
         - name: building_id
           in: query
           required: false
-          description: 'Inferred: required when scope is building.'
+          description: 'Required (422 otherwise) when scope is building, ignored for the other scopes. The building board ranks the teams in that building for the season; entry id and name are the team code.'
           schema: { type: integer, minimum: 1 }
         - name: limit
           in: query
