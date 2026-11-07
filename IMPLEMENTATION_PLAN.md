@@ -445,7 +445,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ### 7.4 Reverse proxy
 
-Caddy 2 terminates TLS with auto-renewed Let's Encrypt certificates, sets HSTS and security headers, applies per-IP request limits, caps request bodies at 1MB (413 from the proxy), and load-balances across the two API replicas with active health checks. Nginx with certbot is an acceptable equivalent.
+Caddy 2 terminates TLS with auto-renewed Let's Encrypt certificates, sets HSTS and security headers, applies per-IP request limits, caps request bodies at 1MB (413 from the proxy), and load-balances across the two API replicas. It retries refused connections on the next replica but ejects no replica: active checks do not run on dynamic upstreams, and passive checks would let an oversized body eject a replica. Nginx with certbot is an acceptable equivalent.
 
 ### 7.5 Secrets and configuration
 

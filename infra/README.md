@@ -10,7 +10,7 @@ VM setup, first deploy and rollback: `docs/runbook.md`. Costs: `docs/cost.md`.
 |---|---|
 | `docker-compose.yml` | Production stack. Networks `edge` (Caddy), `app` (api), `data` (postgres, valkey; `internal: true`), `monitoring` (Week 5). Only Caddy publishes ports (80, 443, 443/udp). Needs `API_TAG`. |
 | `compose.local.yml` | Override for a dev PC: builds `api` from `../server`, Caddy on `127.0.0.1:8080` (plain HTTP), dummy secrets, named volume for Postgres. |
-| `caddy/Caddyfile` | TLS (Let's Encrypt), HSTS and security headers, round robin over every api replica with active `/healthz` checks, `/metrics` not public. Request bodies are capped at 1MB (1,000,000 bytes): above that Caddy answers 413 with an empty body, so it is not in the contract and not a Problem JSON. Per-IP rate limiting: TODO Week 5 (needs a plugin build). |
+| `caddy/Caddyfile` | TLS (Let's Encrypt), HSTS and security headers, round robin over every api replica with retries on refused connections but no replica ejection (reasons in the Caddyfile), `/metrics` not public. Request bodies are capped at 1MB (1,000,000 bytes): above that Caddy answers 413 with an empty body, so it is not in the contract and not a Problem JSON. Per-IP rate limiting: TODO Week 5 (needs a plugin build). |
 | `deploy.sh` | `deploy.sh <sha>` / `deploy.sh rollback` (plan 7.6). Forced SSH command of the `deploy` user. |
 | `secrets/` | SOPS + age encrypted `*.enc.{env,json,yaml}`; see `secrets/README.md`. `.sops.yaml` is at the repo root. |
 | `scripts/make-local-secrets.sh` | Writes dummy `local-secrets/*` and a local `.env` (`API_TAG=local`) for the local stack. |
