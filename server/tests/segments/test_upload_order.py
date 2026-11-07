@@ -81,20 +81,6 @@ def _replay(user: Climber, items: list[dict[str, Any]]) -> tuple[dict[str, int],
     return accepted, rejected
 
 
-def _second_device(world: World, user: Climber) -> uuid.UUID:
-    device = uuid.uuid4()
-    with world.client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
-        db.execute(
-            text(
-                "INSERT INTO device (user_id, id, model, has_barometer) "
-                "VALUES (:u, :d, 'test', true)"
-            ),
-            {"u": user.user_id, "d": device},
-        )
-        db.commit()
-    return device
-
-
 def _reject_reason(world: World, item: dict[str, Any]) -> Any:
     return scalar(
         world.client,
@@ -184,8 +170,8 @@ def test_the_same_climb_under_a_new_id_is_an_overlap(world: World) -> None:
 @pytest.mark.parametrize(
     ("offset_s", "overrides"),
     [
-        pytest.param(29.0, {}, id="starts 1 s before the end"),
-        pytest.param(-29.0, {}, id="ends 1 s after the start"),
+        pytest.param(29.9, {}, id="starts 0.1 s before the end"),
+        pytest.param(-29.9, {}, id="ends 0.1 s after the start"),
         pytest.param(5.0, {"duration_s": 20.0, "vert_speed_mps": 0.6}, id="inside"),
         pytest.param(-10.0, {"duration_s": 100.0, "vert_speed_mps": 0.12}, id="around"),
     ],
@@ -262,8 +248,8 @@ def test_a_big_climb_resent_from_a_second_device_changes_nothing(world: World) -
     user = _checked_in(world, now)
     item = _at(now - timedelta(minutes=10), **BIG_CLIMB)
     assert user.ok(item)["accepted"][0]["points"] == 330  # 300 full, 60 halved
-    second = _second_device(world, user)
-    result = user.ok(item, device_id=str(second))
+    second = world.second_device(user)
+    result = user.ok(item, device_id=second)
     assert result == {
         "accepted": [],
         "rejected": [{"id": item["id"], "reason": "no_checkin"}],
@@ -274,7 +260,7 @@ def test_a_big_climb_resent_from_a_second_device_changes_nothing(world: World) -
     assert scalar(world.client, "SELECT points FROM team_building_score") == 330
     assert scalar(world.client, "SELECT steps FROM team_building_score") == 360
     receipt = "SELECT reject_reason FROM segment_receipt WHERE device_id = CAST(:d AS uuid)"
-    assert scalar(world.client, receipt, d=str(second)) == "no_checkin"
+    assert scalar(world.client, receipt, d=second) == "no_checkin"
 
 
 def test_a_big_climb_sent_by_another_user_changes_nothing(world: World) -> None:

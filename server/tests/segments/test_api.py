@@ -17,7 +17,6 @@ from app.valkey import ValkeyError
 from tests.helpers import TEST_DB_URL, TEST_VALKEY_URL
 from tests.segments.api_world import (
     TSTZRANGE_SQL,
-    Climber,
     World,
     climb,
     make_world,
@@ -184,41 +183,6 @@ def test_the_windows_are_open_at_both_ends(world: World) -> None:
     assert user.ok(between)["rejected"] == [{"id": between["id"], "reason": "rate_limit"}]
 
 
-def test_the_same_climb_under_a_new_id_is_flagged_and_kept(world: World) -> None:
-    user = world.climber()
-    first = climb()
-    copy = {**first, "id": str(uuid.uuid4())}
-    user.ok(first)
-    assert user.ok(copy)["rejected"] == [{"id": copy["id"], "reason": "overlap"}]
-    assert scalar(world.client, "SELECT rule FROM fraud_flag") == "overlap"
-    assert (
-        scalar(world.client, "SELECT reject_reason FROM climb_segment WHERE id = :i", i=copy["id"])
-        == "overlap"
-    )
-    assert scalar(world.client, "SELECT steps FROM team_building_score") == 60
-
-
-@pytest.mark.parametrize(
-    ("offset_s", "reason"),
-    [(-30.0, None), (-29.9, "overlap"), (10.0, "overlap"), (29.9, "overlap"), (30.0, None)],
-)
-def test_only_climbs_sharing_time_overlap(
-    world: World, offset_s: float, reason: str | None
-) -> None:
-    user = world.climber()
-    at = utcnow() - timedelta(minutes=5)
-    user.ok(climb(started_at=at.isoformat()))
-    other = climb(started_at=(at + timedelta(seconds=offset_s)).isoformat())
-    result = user.ok(other)
-    assert [r["reason"] for r in result["rejected"]] == ([reason] if reason else [])
-
-
-def test_the_climb_of_another_user_does_not_overlap(world: World) -> None:
-    item = climb()
-    world.climber("AC").ok(item)
-    assert world.climber("ETC").ok({**item, "id": str(uuid.uuid4())})["accepted"]
-
-
 @pytest.mark.parametrize(
     "bad",
     [
@@ -350,59 +314,24 @@ def test_response_carries_only_the_callers_ids(world: World) -> None:
     assert str(other.checkin_id) not in body
 
 
-def _second_device(world: World, user: Climber) -> str:
-    second = uuid.uuid4()
-    with world.client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
-        db.execute(
-            text(
-                "INSERT INTO device (user_id, id, model, has_barometer) "
-                "VALUES (:u, :d, 'test', true)"
-            ),
-            {"u": user.user_id, "d": second},
-        )
-        db.commit()
-    return str(second)
-
-
 def test_same_segment_from_a_second_device_scores_once(world: World) -> None:
     user = world.climber()
     item = climb()
     user.ok(item)
-    result = user.ok(item, device_id=_second_device(world, user))
+    result = user.ok(item, device_id=world.second_device(user))
     assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
     assert scalar(world.client, "SELECT points FROM team_building_score") == 60
     assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
-
-
-def test_a_big_climb_resent_from_a_second_device_is_not_flagged(world: World) -> None:
-    # Alone it fits the cap; counted twice it would be above 600 steps.
-    user = world.climber()
-    item = climb(steps=400, ascent_m=80.0, duration_s=180.0, vert_speed_mps=0.44)
-    assert user.ok(item)["accepted"]
-    result = user.ok(item, device_id=_second_device(world, user))
-    assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
-    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
-    assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 1
-    assert scalar(world.client, "SELECT steps FROM team_building_score") == 400
 
 
 def test_a_rejected_climb_resent_from_a_second_device_is_flagged_once(world: World) -> None:
     user = world.climber()
     item = climb(steps=500)
     assert user.ok(item)["rejected"] == [{"id": item["id"], "reason": "pressure_steps_mismatch"}]
-    result = user.ok(item, device_id=_second_device(world, user))
+    result = user.ok(item, device_id=world.second_device(user))
     assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
     assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 1
     assert scalar(world.client, "SELECT count(*) FROM segment_receipt") == 2
-
-
-def test_a_segment_id_taken_by_another_user_changes_nothing(world: World) -> None:
-    item = climb()
-    world.climber("AC").ok(item)
-    result = world.climber("ETC").ok(item)
-    assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
-    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
-    assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 1
 
 
 @pytest.mark.parametrize("body", [{"steps": 0}, {"building_id": 10**30}])

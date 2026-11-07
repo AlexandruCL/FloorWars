@@ -128,6 +128,20 @@ class World:
             auth_headers(self.client.app, user_id),  # type: ignore[arg-type]
         )
 
+    def second_device(self, user: Climber) -> str:
+        """Register one more device for the user. No receipts match it yet."""
+        device = uuid.uuid4()
+        with self.client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
+            db.execute(
+                text(
+                    "INSERT INTO device (user_id, id, model, has_barometer) "
+                    "VALUES (:u, :d, 'test', true)"
+                ),
+                {"u": user.user_id, "d": device},
+            )
+            db.commit()
+        return str(device)
+
 
 def make_world(client: TestClient) -> World:
     with client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]

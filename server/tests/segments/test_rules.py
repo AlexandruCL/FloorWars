@@ -257,7 +257,6 @@ def test_reason_sets_are_real_reasons() -> None:
     assert rules.NOT_FRAUD <= rules.RECEIPT_ONLY
     stores_a_row = {"speed", "pressure_steps_mismatch", "cadence", "overlap", "rate_limit"}
     assert not rules.RECEIPT_ONLY & stores_a_row
-    assert "overlap" not in rules.NOT_FRAUD
 
 
 @pytest.mark.parametrize(
