@@ -71,8 +71,8 @@ class SegmentRow:
 class TeamPoints:
     """A team's points in a building over the rolling window.
 
-    ``reached_at`` is when the team reached ``points``: the ``started_at`` of its last counted
-    segment. The earliest ``reached_at`` wins a tie when the current owner is not among the top.
+    ``reached_at`` is when the team's running total first equalled ``points``. The earliest
+    ``reached_at`` wins a tie when the current owner is not among the top teams.
     """
 
     team_id: int
