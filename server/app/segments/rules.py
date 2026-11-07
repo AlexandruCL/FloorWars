@@ -40,7 +40,6 @@ OVERLAP_TOLERANCE: Final = timedelta(milliseconds=1)
 UPLOADS_PER_HOUR: Final = 60
 FULL_POINT_STEPS_PER_HOUR: Final = 300
 REDUCED_POINT_PER_STEP: Final = 0.5
-POINTS_WINDOW: Final = timedelta(hours=1)
 OWNERSHIP_WINDOW: Final = timedelta(days=7)
 
 RejectReason = Literal[
@@ -134,6 +133,14 @@ def _check_physics(item: "Segment") -> RejectReason | None:
     return None
 
 
+def check_before_limits(
+    item: "Segment", ctx: ItemContext, *, user_id: uuid.UUID, now: datetime
+) -> RejectReason | None:
+    """Rules 1 to 7: what needs no count of the user's climbs, so the caller can skip those queries
+    for an item that fails here."""
+    return check_bounds(item, now) or _check_state(item, ctx, user_id) or _check_physics(item)
+
+
 def check_item(
     item: "Segment",
     ctx: ItemContext,
@@ -149,7 +156,7 @@ def check_item(
     ``(started_at - 10 min, started_at + 10 min)``. ``overlaps_verified``: whether the climb shares
     time with a verified segment of the user.
     """
-    reason = check_bounds(item, now) or _check_state(item, ctx, user_id) or _check_physics(item)
+    reason = check_before_limits(item, ctx, user_id=user_id, now=now)
     if reason is not None:
         return reason
     if overlaps_verified:

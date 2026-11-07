@@ -6,9 +6,19 @@ on the caller's connection, so it sees the earlier items of the same transaction
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Interval, and_, exists, func, insert, literal, literal_column, select
+from sqlalchemy import (
+    ColumnElement,
+    Interval,
+    and_,
+    exists,
+    func,
+    insert,
+    literal,
+    literal_column,
+    select,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -26,9 +36,18 @@ from app.db.models import (
 from app.segments.models import STATUS_VERIFIED, ItemContext, Receipt, SegmentRow
 from app.segments.rules import DURATION_MAX_S, OVERLAP_TOLERANCE
 
+# Far above a normal batch (about 1 s), and below the 30 s wait for a pooled connection, so batches
+# queued on one user cannot starve other users of connections.
+LOCK_TIMEOUT = "5s"
+
 
 def lock_user(db: Session, user_id: uuid.UUID) -> bool:
-    """``SELECT ... FROM "user" WHERE id = :id FOR UPDATE``. False if the user is gone."""
+    """``SELECT ... FROM "user" WHERE id = :id FOR UPDATE``. False if the user is gone.
+
+    Sets ``lock_timeout`` for the rest of the transaction. A wait beyond it raises
+    ``OperationalError``, which ``app.api.problems`` answers with 503, and nothing is stored.
+    """
+    db.execute(select(func.set_config("lock_timeout", LOCK_TIMEOUT, True)))
     return (
         db.scalars(select(User.id).where(User.id == user_id).with_for_update()).first() is not None
     )
@@ -123,20 +142,47 @@ def load_context(
     )
 
 
+def _verified_steps(db: Session, user_id: uuid.UUID, *range_: ColumnElement[bool]) -> int:
+    total = db.scalar(
+        select(func.coalesce(func.sum(ClimbSegment.steps_scored), 0)).where(
+            ClimbSegment.user_id == user_id,
+            ClimbSegment.status == STATUS_VERIFIED,
+            *range_,
+        )
+    )
+    return int(total or 0)
+
+
 def verified_steps_around(db: Session, user_id: uuid.UUID, at: datetime, window: timedelta) -> int:
     """Verified steps of the user with ``started_at`` in ``(at - window, at + window)``.
 
     Both sides count, so uploading the newest climb first cannot bypass a limit.
     """
-    total = db.scalar(
-        select(func.coalesce(func.sum(ClimbSegment.steps_scored), 0)).where(
-            ClimbSegment.user_id == user_id,
-            ClimbSegment.status == STATUS_VERIFIED,
-            ClimbSegment.started_at > at - window,
-            ClimbSegment.started_at < at + window,
-        )
+    return _verified_steps(
+        db, user_id, ClimbSegment.started_at > at - window, ClimbSegment.started_at < at + window
     )
-    return int(total or 0)
+
+
+def verified_steps_before(db: Session, user_id: uuid.UUID, at: datetime, window: timedelta) -> int:
+    """Verified steps of the user with ``started_at`` in ``(at - window, at)``."""
+    return _verified_steps(
+        db, user_id, ClimbSegment.started_at > at - window, ClimbSegment.started_at < at
+    )
+
+
+def verified_steps_in_hour(db: Session, user_id: uuid.UUID, at: datetime) -> int:
+    """Verified steps of the user with ``started_at`` in the same UTC clock hour as ``at``.
+
+    A fixed hour holds the same climbs whatever the upload order, so the points of that hour do not
+    depend on it (apart from rounding per climb).
+    """
+    start = at.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+    return _verified_steps(
+        db,
+        user_id,
+        ClimbSegment.started_at >= start,
+        ClimbSegment.started_at < start + timedelta(hours=1),
+    )
 
 
 def segment_exists(db: Session, id: uuid.UUID, started_at: datetime) -> bool:
@@ -149,9 +195,15 @@ def segment_exists(db: Session, id: uuid.UUID, started_at: datetime) -> bool:
 
 
 def overlaps_verified(
-    db: Session, user_id: uuid.UUID, started_at: datetime, duration_s: float
+    db: Session,
+    user_id: uuid.UUID,
+    started_at: datetime,
+    duration_s: float,
+    *,
+    device_id: uuid.UUID | None = None,
 ) -> bool:
-    """Whether ``[started_at, started_at + duration_s)`` overlaps a verified segment of the user.
+    """Whether ``[started_at, started_at + duration_s)`` overlaps a verified segment of the user,
+    only among those of ``device_id`` when given.
 
     Segments that only touch at an end do not overlap (``rules.OVERLAP_TOLERANCE``). A verified
     segment lasts at most ``rules.DURATION_MAX_S``, which bounds the range of ``started_at`` read.
@@ -170,6 +222,7 @@ def overlaps_verified(
                     ClimbSegment.started_at > started_at - timedelta(seconds=DURATION_MAX_S),
                     ClimbSegment.started_at < end - OVERLAP_TOLERANCE,
                     stored_end > started_at + OVERLAP_TOLERANCE,
+                    *([] if device_id is None else [ClimbSegment.device_id == device_id]),
                 )
             )
         )

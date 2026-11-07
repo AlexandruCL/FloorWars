@@ -178,11 +178,15 @@ def _id_taken(
 def _check(
     db: Session, item: Segment, user_id: uuid.UUID, now: datetime
 ) -> tuple[rules.RejectReason | None, ItemContext | None]:
-    """The rule outcome. Bounds first: ``started_at`` is unsafe for date arithmetic until then."""
+    """The rule outcome. Bounds first: ``started_at`` is unsafe for date arithmetic until then. The
+    two queries over the user's climbs run only for an item that passes everything else."""
     reason = rules.check_bounds(item, now)
     if reason is not None:
         return reason, None
     ctx = repository.load_context(db, user_id, item.checkin_id, item.started_at)
+    reason = rules.check_before_limits(item, ctx, user_id=user_id, now=now)
+    if reason is not None:
+        return reason, ctx
     recent = repository.verified_steps_around(db, user_id, item.started_at, rules.RATE_WINDOW)
     overlaps = repository.overlaps_verified(db, user_id, item.started_at, item.duration_s)
     reason = rules.check_item(
@@ -194,6 +198,28 @@ def _check(
         overlaps_verified=overlaps,
     )
     return reason, ctx
+
+
+def _is_flagged(
+    db: Session,
+    item: Segment,
+    device_id: uuid.UUID,
+    user_id: uuid.UUID,
+    reason: rules.RejectReason,
+) -> bool:
+    """Whether a rejection goes to review. Two reasons can hit an honest user, so they count only
+    in the case that cannot: climbs that started earlier already fill the cap, and one phone
+    recorded both overlapping climbs. Late uploads and a second phone are rejected, not flagged."""
+    if reason in rules.NOT_FRAUD:
+        return False
+    if reason == "rate_limit":
+        earlier = repository.verified_steps_before(db, user_id, item.started_at, rules.RATE_WINDOW)
+        return earlier + item.steps > rules.VERIFIED_STEPS_PER_10_MIN
+    if reason == "overlap":
+        return repository.overlaps_verified(
+            db, user_id, item.started_at, item.duration_s, device_id=device_id
+        )
+    return True
 
 
 def _reject(
@@ -210,7 +236,7 @@ def _reject(
         if not repository.insert_segment(db, row):  # a concurrent upload stored this id first
             _id_taken(db, item, device_id, user_id, result)
             return
-    if reason not in rules.NOT_FRAUD:
+    if _is_flagged(db, item, device_id, user_id, reason):
         repository.add_fraud_flag(db, item.id, item.started_at, user_id, reason)
     repository.insert_receipt(db, device_id, item.id, user_id, STATUS_REJECTED, reason, 0)
     result.rejected.append(RejectedSegment(id=item.id, reason=reason))
@@ -226,8 +252,8 @@ def _accept(
 ) -> ScoredSegment | None:
     """Store and score a verified item. None when a concurrent upload stored this segment first:
     ``repository.segment_exists`` runs earlier, but holds no lock against other users."""
-    nearby = repository.verified_steps_around(db, user_id, item.started_at, rules.POINTS_WINDOW)
-    points = claim.points_for(item.steps, nearby)
+    hour_steps = repository.verified_steps_in_hour(db, user_id, item.started_at)
+    points = claim.points_for(item.steps, hour_steps)
     row = _row(item, device_id, user_id, ctx, None, points)
     if not repository.insert_segment(db, row):
         _id_taken(db, item, device_id, user_id, result)
@@ -280,7 +306,8 @@ def upload_batch(
 
     result = SegmentBatchResult(accepted=[], rejected=[], flips=[])
     scored: list[ScoredSegment] = []
-    for item in sorted(batch.segments, key=lambda s: s.started_at):
+    # A full order: two batches holding the same items lock their rows in the same order.
+    for item in sorted(batch.segments, key=lambda s: (s.started_at, s.id)):
         receipt = repository.get_receipt(db, batch.device_id, item.id)
         if receipt is not None:
             _from_receipt(receipt, user_id, result)
