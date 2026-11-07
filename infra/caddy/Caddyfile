@@ -31,6 +31,12 @@
 	# rate_limit plugin (github.com/mholt/caddy-ratelimit) via xcaddy; the stock caddy:2
 	# image has no rate limiter. Per-user limits are a Valkey token bucket in the API.
 
+	# FastAPI buffers the whole body before it checks the token, and the app has no size limit
+	# of its own, so the cap lives here. 1MB is 1,000,000 bytes. Over it: 413 from this proxy.
+	request_body {
+		max_size 1MB
+	}
+
 	reverse_proxy {
 		# `dynamic a` resolves every api replica (Docker DNS returns one A record per
 		# container), so round robin and health checks apply per replica, and scaling or
@@ -50,8 +56,9 @@
 		health_timeout 3s
 		health_status 2xx
 
-		# Passive: remember a failed connection to a replica for 30 s and avoid it meanwhile.
-		fail_duration 30s
+		# No passive checks (fail_duration): Caddy counts a body over request_body's limit as a
+		# failure of the replica, so two anonymous oversized POSTs took both replicas out for
+		# 30 s (503 for everyone, tested on 2.11.7). Do not add them back without retesting.
 	}
 
 	log {
