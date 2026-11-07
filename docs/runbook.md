@@ -318,6 +318,25 @@ upkeep for a team of two with no users yet. Consequences to keep in mind:
   (`-p floorwars-staging`, own data directory, own secrets, hostname `staging.floorwars.me`)
   or a second small VM (plan 7.1, 9.2).
 
+## 13. Week 3 deploy
+
+- The deploy runs migration `0004_segments` through the `migrate` service (migration role), like earlier migrations. It creates `climb_segment` partitions for the current month and the next two.
+- `btree_gist` already exists (created in the superuser setup, `infra/sql/roles.sql`); the migration does not create extensions.
+- New partitions are created by the migrator, not the app role. Run it monthly until Celery beat does it (Week 5):
+  `docker compose ... run --rm migrate python -m app.segments.partitions`
+- After a Valkey restart or data loss the leaderboards are empty: rebuild them from the database with `rebuild` (`server/app/leaderboards.py`, per season). Reads fall back to the database meanwhile.
+
+**Wednesday check (Ionut):**
+
+1. Deploy the Week 3 tag as in section 7 and check health (section 8).
+2. Seed: `python tools/seed/seed.py` (idempotent, `tools/seed/README.md`).
+3. Do one real climb in the app after a check-in.
+4. Run three read-only queries with Run command, as `postgres` inside the postgres container
+   (`docker exec floorwars-postgres-1 psql -U postgres -d floorwars -c '<query>'`). `SELECT` only, no DML on app tables:
+   - `SELECT status, count(*) FROM climb_segment GROUP BY status;`
+   - `SELECT * FROM building_claim;`
+   - `SELECT * FROM team_building_score ORDER BY points DESC;`
+
 ## Cost hygiene
 
 Deallocate the VM when not working on it during development, delete unused disks, IPs and
