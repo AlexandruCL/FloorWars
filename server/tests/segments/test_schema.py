@@ -1,7 +1,7 @@
 """Tables of ``0004_segments``: constraints, deletes, and the repository functions on them."""
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -324,22 +324,81 @@ def test_load_context_user_without_team_and_foreign_checkin(db: Session, world: 
     assert ctx.checkin_user_id == world.user_id  # the rule compares it and answers no_checkin
 
 
-def test_verified_steps_interval_is_open_then_closed(db: Session, world: World) -> None:
+def test_verified_steps_interval_is_open_on_both_sides(db: Session, world: World) -> None:
     at = world.started_at
+    window, tick = timedelta(minutes=1), timedelta(milliseconds=1)
     repository.insert_segment(db, _row(world, started_at=at, steps=40, steps_scored=40))
     # Visible before commit: an earlier item of the same batch must count.
-    assert repository.verified_steps_between(db, world.user_id, at - timedelta(minutes=1), at) == 40
-    assert repository.verified_steps_between(db, world.user_id, at, at + timedelta(minutes=1)) == 0
+    assert repository.verified_steps_around(db, world.user_id, at, window) == 40
+    for inside in (at - window + tick, at + window - tick):
+        assert repository.verified_steps_around(db, world.user_id, inside, window) == 40
+    for edge in (at - window, at + window):
+        assert repository.verified_steps_around(db, world.user_id, edge, window) == 0
 
 
 def test_verified_steps_ignores_rejected_and_other_users(db: Session, world: World) -> None:
     at = world.started_at
+    window = timedelta(minutes=1)
     repository.insert_segment(db, _rejected(world, started_at=at))
-    window = (at - timedelta(minutes=1), at + timedelta(minutes=1))
-    assert repository.verified_steps_between(db, world.user_id, *window) == 0
+    assert repository.verified_steps_around(db, world.user_id, at, window) == 0
     repository.insert_segment(db, _row(world, started_at=at))
-    assert repository.verified_steps_between(db, world.user_id, *window) == 40
-    assert repository.verified_steps_between(db, uuid.uuid4(), *window) == 0
+    assert repository.verified_steps_around(db, world.user_id, at, window) == 40
+    assert repository.verified_steps_around(db, uuid.uuid4(), at, window) == 0
+
+
+@pytest.mark.parametrize(
+    ("offset_s", "duration_s", "expected"),
+    [
+        pytest.param(0.0, 30.0, True, id="the same time"),
+        pytest.param(5.0, 10.0, True, id="inside"),
+        pytest.param(-10.0, 100.0, True, id="around"),
+        pytest.param(29.998, 30.0, True, id="2 ms into the end"),
+        pytest.param(-29.998, 30.0, True, id="2 ms into the start"),
+        pytest.param(29.9995, 30.0, False, id="within the tolerance at the end"),
+        pytest.param(-29.9995, 30.0, False, id="within the tolerance at the start"),
+        pytest.param(30.0, 30.0, False, id="starts at the end"),
+        pytest.param(-30.0, 30.0, False, id="ends at the start"),
+        pytest.param(31.0, 30.0, False, id="after"),
+        pytest.param(-31.0, 30.0, False, id="before"),
+    ],
+)
+def test_overlaps_verified_against_a_30_s_climb(
+    db: Session, world: World, offset_s: float, duration_s: float, expected: bool
+) -> None:
+    at = world.started_at
+    repository.insert_segment(db, _row(world, started_at=at))
+    start = at + timedelta(seconds=offset_s)
+    assert repository.overlaps_verified(db, world.user_id, start, duration_s) is expected
+
+
+def test_overlaps_verified_sees_the_end_of_the_longest_climb(db: Session, world: World) -> None:
+    at = world.started_at
+    repository.insert_segment(db, _row(world, started_at=at, duration_s=180.0))
+    near_end, at_end = at + timedelta(seconds=179), at + timedelta(seconds=180)
+    assert repository.overlaps_verified(db, world.user_id, near_end, 5.0) is True
+    assert repository.overlaps_verified(db, world.user_id, at_end, 5.0) is False
+
+
+def test_overlaps_verified_ignores_rejected_and_other_users(db: Session, world: World) -> None:
+    at = world.started_at
+    repository.insert_segment(db, _rejected(world, started_at=at))
+    assert repository.overlaps_verified(db, world.user_id, at, 30.0) is False
+    repository.insert_segment(db, _row(world, started_at=at))
+    assert repository.overlaps_verified(db, world.user_id, at, 30.0) is True
+    assert repository.overlaps_verified(db, uuid.uuid4(), at, 30.0) is False
+
+
+@pytest.mark.parametrize("make_row", [_row, _rejected], ids=["verified", "rejected"])
+def test_segment_exists_for_any_status(
+    db: Session, world: World, make_row: Callable[..., SegmentRow]
+) -> None:
+    row = make_row(world)
+    assert repository.segment_exists(db, row.id, row.started_at) is False
+    repository.insert_segment(db, row)
+    assert repository.segment_exists(db, row.id, row.started_at) is True
+    assert repository.segment_exists(db, uuid.uuid4(), row.started_at) is False
+    later = row.started_at + timedelta(seconds=1)
+    assert repository.segment_exists(db, row.id, later) is False
 
 
 def test_add_score_accumulates(db: Session, world: World) -> None:
