@@ -136,7 +136,7 @@ def test_fails_when_a_repeat_is_scored_again(checkin, monkeypatch, capsys):
 def test_fails_when_the_valid_segment_is_rejected(checkin, monkeypatch, capsys):
     assert not run(FakeServer(score=False), checkin, monkeypatch)
     out = capsys.readouterr().out
-    assert "[FAIL] upload a valid segment" in out
+    assert "[FAIL] upload a valid segment (fresh Idempotency-Key): rejected as speed" in out
     assert "pressure_steps_mismatch" not in out  # stopped before the bad-ratio upload
 
 
