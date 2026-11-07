@@ -1,11 +1,15 @@
 openapi: 3.1.0
 info:
   title: FloorWars API
-  version: 0.6.0-draft
+  version: 0.6.1-draft
   description: |
     Approved by both members on 2026-10-21. Every later change is a PR reviewed by the other member.
 
     Changelog:
+    - 0.6.1-draft (2026-11-07): the hourly points curve counts the user's verified steps in the same
+      UTC clock hour as started_at, so the points total no longer depends on upload order. POST
+      /segments also answers 503 when a batch waits more than 5 s for an earlier batch of the same
+      user (nothing is stored; retry later).
     - 0.6.0-draft (2026-11-07): new rejection reason overlap (the climb overlaps a verified climb of
       the same user). The 600-step cap now counts verified steps on both sides of started_at, so
       upload order cannot bypass it; the hourly points curve counts both sides too, but the points
@@ -257,6 +261,8 @@ paths:
         returned in rejected and does not fail the batch; 422 is for a body that is not a valid batch.
         Rate limits (plan 2, 3.4): 60 uploads per hour per user, and 600 verified steps per 10 minutes
         per user, counted on both sides of started_at so that upload order cannot bypass the cap.
+        Points: 1 per verified step up to 300 verified steps of the user in one UTC clock hour (by
+        started_at), then 0.5.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -876,7 +882,7 @@ components:
         points:
           type: integer
           minimum: 0
-          description: 'Inferred: points added by this segment after the hourly diminishing returns. Omitted for a repeat from the device that stored the segment.'
+          description: 'Inferred: points added by this segment after the diminishing returns of its UTC clock hour. Omitted for a repeat from the device that stored the segment.'
 
     RejectedSegment:
       type: object
