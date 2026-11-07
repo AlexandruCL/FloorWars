@@ -47,7 +47,7 @@ Indexes on `climb_segment` (created on the parent): `(building_id, started_at DE
 ## 4. Rules and reasons (pure function `rules.check_item(item, ctx)`; fixed order, first failure wins)
 
 1. `started_at_range`: `started_at` older than 7 days or more than 5 minutes in the future.
-2. `steps_range`: `steps` outside 1..2000. `ascent_range`: `ascent_m` outside 2.0..120.0. `duration`: `duration_s` outside 5..180 (NaN or infinity count as outside).
+2. `steps_range`: `steps` outside 1..2000. `ascent_range`: `ascent_m` outside 2.0..120.0. `duration`: `duration_s` outside 5..180 (NaN or infinity count as outside). `stair_prob_range`: `stair_prob` outside 0..1 or not finite (added after `duration`, same fraud flag as the other range rules). `classifier_version` longer than 64 characters or with control characters is a 422 for the batch (contract `maxLength`/`pattern`).
 3. `no_checkin`: `checkin_id` unknown, belongs to another user, or `started_at` not inside its `valid_during`. `building_mismatch`: `building_id` differs from the check-in's building.
 4. `season_inactive`: no season contains `started_at`. `no_team`: the user has no membership in that season.
 5. `speed`: `vert_speed_mps` outside 0.1..0.9, or inconsistent with `ascent_m / duration_s` by more than 20 percent.
