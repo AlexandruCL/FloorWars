@@ -171,7 +171,15 @@ def _check(
         return reason, None
     ctx = repository.load_context(db, user_id, item.checkin_id, item.started_at)
     recent = repository.verified_steps_around(db, user_id, item.started_at, rules.RATE_WINDOW)
-    reason = rules.check_item(item, ctx, user_id=user_id, now=now, recent_verified_steps=recent)
+    overlaps = repository.overlaps_verified(db, user_id, item.started_at, item.duration_s)
+    reason = rules.check_item(
+        item,
+        ctx,
+        user_id=user_id,
+        now=now,
+        recent_verified_steps=recent,
+        overlaps_verified=overlaps,
+    )
     return reason, ctx
 
 

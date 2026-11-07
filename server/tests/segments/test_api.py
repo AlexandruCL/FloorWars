@@ -176,6 +176,41 @@ def test_the_windows_are_open_at_both_ends(world: World) -> None:
     assert user.ok(between)["rejected"] == [{"id": between["id"], "reason": "rate_limit"}]
 
 
+def test_the_same_climb_under_a_new_id_is_flagged_and_kept(world: World) -> None:
+    user = world.climber()
+    first = climb()
+    copy = {**first, "id": str(uuid.uuid4())}
+    user.ok(first)
+    assert user.ok(copy)["rejected"] == [{"id": copy["id"], "reason": "overlap"}]
+    assert scalar(world.client, "SELECT rule FROM fraud_flag") == "overlap"
+    assert (
+        scalar(world.client, "SELECT reject_reason FROM climb_segment WHERE id = :i", i=copy["id"])
+        == "overlap"
+    )
+    assert scalar(world.client, "SELECT steps FROM team_building_score") == 60
+
+
+@pytest.mark.parametrize(
+    ("offset_s", "reason"),
+    [(-30.0, None), (-29.9, "overlap"), (10.0, "overlap"), (29.9, "overlap"), (30.0, None)],
+)
+def test_only_climbs_sharing_time_overlap(
+    world: World, offset_s: float, reason: str | None
+) -> None:
+    user = world.climber()
+    at = utcnow() - timedelta(minutes=5)
+    user.ok(climb(started_at=at.isoformat()))
+    other = climb(started_at=(at + timedelta(seconds=offset_s)).isoformat())
+    result = user.ok(other)
+    assert [r["reason"] for r in result["rejected"]] == ([reason] if reason else [])
+
+
+def test_the_climb_of_another_user_does_not_overlap(world: World) -> None:
+    item = climb()
+    world.climber("AC").ok(item)
+    assert world.climber("ETC").ok({**item, "id": str(uuid.uuid4())})["accepted"]
+
+
 @pytest.mark.parametrize(
     "bad",
     [

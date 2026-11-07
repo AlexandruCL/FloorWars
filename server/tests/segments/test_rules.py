@@ -51,9 +51,16 @@ def ctx(**overrides: Any) -> ItemContext:
     return ItemContext(**values)
 
 
-def check(segment: Segment, context: ItemContext | None = None, recent: int = 0) -> str | None:
+def check(
+    segment: Segment, context: ItemContext | None = None, recent: int = 0, overlaps: bool = False
+) -> str | None:
     return rules.check_item(
-        segment, context or ctx(), user_id=USER, now=NOW, recent_verified_steps=recent
+        segment,
+        context or ctx(),
+        user_id=USER,
+        now=NOW,
+        recent_verified_steps=recent,
+        overlaps_verified=overlaps,
     )
 
 
@@ -208,16 +215,18 @@ def test_rule_order_first_failure_wins() -> None:
         (None, "team_id", "no_team"),
     ]
     for field, ctx_field, reason in expected:
-        assert check(item(**broken), ctx(**bad_ctx), recent=9999) == reason
+        assert check(item(**broken), ctx(**bad_ctx), recent=9999, overlaps=True) == reason
         if field:
             del broken[field]
         if ctx_field:
             del bad_ctx[ctx_field]
     # The physics rules, each case also failing the later ones.
-    assert check(item(vert_speed_mps=5.0, steps=200), recent=9999) == "speed"
-    assert check(item(steps=200), recent=9999) == "pressure_steps_mismatch"
+    both: dict[str, Any] = {"recent": 9999, "overlaps": True}
+    assert check(item(vert_speed_mps=5.0, steps=200), **both) == "speed"
+    assert check(item(steps=200), **both) == "pressure_steps_mismatch"
     # 71 steps on 12 m in 20 s: 5.9 steps per metre, 3.55 steps per second, 0.6 m/s.
-    assert check(item(duration_s=20.0, vert_speed_mps=0.6, steps=71), recent=9999) == "cadence"
+    assert check(item(duration_s=20.0, vert_speed_mps=0.6, steps=71), **both) == "cadence"
+    assert check(item(), **both) == "overlap"
     assert check(item(), recent=9999) == "rate_limit"
 
 
@@ -246,7 +255,9 @@ def test_points_formula(steps: int, prior: int, points: int) -> None:
 def test_reason_sets_are_real_reasons() -> None:
     assert {"started_at_range", "no_checkin", "season_inactive", "no_team"} == rules.NOT_FRAUD
     assert rules.NOT_FRAUD <= rules.RECEIPT_ONLY
-    assert not rules.RECEIPT_ONLY & {"speed", "pressure_steps_mismatch", "cadence", "rate_limit"}
+    stores_a_row = {"speed", "pressure_steps_mismatch", "cadence", "overlap", "rate_limit"}
+    assert not rules.RECEIPT_ONLY & stores_a_row
+    assert "overlap" not in rules.NOT_FRAUD
 
 
 @pytest.mark.parametrize(

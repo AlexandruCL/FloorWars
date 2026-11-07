@@ -35,6 +35,8 @@ STEPS_PER_M_MAX: Final = 8.0
 CADENCE_MAX_STEPS_PER_S: Final = 3.0
 VERIFIED_STEPS_PER_10_MIN: Final = 600
 RATE_WINDOW: Final = timedelta(minutes=10)
+# Climbs that only touch at an end do not overlap: a stored ``real`` duration is rounded.
+OVERLAP_TOLERANCE: Final = timedelta(milliseconds=1)
 UPLOADS_PER_HOUR: Final = 60
 FULL_POINT_STEPS_PER_HOUR: Final = 300
 REDUCED_POINT_PER_STEP: Final = 0.5
@@ -49,6 +51,7 @@ RejectReason = Literal[
     "speed",
     "cadence",
     "duration",
+    "overlap",
     "rate_limit",
     "no_checkin",
     "building_mismatch",
@@ -138,15 +141,19 @@ def check_item(
     user_id: uuid.UUID,
     now: datetime,
     recent_verified_steps: int,
+    overlaps_verified: bool = False,
 ) -> RejectReason | None:
     """The first failed rule, or None for a verified segment.
 
     ``recent_verified_steps``: the user's verified steps with ``started_at`` in
-    ``(started_at - 10 min, started_at + 10 min)``.
+    ``(started_at - 10 min, started_at + 10 min)``. ``overlaps_verified``: whether the climb shares
+    time with a verified segment of the user. The default is for callers judging a climb alone.
     """
     reason = check_bounds(item, now) or _check_state(item, ctx, user_id) or _check_physics(item)
     if reason is not None:
         return reason
+    if overlaps_verified:
+        return "overlap"
     if recent_verified_steps + item.steps > VERIFIED_STEPS_PER_10_MIN:
         return "rate_limit"
     return None

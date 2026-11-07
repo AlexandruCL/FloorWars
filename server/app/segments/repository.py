@@ -8,7 +8,7 @@ on the caller's connection, so it sees the earlier items of the same transaction
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import and_, exists, func, insert, literal, select
+from sqlalchemy import Interval, and_, exists, func, insert, literal, literal_column, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from app.db.models import (
     User,
 )
 from app.segments.models import STATUS_VERIFIED, ItemContext, Receipt, SegmentRow
+from app.segments.rules import DURATION_MAX_S, OVERLAP_TOLERANCE
 
 
 def lock_user(db: Session, user_id: uuid.UUID) -> bool:
@@ -136,6 +137,33 @@ def verified_steps_around(db: Session, user_id: uuid.UUID, at: datetime, window:
         )
     )
     return int(total or 0)
+
+
+def overlaps_verified(
+    db: Session, user_id: uuid.UUID, started_at: datetime, duration_s: float
+) -> bool:
+    """Whether ``[started_at, started_at + duration_s)`` overlaps a verified segment of the user.
+
+    Segments that only touch at an end do not overlap (``rules.OVERLAP_TOLERANCE``). A verified
+    segment lasts at most ``rules.DURATION_MAX_S``, which bounds the range of ``started_at`` read.
+    """
+    end = started_at + timedelta(seconds=duration_s)
+    stored_end = ClimbSegment.started_at + ClimbSegment.duration_s * literal_column(
+        "interval '1 second'", Interval
+    )
+    return bool(
+        db.scalar(
+            select(
+                exists().where(
+                    ClimbSegment.user_id == user_id,
+                    ClimbSegment.status == STATUS_VERIFIED,
+                    ClimbSegment.started_at > started_at - timedelta(seconds=DURATION_MAX_S),
+                    ClimbSegment.started_at < end - OVERLAP_TOLERANCE,
+                    stored_end > started_at + OVERLAP_TOLERANCE,
+                )
+            )
+        )
+    )
 
 
 def insert_segment(db: Session, row: SegmentRow) -> bool:
