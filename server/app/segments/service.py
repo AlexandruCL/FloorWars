@@ -12,6 +12,7 @@ Problem types: ``urn:floorwars:problem:device-unknown`` (403).
 
 import logging
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
@@ -57,6 +58,7 @@ class ScoredSegment:
     team_id: int
     building_id: int
     points: int
+    steps: int
 
 
 class Leaderboards(Protocol):
@@ -191,10 +193,25 @@ def _accept(
         )
         result.rejected.append(RejectedSegment(id=item.id, reason=ID_TAKEN_REASON))
         return None
-    repository.add_score(db, row.season_id, row.building_id, row.team_id, points, item.steps)
     repository.insert_receipt(db, device_id, item.id, user_id, STATUS_VERIFIED, None, item.steps)
     result.accepted.append(AcceptedSegment(id=item.id, steps_scored=item.steps, points=points))
-    return ScoredSegment(row.season_id, user_id, row.team_id, row.building_id, points)
+    return ScoredSegment(row.season_id, user_id, row.team_id, row.building_id, points, item.steps)
+
+
+def _add_scores(db: Session, scored: list[ScoredSegment]) -> None:
+    """One ``add_score`` per team and building, in ascending order, after all items.
+
+    Teammates uploading at once lock the same score rows: taken item by item, in ``started_at``
+    order, two batches could wait on each other (a deadlock would lose one batch). All score locks
+    in one global order, before all claim locks, leave no cycle.
+    """
+    totals: defaultdict[tuple[int, int, int], list[int]] = defaultdict(lambda: [0, 0])
+    for segment in scored:
+        total = totals[(segment.season_id, segment.building_id, segment.team_id)]
+        total[0] += segment.points
+        total[1] += segment.steps
+    for (season_id, building_id, team_id), (points, steps) in sorted(totals.items()):
+        repository.add_score(db, season_id, building_id, team_id, points, steps)
 
 
 def _notify(board: Leaderboards, scored: list[ScoredSegment], flips: list[Flip]) -> None:
@@ -239,6 +256,7 @@ def upload_batch(
         if segment is not None:
             scored.append(segment)
 
+    _add_scores(db, scored)
     flips: list[Flip] = []
     for season_id, building_id in sorted({(s.season_id, s.building_id) for s in scored}):
         flip = claim.recompute_owner(db, season_id, building_id, now)
