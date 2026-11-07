@@ -45,8 +45,10 @@ logger = logging.getLogger("floorwars.segments")
 
 DEVICE_UNKNOWN = "urn:floorwars:problem:device-unknown"
 HOUR_S = 3600
-# Answer for a segment id that is already taken by a receipt of another user, or by a stored row
-# of another device. It says nothing about the other upload and changes nothing.
+# Answer for a segment id that is already taken: by a receipt of another user on this device id, or
+# by a stored row of any user. Only the caller's receipt is added. It shows nothing of the other
+# upload, but it does tell someone holding the id, and its exact ``started_at`` for a stored row,
+# that the id is taken.
 ID_TAKEN_REASON: rules.RejectReason = "no_checkin"
 
 
@@ -224,8 +226,8 @@ def _accept(
 ) -> ScoredSegment | None:
     """Store and score a verified item. None when a concurrent upload stored this segment first:
     ``repository.segment_exists`` runs earlier, but holds no lock against other users."""
-    prior = repository.verified_steps_around(db, user_id, item.started_at, rules.POINTS_WINDOW)
-    points = claim.points_for(item.steps, prior)
+    nearby = repository.verified_steps_around(db, user_id, item.started_at, rules.POINTS_WINDOW)
+    points = claim.points_for(item.steps, nearby)
     row = _row(item, device_id, user_id, ctx, None, points)
     if not repository.insert_segment(db, row):
         _id_taken(db, item, device_id, user_id, result)

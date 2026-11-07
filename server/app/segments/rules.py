@@ -2,8 +2,8 @@
 
 ``check_item`` runs the rules in their fixed order and returns the first failure. The database
 values it needs arrive as arguments, loaded by the caller. ``check_bounds`` is the first group on
-its own: the caller runs it before any query, because a ``started_at`` far outside the accepted
-range is not safe for date arithmetic.
+its own: the caller runs it before any query that does date arithmetic, because that is not safe
+for a ``started_at`` far outside the accepted range.
 """
 
 import math

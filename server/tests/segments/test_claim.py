@@ -157,7 +157,7 @@ def team(arena: Arena, code: str) -> int:
 
 
 @pytest.mark.parametrize(
-    ("steps", "prior", "expected"),
+    ("steps", "nearby", "expected"),
     [
         (1, 0, 1),
         (299, 0, 299),
@@ -172,8 +172,8 @@ def team(arena: Arena, code: str) -> int:
         (2000, 0, 1150),
     ],
 )
-def test_points_for(steps: int, prior: int, expected: int) -> None:
-    assert points_for(steps, prior) == expected
+def test_points_for(steps: int, nearby: int, expected: int) -> None:
+    assert points_for(steps, nearby) == expected
 
 
 # Owner rules.
