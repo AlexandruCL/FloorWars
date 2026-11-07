@@ -1,14 +1,22 @@
 """Post fake climb segments to POST /segments, with no phone.
 
 Fakes for week 1 (plan section 9.2): Ionut tests the server, Cristea drives the UI against Prism.
-Segments follow the contract's Segment schema (contracts/openapi.yaml, 0.2.0-draft) and stay
-inside its bounds, so a server rejects the bad kinds per item, never with 422.
+Segments follow the contract's SegmentBatch schema (contracts/openapi.yaml, 0.5.0-draft): a
+batch-level device_id plus the segments. All kinds except out_of_range stay inside the schema
+bounds, so a server rejects the bad kinds per item, never with 422.
 
-Kinds:
-  stairs    pass the scoring rule (plan 3.3): 4-8 steps per metre, 0.1-0.9 m/s, 5 s to 3 min.
-  elevator  fast ascent (> 1.0 m/s) with fewer than 1 step per metre. Scores 0.
-  shake     a small ascent (>= 2.0 m) with far more than 8 steps per metre. Scores 0.
-  mixed     a seeded mix of the three.
+Kinds (the first failed rule of the server, spec section 4, is in brackets):
+  stairs        pass the scoring rule (plan 3.3): 4-8 steps per metre, 0.1-0.9 m/s, 5 s to 3 min.
+  elevator      fast ascent (> 1.0 m/s) with fewer than 1 step per metre. Scores 0.
+  shake         a small ascent (>= 2.0 m) with far more than 8 steps per metre. Scores 0.
+  bad_speed     stairs-like steps per metre but above 0.9 m/s [speed].
+  bad_cadence   valid speed and steps per metre, but more than 3 steps per second [cadence].
+  bad_ratio     valid speed, but under 4 or over 8 steps per metre [pressure_steps_mismatch].
+  out_of_range  ascent_m or steps outside the server bounds [ascent_range or steps_range]. The
+                contract schema bounds both, so a strict request model may answer 422 instead of
+                rejecting the item (spec section 1, decision 4).
+  late          started_at 8 to 20 days before the batch time [started_at_range].
+  mixed         a seeded mix of stairs, elevator and shake.
 
 Usage: python tools/fake_segments/fake_segments.py --count 5 --batch-size 5
        python tools/fake_segments/fake_segments.py --dry-run --count 3 --seed 1
@@ -26,13 +34,26 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
+# Test-data tool: random is for reproducible fakes, not security (S311); the names below hold the
+# env-var name and Prism's dummy token, not secrets (S105).
+# ruff: noqa: S105, S311
+
 # Prism's default port. Prism ignores the /v1 base path of the contract's servers entry and
 # serves the paths at the root, so the mock base has no /v1. A real server takes .../v1.
 DEFAULT_BASE_URL = "http://127.0.0.1:4010"
 DEFAULT_TOKEN = "prism-dummy-token"  # Prism only checks that a bearer token is present
 TOKEN_ENV = "FLOORWARS_TOKEN"
 CLASSIFIER_VERSION = "rules-1"
-KINDS = ("stairs", "elevator", "shake", "mixed")
+BAD_KINDS = ("bad_speed", "bad_cadence", "bad_ratio", "out_of_range", "late")
+KINDS = ("stairs", "elevator", "shake", *BAD_KINDS, "mixed")
+# Reasons of the first failed server rule (spec week 3, section 4) for each rejecting kind.
+EXPECTED_REASONS = {
+    "bad_speed": ("speed",),
+    "bad_cadence": ("cadence",),
+    "bad_ratio": ("pressure_steps_mismatch",),
+    "out_of_range": ("ascent_range", "steps_range"),
+    "late": ("started_at_range",),
+}
 CONNECT_TIMEOUT_S = 10.0
 READ_TIMEOUT_S = 20.0
 MAX_BATCH = 100  # SegmentBatch.maxItems in the contract
@@ -46,8 +67,12 @@ STEPS_MIN, STEPS_MAX = 1, 2000
 STEPS_PER_M_MIN, STEPS_PER_M_MAX = 4.0, 8.0
 SPEED_MIN_MPS, SPEED_MAX_MPS = 0.1, 0.9
 DURATION_MIN_S, DURATION_MAX_S = 5.0, 180.0
-# The plan does not set a cadence limit yet; keep generated stairs at a human step rate.
-STAIRS_MAX_CADENCE_HZ = 3.0
+# Cadence limit (spec week 3 section 3, tunable). Generated stairs stay under STAIRS_MAX_CADENCE_HZ,
+# a margin below the limit for the rounding of steps and duration.
+CADENCE_MAX_STEPS_PER_S = 3.0
+STAIRS_MAX_CADENCE_HZ = 2.7
+SPEED_CONSISTENCY = 0.2  # vert_speed_mps may differ from ascent_m / duration_s by 20 percent
+LATE_MIN_DAYS, LATE_MAX_DAYS = 8, 20  # the server limit is 7 days (STARTED_AT_MAX_AGE)
 
 
 def make_uuid(rng):
@@ -86,18 +111,67 @@ def _shake_values(rng):
     return ascent, duration, steps, round(rng.uniform(0.05, 0.4), 2)
 
 
+def _bad_speed_values(rng):
+    """Steps per metre fit, but the ascent is faster than any stair climb (1.0-1.5 m/s)."""
+    ascent = round(rng.uniform(8.0, 30.0), 1)
+    speed = rng.uniform(1.0, 1.5)
+    duration = round(ascent / speed, 1)  # 5.3 s or more
+    steps = round(ascent * rng.uniform(5.0, 7.0))
+    return ascent, duration, steps, round(rng.uniform(0.3, 0.8), 2)
+
+
+def _bad_cadence_values(rng):
+    """Speed and steps per metre fit, but 4 to 6 steps per second (limit 3)."""
+    ascent = round(rng.uniform(6.0, 30.0), 1)
+    speed = rng.uniform(0.7, 0.85)
+    duration = round(ascent / speed, 1)
+    steps = round(ascent * rng.uniform(6.0, 7.0))
+    return ascent, duration, steps, round(rng.uniform(0.2, 0.6), 2)
+
+
+def _bad_ratio_values(rng):
+    """Valid speed; steps per metre about 1 to 3 (few steps) or 10 to 15 (many steps)."""
+    ascent = round(rng.uniform(3.0, 20.0), 1)
+    speed = rng.uniform(0.3, 0.6)
+    duration = round(ascent / speed, 1)
+    per_m = rng.uniform(1.0, 3.0) if rng.random() < 0.5 else rng.uniform(10.0, 15.0)
+    return ascent, duration, max(STEPS_MIN, round(ascent * per_m)), round(rng.uniform(0.1, 0.5), 2)
+
+
+def _out_of_range_values(rng):
+    """One field outside the server bounds: ascent too big or too small, or too many steps."""
+    which = rng.choice(("ascent_high", "ascent_low", "steps_high"))
+    if which == "ascent_high":
+        ascent = round(rng.uniform(121.0, 200.0), 1)
+        duration = round(ascent / rng.uniform(0.3, 0.6), 1)
+        return ascent, duration, round(ascent * rng.uniform(5.0, 7.0)), 0.9
+    if which == "ascent_low":
+        ascent = round(rng.uniform(0.5, 1.9), 1)
+        return ascent, round(ascent / rng.uniform(0.3, 0.6), 1), round(ascent * 6.0) or 1, 0.9
+    ascent = round(rng.uniform(60.0, 120.0), 1)
+    duration = round(ascent / rng.uniform(0.3, 0.6), 1)
+    return ascent, duration, rng.randint(STEPS_MAX + 1, STEPS_MAX + 1000), 0.9
+
+
 _VALUES = {
     "stairs": _stairs_values,
     "elevator": _elevator_values,
     "shake": _shake_values,
+    "bad_speed": _bad_speed_values,
+    "bad_cadence": _bad_cadence_values,
+    "bad_ratio": _bad_ratio_values,
+    "out_of_range": _out_of_range_values,
+    "late": _stairs_values,  # a good climb, reported too late
 }
 
 
 def make_segment(kind, rng, *, checkin_id, building_id, started_at):
-    """One Segment request item of the given kind ('stairs', 'elevator' or 'shake')."""
+    """One Segment request item of the given kind (see the module docstring)."""
     if kind not in _VALUES:
         raise ValueError(f"unknown segment kind: {kind}")
     ascent, duration, steps, stair_prob = _VALUES[kind](rng)
+    if kind == "late":
+        started_at -= timedelta(days=rng.uniform(LATE_MIN_DAYS, LATE_MAX_DAYS))
     return {
         "id": make_uuid(rng),
         "checkin_id": checkin_id,
@@ -136,7 +210,7 @@ def make_segments(kind, rng, *, count, checkin_id, building_id, start):
 
 
 def make_batches(segments, batch_size, rng, device_id=None):
-    """Split into SegmentBatch bodies (contract 0.5.0: device_id), each with a new Idempotency-Key."""
+    """Split into SegmentBatch bodies (contract 0.5.0: device_id), each with its own key."""
     device_id = device_id or make_uuid(rng)
     if not 1 <= batch_size <= MAX_BATCH:
         raise ValueError(f"batch size must be 1 to {MAX_BATCH}")
@@ -163,15 +237,32 @@ def make_batch(kind, rng, *, count, checkin_id, building_id, start, device_id=No
 
 
 def passes_scoring_rule(seg):
-    """True if a segment would score under the starting thresholds (plan 3.3)."""
+    """True if a segment passes the pure server rules (spec week 3, section 4, rules 2 and 5-7).
+
+    Mirrors the rules for test data only; the server is the authority. started_at is not checked.
+    """
+    return expected_reason(seg) is None
+
+
+def expected_reason(seg):
+    """Reason of the first failed pure rule, in the server's order, or None if all pass."""
     ascent, steps, duration = seg["ascent_m"], seg["steps"], seg["duration_s"]
-    return (
-        ASCENT_MIN_M <= ascent <= ASCENT_MAX_M
-        and STEPS_MIN <= steps <= STEPS_MAX
-        and STEPS_PER_M_MIN <= steps / ascent <= STEPS_PER_M_MAX
-        and SPEED_MIN_MPS <= seg["vert_speed_mps"] <= SPEED_MAX_MPS
-        and DURATION_MIN_S <= duration <= DURATION_MAX_S
-    )
+    speed = seg["vert_speed_mps"]
+    if not STEPS_MIN <= steps <= STEPS_MAX:
+        return "steps_range"
+    if not ASCENT_MIN_M <= ascent <= ASCENT_MAX_M:
+        return "ascent_range"
+    if not DURATION_MIN_S <= duration <= DURATION_MAX_S:
+        return "duration"
+    if not SPEED_MIN_MPS <= speed <= SPEED_MAX_MPS:
+        return "speed"
+    if abs(speed - ascent / duration) > SPEED_CONSISTENCY * (ascent / duration):
+        return "speed"
+    if not STEPS_PER_M_MIN <= steps / ascent <= STEPS_PER_M_MAX:
+        return "pressure_steps_mismatch"
+    if steps / duration > CADENCE_MAX_STEPS_PER_S:
+        return "cadence"
+    return None
 
 
 def post_batch(base_url, token, key, body):
@@ -245,12 +336,17 @@ def build_parser():
     p.add_argument(
         "--building-id",
         type=int,
-        default=1,
-        help="building of the check-in (default 1)",
+        required=True,
+        help="building of the check-in (building_id of the check-in response)",
     )
-    p.add_argument("--checkin-id", default=None, help="check-in UUID (default: random)")
     p.add_argument(
-        "--device-id", default=None, help="device UUID registered at sign-in (default: random)"
+        "--checkin-id", required=True, help="UUID of the check-in the segments belong to"
+    )
+    p.add_argument(
+        "--device-id",
+        default=None,
+        help="device UUID sent as SegmentBatch.device_id, the one registered at sign-in "
+        "(default: random, which a real server answers with 403 device-unknown)",
     )
     p.add_argument("--count", type=int, default=5, help="segments to generate (default 5)")
     p.add_argument(
@@ -289,7 +385,12 @@ def main(argv=None):
         return 2
 
     rng = random.Random(args.seed)
-    checkin_id = args.checkin_id or make_uuid(rng)
+    try:
+        checkin_id = str(uuid.UUID(args.checkin_id))
+        device_id = str(uuid.UUID(args.device_id)) if args.device_id else None
+    except ValueError:
+        print("--checkin-id and --device-id must be UUIDs", file=sys.stderr)
+        return 2
     start = parse_start(args.start, args.seed is not None)
     segments = make_segments(
         args.kind,
@@ -299,7 +400,7 @@ def main(argv=None):
         building_id=args.building_id,
         start=start,
     )
-    batches = make_batches(segments, args.batch_size, rng, args.device_id)
+    batches = make_batches(segments, args.batch_size, rng, device_id)
 
     if args.dry_run:
         print(json.dumps({"batches": batches}, indent=2))

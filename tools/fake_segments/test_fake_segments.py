@@ -1,5 +1,9 @@
 """Tests for the fake-segment generator. Run: python -m pytest -q tools/fake_segments"""
 
+# Test file outside server/, so the server's per-file ignores do not apply: assert (S101) and the
+# seeded random.Random used for reproducible fakes (S311).
+# ruff: noqa: S101, S311
+
 import json
 import random
 from datetime import UTC, datetime
@@ -13,6 +17,19 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 OPENAPI = REPO_ROOT / "contracts" / "openapi.yaml"
 START = datetime(2026, 11, 2, 10, 0, 0, tzinfo=UTC)
 N = 300
+CHECKIN = "11111111-1111-4111-8111-111111111111"
+DEVICE = "22222222-2222-4222-8222-222222222222"
+CLI = ["--checkin-id", CHECKIN, "--building-id", "4"]
+SCHEMA_KINDS = [
+    "stairs",
+    "elevator",
+    "shake",
+    "bad_speed",
+    "bad_cadence",
+    "bad_ratio",
+    "late",
+    "mixed",
+]
 
 
 @pytest.fixture(scope="module")
@@ -70,6 +87,65 @@ def test_segments_are_in_time_order_and_unique():
     assert times == sorted(times)
 
 
+# Kinds that trigger one server rule each (spec week 3, section 4) ----------------------------
+
+
+@pytest.mark.parametrize("kind", ["bad_speed", "bad_cadence", "bad_ratio", "out_of_range"])
+def test_bad_kinds_fail_the_expected_rule_first(kind):
+    seen = set()
+    for seg in segments(kind):
+        reason = fs.expected_reason(seg)
+        assert reason in fs.EXPECTED_REASONS[kind], (reason, seg)
+        seen.add(reason)
+    assert seen == set(fs.EXPECTED_REASONS[kind])  # every reason of the kind is drawn
+
+
+def test_bad_speed_is_a_consistent_fast_climb():
+    for seg in segments("bad_speed"):
+        assert seg["vert_speed_mps"] > 0.9, seg
+        assert 4 <= seg["steps"] / seg["ascent_m"] <= 8, seg
+        assert 5 <= seg["duration_s"] <= 180, seg
+
+
+def test_bad_cadence_has_valid_speed_and_ratio():
+    for seg in segments("bad_cadence"):
+        assert 0.1 <= seg["vert_speed_mps"] <= 0.9, seg
+        assert 4 <= seg["steps"] / seg["ascent_m"] <= 8, seg
+        assert seg["steps"] / seg["duration_s"] > fs.CADENCE_MAX_STEPS_PER_S, seg
+
+
+def test_bad_ratio_has_valid_speed_and_other_ratio():
+    ratios = [s["steps"] / s["ascent_m"] for s in segments("bad_ratio")]
+    assert all(r < 4 or r > 8 for r in ratios)
+    assert any(r < 4 for r in ratios)
+    assert any(r > 8 for r in ratios)
+    assert all(0.1 <= s["vert_speed_mps"] <= 0.9 for s in segments("bad_ratio"))
+
+
+def test_late_climbs_are_otherwise_valid_and_too_old():
+    for seg in segments("late"):
+        started = datetime.fromisoformat(seg["started_at"])
+        assert (START - started).days >= 7, seg  # server limit: older than 7 days
+        assert fs.passes_scoring_rule(seg)
+
+
+def test_out_of_range_breaks_the_schema_bounds_by_design(spec):
+    errors = [basic_errors(seg, spec) for seg in segments("out_of_range")]
+    assert all(errors), "every out_of_range item is outside a schema bound (422 on a strict model)"
+
+
+def test_all_kinds_have_values():
+    for kind in fs.KINDS:
+        if kind != "mixed":
+            assert segments(kind, count=2)[0]["classifier_version"] == "rules-1"
+
+
+def test_unknown_kind_is_an_error():
+    rng = random.Random(1)
+    with pytest.raises(ValueError):
+        fs.make_segment("nope", rng, checkin_id=CHECKIN, building_id=1, started_at=START)
+
+
 # Contract (Segment schema) ------------------------------------------------------------------
 
 
@@ -95,7 +171,7 @@ def basic_errors(seg, spec):
     return errors
 
 
-@pytest.mark.parametrize("kind", ["stairs", "elevator", "shake", "mixed"])
+@pytest.mark.parametrize("kind", SCHEMA_KINDS)
 def test_segments_fit_schema_bounds(kind, spec):
     for seg in segments(kind):
         assert basic_errors(seg, spec) == [], seg
@@ -130,7 +206,7 @@ def validator_for(spec):
     return make
 
 
-@pytest.mark.parametrize("kind", ["stairs", "elevator", "shake", "mixed"])
+@pytest.mark.parametrize("kind", SCHEMA_KINDS)
 def test_segments_validate_with_jsonschema(kind, validator_for):
     validator = validator_for("Segment")
     for seg in segments(kind):
@@ -179,7 +255,7 @@ def test_seed_determinism():
 
 
 def test_dry_run_prints_valid_deterministic_json(capsys, validator_for):
-    argv = ["--dry-run", "--count", "3", "--seed", "1"]
+    argv = ["--dry-run", "--count", "3", "--seed", "1", "--device-id", DEVICE, *CLI]
     assert fs.main(argv) == 0
     first = capsys.readouterr().out
     assert fs.main(argv) == 0
@@ -189,11 +265,39 @@ def test_dry_run_prints_valid_deterministic_json(capsys, validator_for):
     assert len(batch["body"]["segments"]) == 3
     assert validator_for("SegmentBatch").is_valid(batch["body"])
     assert batch["body"]["segments"][0]["started_at"] == "2026-11-02T10:00:00Z"
+    assert batch["body"]["device_id"] == DEVICE
+    assert {s["checkin_id"] for s in batch["body"]["segments"]} == {CHECKIN}
+    assert {s["building_id"] for s in batch["body"]["segments"]} == {4}
+
+
+@pytest.mark.parametrize("kind", fs.KINDS)
+def test_dry_run_every_kind_is_deterministic(kind, capsys):
+    argv = ["--dry-run", "--count", "6", "--seed", "3", "--kind", kind, *CLI]
+    assert fs.main(argv) == 0
+    first = capsys.readouterr().out
+    assert fs.main(argv) == 0
+    assert capsys.readouterr().out == first
+    assert len(json.loads(first)["batches"][0]["body"]["segments"]) == 6
+
+
+def test_checkin_and_building_are_required(capsys):
+    for argv in (["--dry-run", "--building-id", "4"], ["--dry-run", "--checkin-id", CHECKIN]):
+        with pytest.raises(SystemExit) as exit_info:
+            fs.main(argv)
+        assert exit_info.value.code == 2
+    capsys.readouterr()
+
+
+def test_checkin_and_device_must_be_uuids(capsys):
+    assert fs.main(["--dry-run", "--checkin-id", "abc", "--building-id", "4"]) == 2
+    assert fs.main(["--dry-run", *CLI, "--device-id", "abc"]) == 2
+    capsys.readouterr()
 
 
 def test_cli_rejects_bad_arguments(capsys):
-    assert fs.main(["--dry-run", "--batch-size", "101"]) == 2
-    assert fs.main(["--dry-run", "--count", "0"]) == 2
+    assert fs.main(["--dry-run", "--batch-size", "101", *CLI]) == 2
+    assert fs.main(["--dry-run", "--count", "0", *CLI]) == 2
+    assert fs.main(["--dry-run", "--checkin-id", CHECKIN, "--building-id", "0"]) == 2
     capsys.readouterr()
 
 
