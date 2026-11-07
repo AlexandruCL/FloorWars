@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.dialects.postgresql import Range
 
-from app.segments import service
+from app.segments import repository, service
 from app.segments.models import Flip
 from app.segments.schemas import Segment, SegmentBatch
 from app.valkey import ValkeyError
@@ -403,6 +403,67 @@ def test_a_segment_id_taken_by_another_user_changes_nothing(world: World) -> Non
     assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
     assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
     assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 1
+
+
+@pytest.mark.parametrize("body", [{"steps": 0}, {"building_id": 10**30}])
+def test_a_taken_id_is_answered_before_the_rules_judge_the_caller(
+    world: World, body: dict[str, Any]
+) -> None:
+    # These rules store no row, so no insert conflict would catch the id: only the check before
+    # the rules stops a flag on the caller.
+    item = climb()
+    world.climber("AC").ok(item)
+    result = world.climber("ETC").ok({**item, **body})
+    assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
+    assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 1
+
+
+def test_a_taken_id_overlapping_the_callers_own_climb_is_not_flagged(world: World) -> None:
+    # B's own climb shares the time of A's. Judged, A's id would be B's overlap, with a flag.
+    item = climb(minutes_ago=5)
+    world.climber("AC").ok(item)
+    other = world.climber("ETC")
+    started = datetime.fromisoformat(item["started_at"]) + timedelta(seconds=10)
+    assert other.ok(climb(started_at=started.isoformat()))["accepted"]
+    result = other.ok(item)
+    assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
+    assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 2
+
+
+@pytest.fixture
+def lost_race(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The check before the rules sees nothing, as when a concurrent upload has not committed."""
+    monkeypatch.setattr(repository, "segment_exists", lambda *_: False)
+
+
+@pytest.mark.usefixtures("lost_race")
+def test_a_verified_item_losing_the_insert_race_changes_nothing(world: World) -> None:
+    item = climb()
+    world.climber("AC").ok(item)
+    result = world.climber("ETC").ok(item)
+    assert result == {
+        "accepted": [],
+        "rejected": [{"id": item["id"], "reason": "no_checkin"}],
+        "flips": [],
+    }
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
+    assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 1
+    assert scalar(world.client, "SELECT count(*) FROM team_building_score") == 1
+    assert scalar(world.client, "SELECT points FROM team_building_score") == 60
+
+
+@pytest.mark.usefixtures("lost_race")
+def test_a_rejected_item_losing_the_insert_race_is_not_flagged(world: World) -> None:
+    item = climb()
+    world.climber("AC").ok(item)
+    # Fails a rule that stores a row: too many steps per metre.
+    result = world.climber("ETC").ok({**item, "steps": 500})
+    assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
+    assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 1
+    assert scalar(world.client, "SELECT status FROM climb_segment") == "verified"
 
 
 # After the commit.

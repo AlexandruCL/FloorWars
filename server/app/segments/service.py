@@ -204,7 +204,10 @@ def _reject(
     result: SegmentBatchResult,
 ) -> None:
     if ctx is not None and reason not in rules.RECEIPT_ONLY:
-        repository.insert_segment(db, _row(item, device_id, user_id, ctx, reason, 0))
+        row = _row(item, device_id, user_id, ctx, reason, 0)
+        if not repository.insert_segment(db, row):  # a concurrent upload stored this id first
+            _id_taken(db, item, device_id, user_id, result)
+            return
     if reason not in rules.NOT_FRAUD:
         repository.add_fraud_flag(db, item.id, item.started_at, user_id, reason)
     repository.insert_receipt(db, device_id, item.id, user_id, STATUS_REJECTED, reason, 0)
