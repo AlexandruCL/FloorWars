@@ -242,8 +242,8 @@ def _notify(board: Leaderboards, scored: list[ScoredSegment], flips: list[Flip])
             board.record_verified(segment)
         for flip in flips:
             board.publish_flip(flip)
-    except ValkeyError:
-        logger.warning("leaderboard update failed", extra={"flips": len(flips)})
+    except Exception:
+        logger.exception("leaderboard update failed", extra={"flips": len(flips)})
 
 
 def upload_batch(

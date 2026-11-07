@@ -322,6 +322,21 @@ def test_a_leaderboard_error_does_not_fail_or_undo_the_upload(world: World) -> N
     assert scalar(world.client, "SELECT points FROM team_building_score") == 60
 
 
+def test_an_unexpected_leaderboard_error_is_logged_and_still_answers_success(
+    world: World, caplog: pytest.LogCaptureFixture
+) -> None:
+    # The batch is committed by then: a 500 would tell the client it was lost.
+    user, batch = _batch_for(world)
+    with world.client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
+        result = service.upload_batch(db, user.user_id, batch, _Board(RuntimeError("bug")))
+    assert len(result.accepted) == 1
+    assert [f.to_team for f in result.flips] == ["AC"]
+    assert scalar(world.client, "SELECT points FROM team_building_score") == 60
+    record = next(r for r in caplog.records if r.message == "leaderboard update failed")
+    assert record.levelname == "ERROR"
+    assert record.exc_info is not None
+
+
 def test_flip_time_is_iso_and_aware(world: World) -> None:
     flip = world.climber().ok(climb())["flips"][0]
     assert datetime.fromisoformat(flip["at"]).tzinfo is not None
