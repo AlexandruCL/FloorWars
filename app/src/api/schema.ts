@@ -160,7 +160,8 @@ export interface paths {
          *     recomputed in the same transaction. Building flips caused by the batch are returned in flips.
          *     Inferred: each item is checked on its own, so an item outside the bounds or failing a rule is
          *     returned in rejected and does not fail the batch; 422 is for a body that is not a valid batch.
-         *     Rate limits (plan 2, 3.4): 60 uploads per hour and 600 verified steps per 10 minutes per user.
+         *     Rate limits (plan 2, 3.4): 60 uploads per hour per user, and 600 verified steps per 10 minutes
+         *     per user, counted on both sides of started_at so that upload order cannot bypass the cap.
          */
         post: operations["uploadSegments"];
         delete?: never;
@@ -583,12 +584,15 @@ export interface components {
              *     speed: vertical speed outside 0.1 to 0.9 m/s. cadence: implausible step rate.
              *     started_at_range: started_at older than 7 days or more than 5 minutes in the future.
              *     season_inactive: no season was running at started_at. no_team: the user had no team in that season.
-             *     duration: window outside 5 s to 3 min. rate_limit: the user is over 600 verified steps per
-             *     10 minutes (over 60 uploads per hour returns 429 for the whole batch). no_checkin: no check-in valid at started_at. building_mismatch:
-             *     building_id differs from the check-in's building.
+             *     duration: window outside 5 s to 3 min. rate_limit: the user's verified steps with started_at
+             *     less than 10 minutes before or after this segment's, plus its own steps, are above 600 (over 60
+             *     uploads per hour returns 429 for the whole batch). overlap: [started_at, started_at + duration_s)
+             *     overlaps that of a verified segment of the same user; climbs that only touch at an end do not
+             *     overlap (1 ms tolerance for real rounding). no_checkin: no check-in valid at started_at.
+             *     building_mismatch: building_id differs from the check-in's building.
              * @enum {string}
              */
-            reason: "pressure_steps_mismatch" | "ascent_range" | "steps_range" | "speed" | "cadence" | "duration" | "rate_limit" | "no_checkin" | "building_mismatch" | "started_at_range" | "season_inactive" | "no_team" | "stair_prob_range";
+            reason: "pressure_steps_mismatch" | "ascent_range" | "steps_range" | "speed" | "cadence" | "duration" | "rate_limit" | "no_checkin" | "building_mismatch" | "started_at_range" | "season_inactive" | "no_team" | "stair_prob_range" | "overlap";
         };
         /** @description A claimable building. No floor count or heights (the app needs no building floor data). */
         Building: {
