@@ -1,0 +1,107 @@
+"""Pure helpers of ``app.leaderboards`` with a fake client (no Valkey needed)."""
+
+import json
+import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
+import pytest
+
+from app import leaderboards as lb
+from app.valkey import ValkeyError
+
+
+class FakeClient:
+    """Implements only the commands ``app.leaderboards`` sends."""
+
+    def __init__(self) -> None:
+        self.sets: dict[str, dict[str, float]] = {}
+        self.published: list[tuple[str, str]] = []
+
+    def execute(self, *args: str | int) -> Any:
+        cmd, *rest = args
+        if cmd == "ZINCRBY":
+            key, inc, member = str(rest[0]), float(rest[1]), str(rest[2])
+            z = self.sets.setdefault(key, {})
+            z[member] = z.get(member, 0.0) + inc
+            return str(z[member])
+        if cmd == "ZREVRANGE":
+            z = self.sets.get(str(rest[0]), {})
+            items = sorted(z.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)
+            stop = int(rest[2])
+            items = items[: stop + 1]
+            return [x for member, score in items for x in (member, str(score))]
+        if cmd == "EXISTS":
+            return int(str(rest[0]) in self.sets)
+        if cmd == "PUBLISH":
+            self.published.append((str(rest[0]), str(rest[1])))
+            return 0
+        raise AssertionError(f"unexpected command {cmd}")
+
+
+@dataclass(frozen=True)
+class Flip:
+    building_id: int
+    event_id: int
+    from_code: str | None
+    to_code: str
+    at: datetime
+
+
+def test_keys() -> None:
+    assert lb.users_key(3) == "fw:lb:s3:users"
+    assert lb.teams_key(3) == "fw:lb:s3:teams"
+    assert lb.building_key(3, 9) == "fw:lb:s3:b9:teams"
+
+
+def test_record_verified_updates_three_boards() -> None:
+    vk = FakeClient()
+    user = uuid.uuid4()
+    lb.record_verified(vk, 1, user, 7, 4, 120)
+    lb.record_verified(vk, 1, user, 7, 4, 30)
+    assert vk.sets["fw:lb:s1:users"] == {str(user): 150}
+    assert vk.sets["fw:lb:s1:teams"] == {"7": 150}
+    assert vk.sets["fw:lb:s1:b4:teams"] == {"7": 150}
+
+
+def test_record_verified_ignores_zero_points() -> None:
+    vk = FakeClient()
+    lb.record_verified(vk, 1, uuid.uuid4(), 7, 4, 0)
+    assert vk.sets == {}
+
+
+def test_top_orders_and_limits() -> None:
+    vk = FakeClient()
+    for team, pts in (("1", 10), ("2", 30), ("3", 20)):
+        vk.execute("ZINCRBY", "k", pts, team)
+    assert lb.top(vk, "k", 2) == [("2", 30), ("3", 20)]
+
+
+def test_top_missing_key_is_none() -> None:
+    assert lb.top(FakeClient(), "nope", 5) is None
+
+
+def test_top_rejects_odd_reply() -> None:
+    class Bad:
+        def execute(self, *args: str | int) -> Any:
+            return "oops"
+
+    with pytest.raises(ValkeyError):
+        lb.top(Bad(), "k", 5)
+
+
+def test_publish_flip_message() -> None:
+    vk = FakeClient()
+    at = datetime(2026, 11, 7, 10, 0, tzinfo=UTC)
+    lb.publish_flip(vk, Flip(4, 12, None, "AC", at))
+    channel, message = vk.published[0]
+    assert channel == "fw:events"
+    assert json.loads(message) == {
+        "type": "building_flipped",
+        "event_id": 12,
+        "building_id": 4,
+        "from_team": None,
+        "to_team": "AC",
+        "at": at.isoformat(),
+    }
