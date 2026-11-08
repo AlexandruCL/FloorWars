@@ -159,7 +159,7 @@ export interface paths {
          *     An item rejected without a stored row has nothing to match, so another device's resend of it
          *     is judged again.
          *     Server plausibility checks repeat the on-device rules (plan 3.3, 3.4).
-         *     A segment scores only if its steps match its pressure change (about 4 to 8 steps per metre of
+         *     A segment scores only if its steps match its pressure change (about 4 to 10 steps per metre of
          *     ascent); points go to the building of the active check-in, and the building's owner is
          *     recomputed in the same transaction. Building flips caused by the batch are returned in flips.
          *     Inferred: each item is checked on its own, so an item outside the bounds or failing a rule is
@@ -584,7 +584,7 @@ export interface components {
             id: string;
             /**
              * @description Inferred: the rule that failed (plan 2, 3.3, 3.4).
-             *     pressure_steps_mismatch: steps per metre of ascent outside 4 to 8 (elevator, flat walking, shaking).
+             *     pressure_steps_mismatch: steps per metre of ascent outside 4 to 10 (elevator, flat walking, shaking).
              *     ascent_range: ascent_m outside 2.0 to 120.0. steps_range: steps outside 1 to 2000.
              *     stair_prob_range: stair_prob outside 0 to 1 or not finite.
              *     speed: vertical speed outside 0.1 to 0.9 m/s. cadence: implausible step rate.

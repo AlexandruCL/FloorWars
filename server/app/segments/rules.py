@@ -31,7 +31,7 @@ SPEED_MIN_MPS: Final = 0.1
 SPEED_MAX_MPS: Final = 0.9
 SPEED_TOLERANCE: Final = 0.2
 STEPS_PER_M_MIN: Final = 4.0
-STEPS_PER_M_MAX: Final = 8.0
+STEPS_PER_M_MAX: Final = 10.0
 CADENCE_MAX_STEPS_PER_S: Final = 3.0
 VERIFIED_STEPS_PER_10_MIN: Final = 600
 RATE_WINDOW: Final = timedelta(minutes=10)

@@ -35,7 +35,7 @@ Indexes on `climb_segment` (created on the parent): `(building_id, started_at DE
 | `STEPS_MIN`, `STEPS_MAX` | 1, 2000 |
 | `DURATION_MIN_S`, `DURATION_MAX_S` | 5.0, 180.0 |
 | `SPEED_MIN_MPS`, `SPEED_MAX_MPS` | 0.1, 0.9 |
-| `STEPS_PER_M_MIN`, `STEPS_PER_M_MAX` | 4.0, 8.0 |
+| `STEPS_PER_M_MIN`, `STEPS_PER_M_MAX` | 4.0, 10.0 |
 | `CADENCE_MAX_STEPS_PER_S` | 3.0 (not in the plan; tunable) |
 | `VERIFIED_STEPS_PER_10_MIN` | 600 |
 | `OVERLAP_TOLERANCE` | 1 ms |
