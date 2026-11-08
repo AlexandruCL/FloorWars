@@ -15,7 +15,7 @@ from tests.segments.api_world import World, climb_at, clock_hour, make_world, ut
 
 pytestmark = pytest.mark.skipif(not TEST_VALKEY_URL, reason="FLOORWARS_TEST_VALKEY_URL not set")
 
-BASELINE_MAX = 700  # measured 658 before the optimisation
+BASELINE_MAX = 120  # measured 658 before finding 9, 109 after (spec 5a)
 
 
 @pytest.fixture(autouse=True)
@@ -69,7 +69,9 @@ def test_a_mixed_batch_of_100_stays_within_the_statement_budget(world: World) ->
     print(f"\nBATCH_STATEMENTS={count}")
 
     reasons = sorted(r["reason"] for r in result["rejected"])
-    print("accepted", len(result["accepted"]), "reasons", {r: reasons.count(r) for r in set(reasons)})
+    print(
+        "accepted", len(result["accepted"]), "reasons", {r: reasons.count(r) for r in set(reasons)}
+    )
     assert len(result["accepted"]) == 60 + 15, result["rejected"][:3]
     assert len(reasons) == 25, reasons
     assert count <= BASELINE_MAX

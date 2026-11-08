@@ -15,7 +15,7 @@ import uuid
 from collections import defaultdict
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from sqlalchemy.orm import Session
@@ -31,6 +31,7 @@ from app.segments.models import (
     ItemContext,
     Receipt,
     SegmentRow,
+    VerifiedClimb,
 )
 from app.segments.schemas import (
     AcceptedSegment,
@@ -46,6 +47,7 @@ logger = logging.getLogger("floorwars.segments")
 
 DEVICE_UNKNOWN = "urn:floorwars:problem:device-unknown"
 HOUR_S = 3600
+HOUR = timedelta(hours=1)
 # Answer for a segment id that is already taken: by a receipt of another user on this device id, or
 # by a stored row of any user. Only the caller's receipt is added. It shows nothing of the other
 # upload, but it does tell someone holding the id, and its exact ``started_at`` for a stored row,
@@ -204,8 +206,22 @@ def _row(
     )
 
 
+def _answer(
+    receipts: dict[uuid.UUID, Receipt],
+    item: Segment,
+    device_id: uuid.UUID,
+    user_id: uuid.UUID,
+    status: str,
+    reason: rules.RejectReason | None,
+    steps_scored: int,
+) -> None:
+    """Record a receipt for the one insert after the loop. The first answer for an id stays, as
+    with ``ON CONFLICT DO NOTHING``; a repeat of the id later in the batch is answered from it."""
+    receipts.setdefault(item.id, Receipt(device_id, item.id, user_id, status, reason, steps_scored))
+
+
 def _id_taken(
-    db: Session,
+    receipts: dict[uuid.UUID, Receipt],
     item: Segment,
     device_id: uuid.UUID,
     user_id: uuid.UUID,
@@ -213,36 +229,97 @@ def _id_taken(
     store: bool = True,
 ) -> None:
     if store:
-        repository.insert_receipt(
-            db, device_id, item.id, user_id, STATUS_REJECTED, ID_TAKEN_REASON, 0
-        )
+        _answer(receipts, item, device_id, user_id, STATUS_REJECTED, ID_TAKEN_REASON, 0)
     result.rejected.append(RejectedSegment(id=item.id, reason=ID_TAKEN_REASON))
 
 
-def _check(
-    db: Session, item: Segment, user_id: uuid.UUID, now: datetime
-) -> tuple[rules.RejectReason | None, ItemContext | None]:
-    """The rule outcome. Bounds first: ``started_at`` is unsafe for date arithmetic until then. The
-    two queries over the user's climbs run only for an item that passes everything else."""
-    reason = rules.check_bounds(item, now)
-    if reason is not None:
-        return reason, None
-    ctx = repository.load_context(db, user_id, item.checkin_id, item.started_at)
-    reason = rules.check_state_and_physics(item, ctx, user_id)
-    if reason is not None:
-        return reason, ctx
-    recent = repository.verified_steps_around(db, user_id, item.started_at, rules.RATE_WINDOW)
-    overlaps = repository.overlaps_verified(db, user_id, item.started_at, item.duration_s)
-    reason = rules.check_limits(item, recent_verified_steps=recent, overlaps_verified=overlaps)
-    return reason, ctx
+def _hour(at: datetime) -> datetime:
+    return at.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+
+
+class _Climbs:
+    """The user's verified climbs that the batch reads, plus those it accepts. Each method answers
+    what the repository function of the same name would, with the same bounds. Safe because only
+    this user's batches write these rows, and they hold the user lock."""
+
+    def __init__(self, climbs: list[VerifiedClimb]) -> None:
+        self._climbs = climbs
+
+    def add(self, climb: VerifiedClimb) -> None:
+        self._climbs.append(climb)
+
+    def _steps(self, low: datetime, high: datetime, *, from_low: bool = False) -> int:
+        return sum(
+            c.steps_scored
+            for c in self._climbs
+            if (c.started_at >= low if from_low else c.started_at > low) and c.started_at < high
+        )
+
+    def verified_steps_around(self, at: datetime) -> int:
+        return self._steps(at - rules.RATE_WINDOW, at + rules.RATE_WINDOW)
+
+    def verified_steps_before(self, at: datetime) -> int:
+        return self._steps(at - rules.RATE_WINDOW, at)
+
+    def verified_steps_in_hour(self, at: datetime) -> int:
+        start = _hour(at)
+        return self._steps(start, start + HOUR, from_low=True)
+
+    def overlaps_verified(self, item: Segment, device_id: uuid.UUID | None = None) -> bool:
+        end = item.started_at + timedelta(seconds=item.duration_s)
+        return any(
+            c.started_at > item.started_at - timedelta(seconds=rules.DURATION_MAX_S)
+            and c.started_at < end - rules.OVERLAP_TOLERANCE
+            and c.ends_at > item.started_at + rules.OVERLAP_TOLERANCE
+            and (device_id is None or c.device_id == device_id)
+            for c in self._climbs
+        )
+
+
+def _reads(item: Segment) -> tuple[datetime, datetime]:
+    """The closed range of ``started_at`` that ``_Climbs`` reads for ``item``."""
+    start = item.started_at
+    hour = _hour(start)
+    return (
+        min(start - rules.RATE_WINDOW, start - timedelta(seconds=rules.DURATION_MAX_S), hour),
+        max(start + rules.RATE_WINDOW, start + timedelta(seconds=item.duration_s), hour + HOUR),
+    )
+
+
+def _merged(ranges: list[tuple[datetime, datetime]]) -> list[tuple[datetime, datetime]]:
+    merged: list[tuple[datetime, datetime]] = []
+    for low, high in sorted(ranges):
+        if merged and low <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], high))
+        else:
+            merged.append((low, high))
+    return merged
+
+
+Check = tuple[rules.RejectReason | None, ItemContext | None]
+
+
+def _check_rules(
+    db: Session, items: dict[int, Segment], user_id: uuid.UUID, now: datetime
+) -> dict[int, Check]:
+    """Rules 1 to 7 of each new item, with one context query. Bounds first: ``started_at`` is
+    unsafe for date arithmetic until then. A reason of None means the item passed rules 1 to 7 (its
+    context is then set); rules 8 and 9 need the user's climbs and run in the loop. Contexts do not
+    change during the batch: check-ins are written under the user lock."""
+    checks: dict[int, Check] = {
+        n: (rules.check_bounds(item, now), None) for n, item in items.items()
+    }
+    in_bounds = [n for n, (reason, _) in checks.items() if reason is None]
+    contexts = repository.load_contexts(
+        db, user_id, [(items[n].checkin_id, items[n].started_at) for n in in_bounds]
+    )
+    for n, ctx in zip(in_bounds, contexts, strict=True):
+        checks[n] = (rules.check_state_and_physics(items[n], ctx, user_id), ctx)
+    return checks
 
 
 def _is_flagged(
-    db: Session,
-    item: Segment,
-    device_id: uuid.UUID,
-    user_id: uuid.UUID,
-    reason: rules.RejectReason,
+    climbs: _Climbs, item: Segment, device_id: uuid.UUID, reason: rules.RejectReason
 ) -> bool:
     """Whether a rejection goes to review. Two reasons often hit honest users, so they are flagged
     only in their more suspicious case: climbs that started earlier already fill the cap, or one
@@ -252,12 +329,9 @@ def _is_flagged(
     if reason in rules.NOT_FRAUD:
         return False
     if reason == "rate_limit":
-        earlier = repository.verified_steps_before(db, user_id, item.started_at, rules.RATE_WINDOW)
-        return rules.over_step_cap(item, earlier)
+        return rules.over_step_cap(item, climbs.verified_steps_before(item.started_at))
     if reason == "overlap":
-        return repository.overlaps_verified(
-            db, user_id, item.started_at, item.duration_s, device_id=device_id
-        )
+        return climbs.overlaps_verified(item, device_id)
     return True
 
 
@@ -270,18 +344,20 @@ def _reject(
     ctx: ItemContext | None,
     result: SegmentBatchResult,
     budget: _RejectionBudget,
+    climbs: _Climbs,
+    receipts: dict[uuid.UUID, Receipt],
 ) -> None:
     if not budget.take():
         result.rejected.append(RejectedSegment(id=item.id, reason=reason))
         return
     if ctx is not None and reason not in rules.RECEIPT_ONLY:
         row = _row(item, device_id, user_id, ctx, reason, 0)
-        if not repository.insert_segment(db, row):  # a concurrent upload stored this id first
-            _id_taken(db, item, device_id, user_id, result)
+        if repository.insert_segment(db, row) is None:  # a concurrent upload stored this id first
+            _id_taken(receipts, item, device_id, user_id, result)
             return
-    if _is_flagged(db, item, device_id, user_id, reason):
+    if _is_flagged(climbs, item, device_id, reason):
         repository.add_fraud_flag(db, item.id, item.started_at, user_id, reason)
-    repository.insert_receipt(db, device_id, item.id, user_id, STATUS_REJECTED, reason, 0)
+    _answer(receipts, item, device_id, user_id, STATUS_REJECTED, reason, 0)
     result.rejected.append(RejectedSegment(id=item.id, reason=reason))
 
 
@@ -292,16 +368,19 @@ def _accept(
     user_id: uuid.UUID,
     ctx: ItemContext,
     result: SegmentBatchResult,
+    climbs: _Climbs,
+    receipts: dict[uuid.UUID, Receipt],
 ) -> ScoredSegment | None:
     """Store and score a verified item. None when a concurrent upload stored this segment first:
-    ``repository.segment_exists`` runs earlier, but holds no lock against other users."""
-    hour_steps = repository.verified_steps_in_hour(db, user_id, item.started_at)
-    points = claim.points_for(item.steps, hour_steps)
+    ``repository.stored_segments`` runs earlier, but holds no lock against other users."""
+    points = claim.points_for(item.steps, climbs.verified_steps_in_hour(item.started_at))
     row = _row(item, device_id, user_id, ctx, None, points)
-    if not repository.insert_segment(db, row):
-        _id_taken(db, item, device_id, user_id, result)
+    ends_at = repository.insert_segment(db, row)
+    if ends_at is None:
+        _id_taken(receipts, item, device_id, user_id, result)
         return None
-    repository.insert_receipt(db, device_id, item.id, user_id, STATUS_VERIFIED, None, item.steps)
+    climbs.add(VerifiedClimb(item.started_at, ends_at, item.steps, device_id))
+    _answer(receipts, item, device_id, user_id, STATUS_VERIFIED, None, item.steps)
     result.accepted.append(AcceptedSegment(id=item.id, steps_scored=item.steps, points=points))
     return ScoredSegment(row.season_id, user_id, row.team_id, row.building_id, points, item.steps)
 
@@ -361,26 +440,55 @@ def upload_batch(
     budget = _RejectionBudget(limiter, user_id)
     result = SegmentBatchResult(accepted=[], rejected=[], flips=[])
     scored: list[ScoredSegment] = []
+    device_id = batch.device_id
     # A full order: two batches holding the same items lock their rows in the same order.
-    for item in sorted(batch.segments, key=lambda s: (s.started_at, s.id)):
-        receipt = repository.get_receipt(db, batch.device_id, item.id)
-        if receipt is not None:
+    items = sorted(batch.segments, key=lambda s: (s.started_at, s.id))
+    # All reads happen here, once per batch (spec 5a); the loop below only writes.
+    receipts = repository.get_receipts(db, device_id, {item.id for item in items})
+    known = set(receipts)
+    stored = repository.stored_segments(
+        db, {(item.id, item.started_at) for item in items if item.id not in known}
+    )
+    checks = _check_rules(
+        db,
+        {
+            n: item
+            for n, item in enumerate(items)
+            if item.id not in known and (item.id, item.started_at) not in stored
+        },
+        user_id,
+        now,
+    )
+    passed = [_reads(items[n]) for n, (reason, _) in checks.items() if reason is None]
+    # Only items that passed rules 1 to 7 read the user's climbs (spec section 5).
+    climbs = _Climbs(repository.verified_climbs(db, user_id, _merged(passed)) if passed else [])
+
+    for n, item in enumerate(items):
+        receipt = receipts.get(item.id)
+        if receipt is not None:  # stored before, or an earlier item of this batch with this id
             _from_receipt(receipt, user_id, result)
             continue
         # Before the rules: a resend of a stored segment is not a new climb, so it must not be
         # judged, flagged or counted against itself.
-        if repository.segment_exists(db, item.id, item.started_at):
-            _id_taken(db, item, batch.device_id, user_id, result, budget.take())
+        if (item.id, item.started_at) in stored:
+            _id_taken(receipts, item, device_id, user_id, result, budget.take())
             continue
-        reason, ctx = _check(db, item, user_id, now)
+        reason, ctx = checks[n]
+        if reason is None:
+            reason = rules.check_limits(
+                item,
+                recent_verified_steps=climbs.verified_steps_around(item.started_at),
+                overlaps_verified=climbs.overlaps_verified(item),
+            )
         if reason is not None:
-            _reject(db, item, batch.device_id, user_id, reason, ctx, result, budget)
+            _reject(db, item, device_id, user_id, reason, ctx, result, budget, climbs, receipts)
             continue
         if ctx is None:
             raise RuntimeError("verified segment without a context")
-        segment = _accept(db, item, batch.device_id, user_id, ctx, result)
+        segment = _accept(db, item, device_id, user_id, ctx, result, climbs, receipts)
         if segment is not None:
             scored.append(segment)
+    repository.insert_receipts(db, [r for i, r in receipts.items() if i not in known])
 
     if budget.capped:
         logger.warning(
