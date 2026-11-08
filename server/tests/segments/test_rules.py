@@ -51,9 +51,16 @@ def ctx(**overrides: Any) -> ItemContext:
     return ItemContext(**values)
 
 
-def check(segment: Segment, context: ItemContext | None = None, recent: int = 0) -> str | None:
+def check(
+    segment: Segment, context: ItemContext | None = None, recent: int = 0, overlaps: bool = False
+) -> str | None:
     return rules.check_item(
-        segment, context or ctx(), user_id=USER, now=NOW, recent_verified_steps=recent
+        segment,
+        context or ctx(),
+        user_id=USER,
+        now=NOW,
+        recent_verified_steps=recent,
+        overlaps_verified=overlaps,
     )
 
 
@@ -208,21 +215,23 @@ def test_rule_order_first_failure_wins() -> None:
         (None, "team_id", "no_team"),
     ]
     for field, ctx_field, reason in expected:
-        assert check(item(**broken), ctx(**bad_ctx), recent=9999) == reason
+        assert check(item(**broken), ctx(**bad_ctx), recent=9999, overlaps=True) == reason
         if field:
             del broken[field]
         if ctx_field:
             del bad_ctx[ctx_field]
     # The physics rules, each case also failing the later ones.
-    assert check(item(vert_speed_mps=5.0, steps=200), recent=9999) == "speed"
-    assert check(item(steps=200), recent=9999) == "pressure_steps_mismatch"
+    both: dict[str, Any] = {"recent": 9999, "overlaps": True}
+    assert check(item(vert_speed_mps=5.0, steps=200), **both) == "speed"
+    assert check(item(steps=200), **both) == "pressure_steps_mismatch"
     # 71 steps on 12 m in 20 s: 5.9 steps per metre, 3.55 steps per second, 0.6 m/s.
-    assert check(item(duration_s=20.0, vert_speed_mps=0.6, steps=71), recent=9999) == "cadence"
+    assert check(item(duration_s=20.0, vert_speed_mps=0.6, steps=71), **both) == "cadence"
+    assert check(item(), **both) == "overlap"
     assert check(item(), recent=9999) == "rate_limit"
 
 
 @pytest.mark.parametrize(
-    ("steps", "prior", "points"),
+    ("steps", "hour_steps", "points"),
     [
         (0, 0, 0),
         (299, 0, 299),
@@ -234,19 +243,20 @@ def test_rule_order_first_failure_wins() -> None:
         (300, 100, 250),
         (301, 100, 250),  # floor(250.5)
         (100, 300, 50),
-        (100, 500, 50),  # earlier steps beyond 300 do not lower it further
+        (100, 500, 50),  # steps of the hour beyond 300 do not lower it further
         (1, 299, 1),
         (1, 300, 0),  # floor(0.5)
     ],
 )
-def test_points_formula(steps: int, prior: int, points: int) -> None:
-    assert claim.points_for(steps, prior) == points
+def test_points_formula(steps: int, hour_steps: int, points: int) -> None:
+    assert claim.points_for(steps, hour_steps) == points
 
 
 def test_reason_sets_are_real_reasons() -> None:
     assert {"started_at_range", "no_checkin", "season_inactive", "no_team"} == rules.NOT_FRAUD
     assert rules.NOT_FRAUD <= rules.RECEIPT_ONLY
-    assert not rules.RECEIPT_ONLY & {"speed", "pressure_steps_mismatch", "cadence", "rate_limit"}
+    stores_a_row = {"speed", "pressure_steps_mismatch", "cadence", "overlap", "rate_limit"}
+    assert not rules.RECEIPT_ONLY & stores_a_row
 
 
 @pytest.mark.parametrize(

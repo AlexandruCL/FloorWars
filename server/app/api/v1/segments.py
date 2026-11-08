@@ -1,4 +1,4 @@
-"""Segment upload route: ``POST /v1/segments`` (contract 0.5.0-draft, ``uploadSegments``).
+"""Segment upload route: ``POST /v1/segments`` (contract 0.6.0-draft, ``uploadSegments``).
 
 Thin handler: validation by ``app.segments.schemas``, the flow in ``app.segments.service``. The
 response drops unset fields, so ``points`` is absent for a repeat while a ``from_team`` of null

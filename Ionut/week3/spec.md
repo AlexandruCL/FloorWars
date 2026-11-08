@@ -38,13 +38,16 @@ Indexes on `climb_segment` (created on the parent): `(building_id, started_at DE
 | `STEPS_PER_M_MIN`, `STEPS_PER_M_MAX` | 4.0, 8.0 |
 | `CADENCE_MAX_STEPS_PER_S` | 3.0 (not in the plan; tunable) |
 | `VERIFIED_STEPS_PER_10_MIN` | 600 |
+| `OVERLAP_TOLERANCE` | 1 ms |
 | `UPLOADS_PER_HOUR` | 60 (requests, Valkey bucket, existing `Limiter`) |
 | `FULL_POINT_STEPS_PER_HOUR` | 300 (1.0 point per step up to here), then `REDUCED_POINT_PER_STEP` 0.5 |
 | `OWNERSHIP_WINDOW` | 7 days |
 
-**Points** for a verified segment with `s` steps and `h` verified steps of the same user in the 60 minutes before its `started_at` (earlier items of the same batch included): `full = max(0, min(s, 300 - h))`, `points = floor(full * 1.0 + (s - full) * 0.5)`. `steps_scored = s` for verified, 0 for rejected.
+**Points** for a verified segment with `s` steps and `h` = the user's verified steps with `started_at` in the same UTC clock hour as this segment's (earlier items of the same batch included; a fixed hour makes a verified segment's points independent of upload order, apart from rounding per climb; whether it passes rule 9 still depends on order): `full = max(0, min(s, 300 - h))`, `points = floor(full * 1.0 + (s - full) * 0.5)`. `steps_scored = s` for verified, 0 for rejected.
 
-## 4. Rules and reasons (pure function `rules.check_item(item, ctx)`; fixed order, first failure wins)
+## 4. Rules and reasons (pure functions; fixed order, first failure wins)
+
+`rules.check_item` runs all of them. The service runs the same parts with its queries in between: `check_bounds` (1, 2), `check_state_and_physics` (3 to 7), `check_limits` (8, 9).
 
 1. `started_at_range`: `started_at` older than 7 days or more than 5 minutes in the future.
 2. `steps_range`: `steps` outside 1..2000. `ascent_range`: `ascent_m` outside 2.0..120.0. `duration`: `duration_s` outside 5..180 (NaN or infinity count as outside). `stair_prob_range`: `stair_prob` outside 0..1 or not finite (added after `duration`, same fraud flag as the other range rules). A `stair_prob` in range but too small for `real` (below 1e-37) passes and is stored as 0. `classifier_version` longer than 64 characters or with control characters is a 422 for the batch (contract `maxLength`/`pattern`).
@@ -53,16 +56,18 @@ Indexes on `climb_segment` (created on the parent): `(building_id, started_at DE
 5. `speed`: `vert_speed_mps` outside 0.1..0.9, or inconsistent with `ascent_m / duration_s` by more than 20 percent.
 6. `pressure_steps_mismatch`: `steps / ascent_m` outside 4.0..8.0.
 7. `cadence`: `steps / duration_s` above 3.0.
-8. `rate_limit`: verified steps of the user in `(started_at - 10 min, started_at]` plus this segment's steps above 600.
+8. `overlap`: `[started_at, started_at + duration_s)` overlaps that of a verified segment of the same user. Climbs that only touch at an end do not overlap (1 ms tolerance for `real` rounding).
+9. `rate_limit`: verified steps of the user with `started_at` in `(started_at - 10 min, started_at + 10 min)`, plus this segment's steps, above 600. Both sides are counted, so upload order cannot bypass the cap.
 
-Rules 1 to 2 and 5 to 7 are pure (no database). Rules 3, 4 and 8 need `ctx` (loaded by the repository). `fraud_flag` rows are written for every rejection **except** `started_at_range`, `no_checkin`, `season_inactive`, `no_team` (state problems, not cheating). Stored rejected rows need valid `team_id`, `season_id`, `building_id`, `checkin_id`; when rules 1 to 4 fail the item is answered as rejected and recorded only in `segment_receipt` (no `climb_segment` row).
+Rules 1 to 2 and 5 to 7 are pure (no database). Rules 3, 4, 8 and 9 need `ctx` (loaded by the repository). `fraud_flag` rows are written for every rejection **except** `started_at_range`, `no_checkin`, `season_inactive`, `no_team` (state problems, not cheating). Stored rejected rows need valid `team_id`, `season_id`, `building_id`, `checkin_id`; when rules 1 to 4 fail the item is answered as rejected and recorded only in `segment_receipt` (no `climb_segment` row). `overlap` and `rate_limit` store a rejected row, and are flagged only when the honest explanation is ruled out: `rate_limit` when verified steps in `(started_at - 10 min, started_at)` plus this segment's are above 600 (not when only later climbs fill the cap), `overlap` when the overlapping verified segment came from the same device (not a second phone). Only verified segments count for rules 8 and 9, so a rejected row blocks nothing.
 
 ## 5. Batch algorithm (`app/segments/service.py`, owned by B)
 
 1. Request level (before any database work): `Limiter` bucket `fw:rl:seg:user:{user_id}` 60 per hour (429 `Retry-After`, fail closed 503 if Valkey is down); batch of 1..100 items (422 otherwise); header `Idempotency-Key` required (non-empty, at most 255 characters). The key is logged (not secret) and otherwise informational: duplicates are decided per segment by `segment_receipt`.
-2. One transaction: `repository.lock_user(db, user_id)` (`SELECT ... FROM "user" WHERE id = :id FOR UPDATE`), then `repository.device_belongs(db, user_id, batch.device_id)` (403 `device-unknown` and roll back if not), then items in ascending `started_at`:
-   - `receipt = repository.get_receipt(db, device_id, id)`; if present: answer from it (verified: accepted without `points`; rejected: rejected with the stored reason). No other effect.
-   - Otherwise run `rules.check_item`. `repository.insert_receipt(...)` for every new item. For a verified item: `insert_segment`, remember `(season_id, building_id, team_id)` and its points as affected; for a rejected item with a stored row: `insert_segment` (status rejected); `add_fraud_flag` follows section 4 (every reason except `started_at_range`, `no_checkin`, `season_inactive`, `no_team`) and is written even when the item has no `climb_segment` row (for example a range rule or `building_mismatch`). A segment id already used by another user's receipt, or by another device's stored row with the same `(id, started_at)`, is answered rejected `no_checkin` with no score and no flag.
+2. One transaction: `repository.lock_user(db, user_id)` (`SELECT ... FROM "user" WHERE id = :id FOR UPDATE` under a 5 s `lock_timeout`, restored afterwards so later lock waits are not limited; a longer wait answers 503 with `Retry-After` and stores nothing), then `repository.device_belongs(db, user_id, batch.device_id)` (403 `device-unknown` and roll back if not), then items in ascending `(started_at, id)`:
+   - `receipt = repository.get_receipt(db, device_id, id)`; if present: answer from it (verified: accepted without `points`; rejected: rejected with the stored reason; a receipt of another user: rejected `no_checkin`). No other effect.
+   - Otherwise, before the rules, `repository.segment_exists(db, id, started_at)` (any user, any status): a resend from a second device, or an id another user stored, is not a new climb. It is answered rejected `no_checkin` with a receipt, and no segment row, score or flag.
+   - Otherwise check in this order, first failure wins: bounds (rules 1, 2), state (3, 4), physics (5 to 7), `overlap` (8), `rate_limit` (9). The queries for rules 8 and 9 run only for an item that passed rules 1 to 7. `repository.insert_receipt(...)` for every new item. For a verified item: `insert_segment`, remember `(season_id, building_id, team_id)` and its points as affected; for a rejected item with a stored row: `insert_segment` (status rejected); `add_fraud_flag` follows section 4 (every reason except `started_at_range`, `no_checkin`, `season_inactive`, `no_team`, and the honest cases of `overlap` and `rate_limit`) and is written even when the item has no `climb_segment` row (for example a range rule or `building_mismatch`). An insert that loses to a concurrent upload of the same `(id, started_at)` is answered rejected `no_checkin`, with no score and no flag.
    - After the item loop, `add_score` runs once per `(season, building, team)` in ascending order, before `recompute_owner` (totals are the same as per item; one ordered pass avoids a deadlock between teammates' batches).
 3. After all items: for each affected `(season_id, building_id)` in **ascending order**: `claim.recompute_owner(db, season_id, building_id, now)`; each returns a `Flip` or `None` (and has already inserted the `game_event` row).
 4. Commit. **After** the commit, best effort (never fail the request): `leaderboards.record_verified(...)` per verified segment and `leaderboards.publish_flip(...)` per flip. A Valkey error is logged and ignored (leaderboards are rebuildable from the database).
@@ -77,7 +82,11 @@ get_receipt(db, device_id, segment_id) -> Receipt | None
 insert_receipt(db, device_id, segment_id, user_id, status, reject_reason, steps_scored) -> None
 load_context(db, user_id, checkin_id, started_at) -> ItemContext   # checkin (building, valid_during, owner),
                                                                     # season_id | None, team_id | None
-verified_steps_between(db, user_id, start, end) -> int
+verified_steps_around(db, user_id, at, window) -> int   # started_at in (at - window, at + window)
+verified_steps_before(db, user_id, at, window) -> int   # started_at in (at - window, at)
+verified_steps_in_hour(db, user_id, at) -> int          # started_at in the UTC clock hour of at
+overlaps_verified(db, user_id, started_at, duration_s, *, device_id=None) -> bool
+segment_exists(db, id, started_at) -> bool           # any user, any status
 insert_segment(db, row: SegmentRow) -> None
 add_fraud_flag(db, segment_id, started_at, user_id, rule) -> None
 add_score(db, season_id, building_id, team_id, points, steps) -> None

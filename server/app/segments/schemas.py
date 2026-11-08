@@ -1,4 +1,4 @@
-"""Request and response models of ``POST /v1/segments`` (contract 0.5.0-draft).
+"""Request and response models of ``POST /v1/segments`` (contract 0.6.0-draft).
 
 The request models deliberately do **not** apply the contract's numeric bounds. A number outside
 its bound, NaN or infinity must reach ``app.segments.rules`` and come back as one rejected item

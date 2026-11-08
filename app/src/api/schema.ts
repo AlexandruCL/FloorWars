@@ -153,14 +153,21 @@ export interface paths {
         put?: never;
         /**
          * Upload a batch of climb segments
-         * @description Idempotent. Segments are inserted ON CONFLICT DO NOTHING on (device, id), so a re-sent segment
-         *     counts as accepted. Server plausibility checks repeat the on-device rules (plan 3.3, 3.4).
+         * @description Idempotent per device: receipts are inserted ON CONFLICT DO NOTHING on (device, id), so a repeat
+         *     from the same device gets its first answer again (accepted, or rejected with the same reason).
+         *     A resend of a stored segment from another device is rejected as no_checkin and scores nothing.
+         *     An item rejected without a stored row has nothing to match, so another device's resend of it
+         *     is judged again.
+         *     Server plausibility checks repeat the on-device rules (plan 3.3, 3.4).
          *     A segment scores only if its steps match its pressure change (about 4 to 8 steps per metre of
          *     ascent); points go to the building of the active check-in, and the building's owner is
          *     recomputed in the same transaction. Building flips caused by the batch are returned in flips.
          *     Inferred: each item is checked on its own, so an item outside the bounds or failing a rule is
          *     returned in rejected and does not fail the batch; 422 is for a body that is not a valid batch.
-         *     Rate limits (plan 2, 3.4): 60 uploads per hour and 600 verified steps per 10 minutes per user.
+         *     Rate limits (plan 2, 3.4): 60 uploads per hour per user, and 600 verified steps per 10 minutes
+         *     per user, counted on both sides of started_at so that upload order cannot bypass the cap.
+         *     Points: 1 per verified step up to 300 verified steps of the user in one UTC clock hour (by
+         *     started_at), then 0.5.
          */
         post: operations["uploadSegments"];
         delete?: never;
@@ -524,7 +531,7 @@ export interface components {
         SegmentFields: {
             /**
              * Format: uuid
-             * @description Client-generated UUID. Unique per device; a repeat is treated as success.
+             * @description Client-generated. Must be a random UUIDv4. A repeat from the same device gets its first answer again; a stored segment sent from another device is rejected as no_checkin.
              */
             id: string;
             /** Format: uuid */
@@ -555,7 +562,7 @@ export interface components {
             segments: components["schemas"]["Segment"][];
         };
         SegmentBatchResult: {
-            /** @description Inferred: accepted segments, including repeats of already stored ones. */
+            /** @description Inferred: accepted segments, including repeats from the device that stored them. A resend of a stored segment from another device is rejected as no_checkin. */
             accepted: components["schemas"]["AcceptedSegment"][];
             /** @description Inferred: rejected segments with the failed rule. */
             rejected: components["schemas"]["RejectedSegment"][];
@@ -568,7 +575,7 @@ export interface components {
             id: string;
             /** @description Inferred: verified stair steps credited for this segment (steps_scored in the data model). */
             steps_scored: number;
-            /** @description Inferred: points added by this segment after the hourly diminishing returns. Omitted for a repeat of an already stored segment. */
+            /** @description Inferred: points added by this segment after the diminishing returns of its UTC clock hour. Omitted for a repeat from the device that stored the segment. */
             points?: number;
         };
         /** @description Inferred: the shape of a rejected item. */
@@ -583,12 +590,16 @@ export interface components {
              *     speed: vertical speed outside 0.1 to 0.9 m/s. cadence: implausible step rate.
              *     started_at_range: started_at older than 7 days or more than 5 minutes in the future.
              *     season_inactive: no season was running at started_at. no_team: the user had no team in that season.
-             *     duration: window outside 5 s to 3 min. rate_limit: the user is over 600 verified steps per
-             *     10 minutes (over 60 uploads per hour returns 429 for the whole batch). no_checkin: no check-in valid at started_at. building_mismatch:
-             *     building_id differs from the check-in's building.
+             *     duration: window outside 5 s to 3 min. rate_limit: the user's verified steps with started_at
+             *     less than 10 minutes before or after this segment's, plus its own steps, are above 600 (over 60
+             *     uploads per hour returns 429 for the whole batch). overlap: [started_at, started_at + duration_s)
+             *     overlaps that of a verified segment of the same user; climbs that only touch at an end do not
+             *     overlap (1 ms tolerance for real rounding). no_checkin: no check-in valid at started_at, or
+             *     the segment is already stored (a resend from another device, or another user's id).
+             *     building_mismatch: building_id differs from the check-in's building.
              * @enum {string}
              */
-            reason: "pressure_steps_mismatch" | "ascent_range" | "steps_range" | "speed" | "cadence" | "duration" | "rate_limit" | "no_checkin" | "building_mismatch" | "started_at_range" | "season_inactive" | "no_team" | "stair_prob_range";
+            reason: "pressure_steps_mismatch" | "ascent_range" | "steps_range" | "speed" | "cadence" | "duration" | "rate_limit" | "no_checkin" | "building_mismatch" | "started_at_range" | "season_inactive" | "no_team" | "stair_prob_range" | "overlap";
         };
         /** @description A claimable building. No floor count or heights (the app needs no building floor data). */
         Building: {

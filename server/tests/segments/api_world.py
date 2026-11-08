@@ -24,6 +24,18 @@ def _ago(minutes: float) -> datetime:
     return utcnow() - timedelta(minutes=minutes)
 
 
+def climb_at(when: datetime, **overrides: Any) -> dict[str, Any]:
+    """``climb`` starting at ``when``."""
+    return climb(started_at=when.isoformat(), **overrides)
+
+
+def clock_hour(hours_ago: int = 1) -> datetime:
+    """The start of a whole UTC hour in the past. Points count per clock hour, so a test summing
+    steps must not depend on the minute it runs in. ``hours_ago=1`` is inside the default check-in
+    of ``World.climber``."""
+    return utcnow().replace(minute=0, second=0, microsecond=0) - timedelta(hours=hours_ago)
+
+
 def climb(minutes_ago: float = 1.0, **overrides: Any) -> dict[str, Any]:
     """A verified climb: 60 steps, 12 m in 30 s. ``checkin_id`` and ``building_id`` get added by
     ``Climber.post``."""
@@ -127,6 +139,20 @@ class World:
             self.building_id,
             auth_headers(self.client.app, user_id),  # type: ignore[arg-type]
         )
+
+    def second_device(self, user: Climber) -> str:
+        """Register one more device for the user. No receipts match it yet."""
+        device = uuid.uuid4()
+        with self.client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
+            db.execute(
+                text(
+                    "INSERT INTO device (user_id, id, model, has_barometer) "
+                    "VALUES (:u, :d, 'test', true)"
+                ),
+                {"u": user.user_id, "d": device},
+            )
+            db.commit()
+        return str(device)
 
 
 def make_world(client: TestClient) -> World:

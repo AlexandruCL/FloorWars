@@ -26,7 +26,9 @@ services:
       DOMAIN: ${DOMAIN:-}
       ACME_EMAIL: ${ACME_EMAIL:-}
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The folder, not the file: a file mount keeps the old file after a checkout replaces it,
+      # while deploy.sh reloads Caddy from this path.
+      - ./caddy:/etc/caddy:ro
       - caddy-data:/data # certificates and ACME account: keep across deploys
       - caddy-config:/config
     networks:

@@ -62,6 +62,8 @@ Exit code 0 on success, 1 on an HTTP error status, 2 on a connection error or ba
 
 A seeded run repeats its ids and keys, so sending it twice to a real server tests idempotency too. Pass `--start now` (or a time inside the check-in) when the server checks that a check-in is valid at `started_at`; the fixed seeded start would be rejected with `no_checkin`.
 
+A rerun with new ids on the same account (no `--seed`, or another seed) can get `overlap` when its times overlap verified climbs of the earlier run: the same `--start`, or `--start now` soon after a run. Use a `--start` after the earlier run's last climb has ended, or another account.
+
 ## Tests
 
 ```sh

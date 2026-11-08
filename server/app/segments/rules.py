@@ -2,8 +2,8 @@
 
 ``check_item`` runs the rules in their fixed order and returns the first failure. The database
 values it needs arrive as arguments, loaded by the caller. ``check_bounds`` is the first group on
-its own: the caller runs it before any query, because a ``started_at`` far outside the accepted
-range is not safe for date arithmetic.
+its own: the caller runs it before any query that does date arithmetic, because that is not safe
+for a ``started_at`` far outside the accepted range.
 """
 
 import math
@@ -35,10 +35,11 @@ STEPS_PER_M_MAX: Final = 8.0
 CADENCE_MAX_STEPS_PER_S: Final = 3.0
 VERIFIED_STEPS_PER_10_MIN: Final = 600
 RATE_WINDOW: Final = timedelta(minutes=10)
+# Climbs that only touch at an end do not overlap: a stored ``real`` duration is rounded.
+OVERLAP_TOLERANCE: Final = timedelta(milliseconds=1)
 UPLOADS_PER_HOUR: Final = 60
 FULL_POINT_STEPS_PER_HOUR: Final = 300
 REDUCED_POINT_PER_STEP: Final = 0.5
-POINTS_WINDOW: Final = timedelta(hours=1)
 OWNERSHIP_WINDOW: Final = timedelta(days=7)
 
 RejectReason = Literal[
@@ -49,6 +50,7 @@ RejectReason = Literal[
     "speed",
     "cadence",
     "duration",
+    "overlap",
     "rate_limit",
     "no_checkin",
     "building_mismatch",
@@ -131,6 +133,14 @@ def _check_physics(item: "Segment") -> RejectReason | None:
     return None
 
 
+def check_state_and_physics(
+    item: "Segment", ctx: ItemContext, user_id: uuid.UUID
+) -> RejectReason | None:
+    """Rules 3 to 7, after ``check_bounds``. They need no count of the user's climbs, so the caller
+    skips those queries for an item that fails here."""
+    return _check_state(item, ctx, user_id) or _check_physics(item)
+
+
 def check_item(
     item: "Segment",
     ctx: ItemContext,
@@ -138,17 +148,38 @@ def check_item(
     user_id: uuid.UUID,
     now: datetime,
     recent_verified_steps: int,
+    overlaps_verified: bool,
 ) -> RejectReason | None:
-    """The first failed rule, or None for a verified segment.
+    """The first failed rule, or None for a verified segment. All rules in their order, for tests
+    and the trace replay; the service runs the same three parts with its queries in between.
 
-    ``recent_verified_steps``: the user's verified steps in ``(started_at - 10 min, started_at]``.
+    ``recent_verified_steps``: the user's verified steps with ``started_at`` in
+    ``(started_at - 10 min, started_at + 10 min)``. ``overlaps_verified``: whether the climb shares
+    time with a verified segment of the user.
     """
-    reason = check_bounds(item, now) or _check_state(item, ctx, user_id) or _check_physics(item)
-    if reason is not None:
-        return reason
-    if recent_verified_steps + item.steps > VERIFIED_STEPS_PER_10_MIN:
+    return (
+        check_bounds(item, now)
+        or check_state_and_physics(item, ctx, user_id)
+        or check_limits(
+            item, recent_verified_steps=recent_verified_steps, overlaps_verified=overlaps_verified
+        )
+    )
+
+
+def check_limits(
+    item: "Segment", *, recent_verified_steps: int, overlaps_verified: bool
+) -> RejectReason | None:
+    """Rules 8 and 9, for an item that passed the rules before them."""
+    if overlaps_verified:
+        return "overlap"
+    if over_step_cap(item, recent_verified_steps):
         return "rate_limit"
     return None
+
+
+def over_step_cap(item: "Segment", counted_steps: int) -> bool:
+    """Whether the item's steps on top of ``counted_steps`` pass 600 per 10 minutes."""
+    return counted_steps + item.steps > VERIFIED_STEPS_PER_10_MIN
 
 
 def storable_real(value: float) -> float:
