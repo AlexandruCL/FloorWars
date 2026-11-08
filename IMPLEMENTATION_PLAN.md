@@ -303,6 +303,7 @@ PDF-defined: `POST /v1/segments`, `GET /v1/buildings/{id}/standings` (was `/floo
 | `POST /v1/auth/otp` | Send a 6-digit code to a university e-mail address | Domain allow-list; rate limited |
 | `POST /v1/auth/verify` | Exchange e-mail + code for tokens | Max 5 attempts |
 | `POST /v1/auth/refresh` | Rotate refresh token | Reuse revokes the family |
+| `POST /v1/auth/logout` | Revoke a refresh token's family | 204 for any token; the access token lives until it expires; the app calls it best-effort on sign-out |
 | `GET /v1/teams`, `POST /v1/seasons/{id}/join` | List teams, pick one for the season | One team per user per season |
 | `POST /v1/checkins` | Check in by signed QR token or geofence | Server verifies HMAC and time window; creates 90-minute range |
 | `POST /v1/segments` | Upload a batch of segments | Idempotent; header `Idempotency-Key`; response `{accepted, rejected, flips}` |
@@ -623,7 +624,7 @@ Goal: a real stair climb in a building becomes points on the server.
 - Attribute segments to the building of the active check-in.
 - JS sync worker: batched `POST /v1/segments` with `Idempotency-Key`, exponential backoff with jitter, per-segment accepted or rejected handling. Triggered by a WorkManager job that wakes the JS worker through Headless JS, and on app foreground.
 - Status screen: service running, active check-in, last segment, pending count, last sync result, "Sync now", offline state, battery-optimisation hint.
-- Sign out button on Home: call `endSession()` (`app/src/auth/session.ts`), which clears the tokens and team flag and returns to sign-in. Needed to retest sign-in on a phone without clearing app data. A server-side revoke endpoint does not exist yet, so the old refresh token stays valid until it expires. Sign-out deletes segments not yet uploaded and clears the active check-in, so a different user cannot inherit them.
+- Sign out button on Home: call `endSession()` (`app/src/auth/session.ts`), which clears the tokens and team flag and returns to sign-in. Needed to retest sign-in on a phone without clearing app data. Also call `POST /v1/auth/logout` with the refresh token, best-effort (added 2026-11-08), so the old token stops working; clear the tokens whatever the answer. Sign-out deletes segments not yet uploaded and clears the active check-in, so a different user cannot inherit them.
 - Verify the service survives screen-off and app swipe-away on both phones. Log a "sessions with gaps" metric, on the phone only in Week 3; it needs an upload endpoint before the pilot.
 - Carried over from Week 2: phone tests of the entrance-QR check-in (scan a printed code, "Checked in: ..., 90 min left"; camera permission off shows the settings message; airplane mode shows the connection error). Needs Ionut's printed codes for both buildings.
 
