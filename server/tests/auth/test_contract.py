@@ -18,7 +18,7 @@ from app.main import create_app
 from tests.helpers import device, last_code, new_email, sign_in
 
 CONTRACT = Path(__file__).resolve().parents[3] / "contracts" / "openapi.yaml"
-AUTH_PATHS = ("/auth/otp", "/auth/verify", "/auth/refresh")
+AUTH_PATHS = ("/auth/otp", "/auth/verify", "/auth/refresh", "/auth/logout")
 # Documented by the server ahead of the contract (contract PR pending, done by the lead): 503 on
 # all three paths, and 429 on /auth/refresh (per-IP limit, security review 2026-10-31). Once the
 # contract has them, the check below still passes; then these can be emptied.
@@ -26,6 +26,7 @@ SERVER_EXTRAS = {
     "/auth/otp": {"503"},
     "/auth/verify": {"503"},
     "/auth/refresh": {"429", "503"},
+    "/auth/logout": set(),
 }
 
 
@@ -57,7 +58,7 @@ def test_auth_routes_match_contract() -> None:
         for path in AUTH_PATHS
         for operation in served["paths"][f"/v1{path}"].values()
         for code, response in operation["responses"].items()
-        if code not in ("200", "202")
+        if code not in ("200", "202", "204")
         for content in response.get("content", {}).values()
     }
     assert refs == {"#/components/schemas/Problem"}

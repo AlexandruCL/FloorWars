@@ -60,7 +60,7 @@ def _enforce_limits(limiter: RateLimiter | None, checks: list[tuple[str, str, in
     """Take one token from each ``(name, subject, per_hour)`` bucket, in order; 429 on the first
     empty one. Fails closed: no limiter, or Valkey unavailable, gives 503."""
     if limiter is None:
-        raise service_unavailable("Sign-in is temporarily unavailable.")
+        raise service_unavailable("Authentication is temporarily unavailable.")
     try:
         for name, subject, capacity in checks:
             decision = limiter.hit(name, subject, capacity, HOUR_S)
@@ -69,7 +69,7 @@ def _enforce_limits(limiter: RateLimiter | None, checks: list[tuple[str, str, in
                 raise too_many_requests("Too many requests.", decision.retry_after_s)
     except ValkeyError:
         logger.error("rate limiter unavailable")
-        raise service_unavailable("Sign-in is temporarily unavailable.") from None
+        raise service_unavailable("Authentication is temporarily unavailable.") from None
 
 
 def _store_pending_challenge(db: Session, settings: Settings, email: str, code: str) -> uuid.UUID:
@@ -252,7 +252,9 @@ def refresh(
             raise _bad_refresh()
         revoked = repository.revoke_family(db, row.family_id)
         db.commit()
-        logger.warning(
+        # Nothing left to revoke: the family was signed out (logout), not stolen.
+        log = logger.warning if revoked else logger.info
+        log(
             "refresh token reuse, family revoked",
             extra={"user_id": str(row.user_id), "family_id": str(row.family_id), "n": revoked},
         )
@@ -266,3 +268,30 @@ def refresh(
     pair = _issue_pair(db, settings, tokens, row.user_id, row.family_id, now)
     db.commit()
     return pair
+
+
+# POST /v1/auth/logout
+
+
+def logout(
+    db: Session,
+    settings: Settings,
+    limiter: RateLimiter | None,
+    raw_token: str,
+    client_ip: str,
+) -> None:
+    """Revoke the refresh token's whole family; an unknown or revoked token is a silent no-op.
+
+    The answer never depends on the token, so the route cannot be used to probe tokens. The
+    access token stays valid until it expires (minutes).
+    """
+    _enforce_limits(
+        limiter, [("logout:ip", client_bucket(client_ip), settings.refresh_rate_per_ip_per_hour)]
+    )
+    row = repository.lock_refresh_token(db, _hash_refresh(raw_token))
+    if row is None:
+        db.rollback()
+        return
+    repository.revoke_family(db, row.family_id)
+    db.commit()
+    logger.info("signed out", extra={"user_id": str(row.user_id)})
