@@ -51,6 +51,7 @@ Made during the work by the agents and the coordinating session. Cristea has not
 - **"Last upload" was overwritten** by a follow-up run that found nothing to upload. Fixed: a run with nothing to upload no longer replaces a real result.
 - **A live-window bug:** a climb that started within 21 s of the end of a long gap in sensor delivery was counted as cut by the window edge and never emitted. Found by a new test, fixed by measuring the edge from the trim point.
 - **A check-in swap bug:** a check-in swap re-registered the sensors and could drop up to 5 s of events held by the hardware. Fixed: sensors are re-registered only when batching changes.
+- **A season rollover leaves users without a team (Ionut, 2026-11-08).** The app only remembered a "team chosen" flag, so after season 2 starts an existing user is let in and every upload comes back `no_team`. Also, a join before the season starts answers 409 `season-not-active`, which the app swallowed as "already joined". Fixed on its own branch (`feat/w3-season-check`): the app stores the joined season id, compares it with `/seasons/active` at start, shows the picker when they differ, and treats only `already-joined` as joined. Checked at app start only.
 - **Prism is not enough for the whole path.** Its `/checkins` answers a `valid_until` in the past (the native side correctly ignores an expired check-in, so detection never starts), the "Skip sign-in (dev)" token is rejected with 401, and `POST /segments` returns random ids, so a real drain never matches. A small proxy fixed the first and the last for the emulator pass.
 - **The emulator has no step detector**, so it cannot produce a verified climb. The emulator proves the plumbing, not the detection.
 - **One unexplained Gradle failure** on the signout branch: the test task failed with 35 of 39 tests reported and none failing. Six clean re-runs passed. The test JVM probably died on this machine; if it shows up in CI, look at the worker log first.
@@ -58,6 +59,7 @@ Made during the work by the agents and the coordinating session. Cristea has not
 
 ## Not done, and why
 
+- **Season check:** `feat/w3-season-check` is written and tested in Jest (5 new tests) but not run on a phone or the emulator, and not against the real server.
 - **Wake lock, notification text, stop at expiry, service survival** (screen off, swipe-away, battery saver, no exemption): need both phones. See W3-7 in `finish_week_3.md`.
 - **The service is `START_NOT_STICKY`:** after a process kill, detection resumes when the app is opened again. If the phone checks show the service dying, try `START_STICKY` with a restart from the stored check-in, and handle the background-start restriction on Android 12 and later.
 - **WorkManager job:** starts a plain service from the background, which Android may refuse on some versions. Not run on a phone.
