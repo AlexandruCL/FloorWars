@@ -102,7 +102,16 @@ rolling_points(db, season_id, building_id, now) -> list[TeamPoints]   # same que
 
 - Keys: `fw:lb:s{season}:users` (member user id), `fw:lb:s{season}:teams` (member team id), `fw:lb:s{season}:b{building}:teams` (member team id); score = season points. `PUBLISH` channel `fw:events`, message JSON `{"type":"building_flipped","event_id":N,"building_id":..,"from_team":"AC","to_team":"ETC","at":"..."}`.
 - `record_verified(vk, season_id, user_id, team_id, building_id, points)`, `publish_flip(vk, flip)`, `rebuild(db, vk, season_id)` (from `climb_segment`, season totals, idempotent), `top(...)`. B calls the first two behind a small `Protocol`, with a no-op default when Valkey is not configured.
-- Reads fall back to a database aggregate when Valkey is down. On a missing key: if the database holds points for that board, rebuild the season once and read again; without points the board is empty and nothing is rebuilt.
+- Reads fall back to a database aggregate when Valkey is down. On a missing key: if the database holds points for that board, rebuild the season once and read again; without points the board is empty and nothing is rebuilt. (Superseded by the addendum below.)
+
+### 7a. Addendum: board consistency (review findings 5, 6, 7, 11; 2026-11-08)
+
+- **Built marker** `fw:lb:s{season}:built` (value `1`, expiry 1 h). `rebuild` sets it after writing every key; it means "the boards of this season equal the database". A missing marker means **needs rebuild**: after Valkey data loss, a failed update, or the hourly expiry (which bounds drift when Valkey was unreachable and the marker could not be deleted).
+- **Reads**: marker missing, rebuild the season, then read. Marker present, a missing key is an empty board (no rebuild, no database query). A rebuild that cannot finish cleanly (lock taken, or an upload overlapped) leaves the marker missing and the read is answered from the database.
+- **Rebuild lock** `fw:lb:s{season}:lock`: `SET NX PX 30000` with a random token around the rebuild. Released only by its owner (token compared in a Lua script). The rebuild also deletes building keys that no longer have points.
+- **Uploads** add a segment's points with one Lua script, atomic in Valkey: lock held, append `:dirty` to the lock value and skip (the rebuild then deletes the marker instead of setting it, so the next read rebuilds); no marker, skip (the rebuild will count the segment); otherwise the three `ZINCRBY`. The upload never waits: whether a running rebuild's snapshot includes a just-committed segment is unknown, so applying after a wait could double-count.
+- **Failures**: any Valkey error while adding points is logged (`logger.exception`), the season's marker is deleted (best effort), the upload still succeeds. Flips are published in their own `try`.
+- **Deleted users**: there is no account-deletion path yet (`DELETE /me` is in the contract only). Deleting a user cascades to its `climb_segment` rows, so the next rebuild drops the user and its points from every board. The deletion path should delete the season markers when it is built.
 
 ## 8. Read endpoints (owned by C)
 
