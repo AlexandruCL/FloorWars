@@ -1,11 +1,12 @@
 openapi: 3.1.0
 info:
   title: FloorWars API
-  version: 0.6.2-draft
+  version: 0.7.0-draft
   description: |
     Approved by both members on 2026-10-21. Every later change is a PR reviewed by the other member.
 
     Changelog:
+    - 0.7.0-draft (2026-11-08): new POST /auth/logout (revokes a refresh token family, 204 for any token).
     - 0.6.2-draft (2026-11-08): the pressure_steps_mismatch upper bound is 10 steps per metre of ascent
       (was 8); real pocket climbs measured 6.7 to 8.7.
     - 0.6.1-draft (2026-11-07): the hourly points curve counts the user's verified steps in the same
@@ -153,6 +154,28 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Sign out (revoke a refresh token)
+      description: >-
+        Revokes the refresh token and every token rotated from it. An unknown or already revoked
+        token also answers 204, so the route cannot be used to probe tokens. The access token stays
+        valid until it expires. Clients call it best-effort on sign-out and clear their tokens
+        regardless of the answer.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '204':
+          description: Signed out. No body.
         '422': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }

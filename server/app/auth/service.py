@@ -266,3 +266,30 @@ def refresh(
     pair = _issue_pair(db, settings, tokens, row.user_id, row.family_id, now)
     db.commit()
     return pair
+
+
+# POST /v1/auth/logout
+
+
+def logout(
+    db: Session,
+    settings: Settings,
+    limiter: RateLimiter | None,
+    raw_token: str,
+    client_ip: str,
+) -> None:
+    """Revoke the refresh token's whole family; an unknown or revoked token is a silent no-op.
+
+    The answer never depends on the token, so the route cannot be used to probe tokens. The
+    access token stays valid until it expires (minutes).
+    """
+    _enforce_limits(
+        limiter, [("logout:ip", client_bucket(client_ip), settings.refresh_rate_per_ip_per_hour)]
+    )
+    row = repository.lock_refresh_token(db, _hash_refresh(raw_token))
+    if row is None:
+        db.rollback()
+        return
+    repository.revoke_family(db, row.family_id)
+    db.commit()
+    logger.info("signed out", extra={"user_id": str(row.user_id)})

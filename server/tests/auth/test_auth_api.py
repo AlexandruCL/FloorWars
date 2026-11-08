@@ -284,6 +284,44 @@ def test_refresh_unknown_and_expired_are_401(client: TestClient) -> None:
     assert expired.status_code == 401
 
 
+def test_logout_revokes_the_whole_family(client: TestClient) -> None:
+    first = sign_in(client, new_email())
+    newer = client.post("/v1/auth/refresh", json={"refresh_token": first["refresh_token"]}).json()
+    out = client.post("/v1/auth/logout", json={"refresh_token": newer["refresh_token"]})
+    assert out.status_code == 204
+    assert out.content == b""
+    assert (
+        client.post("/v1/auth/refresh", json={"refresh_token": newer["refresh_token"]}).status_code
+        == 401
+    )
+    assert _scalar(client, "SELECT count(*) FROM refresh_token WHERE revoked_at IS NULL") == 0
+
+
+def test_logout_leaves_other_sessions_alone(client: TestClient) -> None:
+    mine = sign_in(client, new_email())
+    other = sign_in(client, new_email())
+    assert (
+        client.post("/v1/auth/logout", json={"refresh_token": mine["refresh_token"]}).status_code
+        == 204
+    )
+    assert (
+        client.post("/v1/auth/refresh", json={"refresh_token": other["refresh_token"]}).status_code
+        == 200
+    )
+
+
+def test_logout_answers_204_for_unknown_and_repeated_tokens(client: TestClient) -> None:
+    pair = sign_in(client, new_email())
+    body = {"refresh_token": pair["refresh_token"]}
+    assert client.post("/v1/auth/logout", json={"refresh_token": "nope"}).status_code == 204
+    assert client.post("/v1/auth/logout", json=body).status_code == 204
+    assert client.post("/v1/auth/logout", json=body).status_code == 204
+
+
+def test_logout_422(client: TestClient) -> None:
+    assert client.post("/v1/auth/logout", json={}).status_code == 422
+
+
 def test_refresh_token_stored_hashed(client: TestClient) -> None:
     pair = sign_in(client, new_email())
     raw = pair["refresh_token"]
