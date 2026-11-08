@@ -135,3 +135,45 @@ def test_purge_rejected_flag_ages(make_app: Callable[..., TestClient]) -> None:
         assert repository.purge_rejected(db, now)[1] == 2  # resolved and old, unresolved and 400 d
         db.commit()
     assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 1
+
+
+def test_after_a_valkey_error_the_batch_stops_calling_valkey(
+    make_app: Callable[..., TestClient],
+) -> None:
+    limiter = _Limiter(rejections=5, failure=ValkeyError("down"))
+    world = _world(make_app, limiter)
+    user = world.climber()
+    result = user.ok(*(climb(minutes_ago=i + 1, vert_speed_mps=5.0) for i in range(4)))
+    assert len(result["rejected"]) == 4
+    assert len(limiter.rej_calls) == 1  # the batch holds the user's row lock: no more waits
+
+
+def test_a_stored_rejection_resends_without_a_token_and_the_cap_logs_once_per_batch(
+    make_app: Callable[..., TestClient], capsys: pytest.CaptureFixture[str]
+) -> None:
+    limiter = _Limiter(rejections=1)
+    world = _world(make_app, limiter)
+    user = world.climber()
+    first = climb(minutes_ago=1, vert_speed_mps=5.0)
+    extra = [climb(minutes_ago=i + 2, vert_speed_mps=5.0) for i in range(3)]
+    user.ok(first)
+    assert user.ok(first)["rejected"] == [{"id": first["id"], "reason": "speed"}]
+    assert len(limiter.rej_calls) == 1  # the resend came from the receipt
+    user.ok(*extra, key="k2")
+    out = capsys.readouterr().out
+    assert out.count('"rejection cap reached"') == 1
+    assert '"capped": 3' in out
+
+
+def test_a_taken_id_past_the_cap_is_answered_without_a_receipt(
+    make_app: Callable[..., TestClient],
+) -> None:
+    limiter = _Limiter(rejections=0)
+    world = _world(make_app, limiter)
+    user = world.climber()
+    item = climb()
+    assert user.ok(item)["accepted"][0]["steps_scored"] == 60
+    other = world.second_device(user)
+    result = user.ok(item, key="k2", device_id=other)
+    assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
+    assert scalar(world.client, "SELECT count(*) FROM segment_receipt") == 1
