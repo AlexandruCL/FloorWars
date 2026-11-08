@@ -142,7 +142,7 @@ PostgreSQL 18 + PostGIS       Valkey: ZINCRBY leaderboards, PUBLISH building_fli
 7. One transaction: lock the user row, check `device_id` belongs to the user, then per item in ascending `started_at` insert a `segment_receipt` (`ON CONFLICT DO NOTHING`; a known receipt is answered from it, and a stored segment sent from another device is rejected as `no_checkin`), run the rules and insert the segment.
 8. Upsert `team_building_score` once per (season, building, team) in ascending order (+points).
 9. For each affected (season, building) in ascending order: insert the `building_claim` row if missing, `SELECT ... FOR UPDATE` it, recompute the owner from verified segments of the rolling 7 days (tie rule in section 2), write `game_event` on a flip. Commit.
-10. After the commit, best effort: `ZINCRBY` season leaderboards, `PUBLISH building_flipped`. A Valkey error is logged and ignored; leaderboards are rebuildable.
+10. After the commit, best effort: `ZINCRBY` season leaderboards, `PUBLISH building_flipped`. A Valkey error is logged and ignored; leaderboards are rebuildable. The three `ZINCRBY` of a segment run in one atomic script, only on a season marked built (`fw:lb:s{season}:built`, set by the rebuild) and never during a rebuild (`fw:lb:s{season}:lock`); a failed or overlapping update deletes the marker, and the next read rebuilds the season.
 11. Response `200 {accepted, rejected, flips}`.
 12. The WebSocket hub pushes `"AC took the Politehnica building"` to connected phones; the event is stored in `game_event`, so phones that were offline get it on reconnect or at their next poll and show a local notification (7.2.1).
 
