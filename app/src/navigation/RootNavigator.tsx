@@ -2,7 +2,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { EmailScreen, OtpScreen, TeamScreen } from '../screens/AuthScreens';
 import { CheckinScreen } from '../screens/CheckinScreen';
-import { HomeScreen } from '../screens/PlaceholderScreens';
+import { HomeScreen } from '../screens/HomeScreen';
 import { SensorLoggerScreen } from '../screens/SensorLoggerScreen';
 import type {
   AuthStackParamList,

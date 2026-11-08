@@ -7,6 +7,7 @@ import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.floorwars.floorsensors.FloorSensorsPackage
+import com.floorwars.sync.SyncWorker
 
 class MainApplication :
     Application(),
@@ -25,5 +26,6 @@ class MainApplication :
     override fun onCreate() {
         super.onCreate()
         loadReactNative(this)
+        SyncWorker.schedule(this)
     }
 }

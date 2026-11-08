@@ -32,6 +32,7 @@ test('api() calls the contract path with the stored token and JSON body', async 
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(batch),
+    signal: expect.any(AbortSignal),
   });
 });
 

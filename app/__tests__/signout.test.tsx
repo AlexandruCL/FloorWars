@@ -6,15 +6,18 @@ import { FloorSensors } from '../src/native/floorSensors';
 
 const sensors = FloorSensors as jest.Mocked<typeof FloorSensors>;
 
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  jest.restoreAllMocks();
+  sensors.getPendingCount.mockResolvedValue(0);
+});
 
 async function openConfirm(pending: number) {
-  sensors.getPendingCount.mockResolvedValueOnce(pending);
+  sensors.getPendingCount.mockResolvedValue(pending);
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   await render(<App />);
   await fireEvent.press(await screen.findByText('Skip sign-in (dev)'));
   await fireEvent.press((await screen.findAllByText('Sign out'))[0]);
-  await screen.findAllByText('Home');
+  await screen.findByText('Status');
   return alert;
 }
 
