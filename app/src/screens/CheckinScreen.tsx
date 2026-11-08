@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { ActivityIndicator, Linking, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { api, ApiError } from '../api/client';
+import { setActiveCheckin } from '../checkin/active';
 import { DeviceError, type CheckinDeps } from '../checkin/deps';
 import { deviceLibs } from '../checkin/deviceLibs';
 import { parseQrPayload } from '../checkin/qr';
@@ -20,13 +21,14 @@ type Props = NativeStackScreenProps<MainStackParamList, 'Checkin'> & {
   deps?: CheckinDeps;
 };
 
-async function buildingName(id: number): Promise<string> {
+// Null when unknown: GET /buildings may not exist on the server yet.
+async function buildingName(id: number): Promise<string | null> {
   try {
     const all = await api('get', '/buildings');
-    return all.find(b => b.id === id)?.name ?? `Building ${id}`;
+    return all.find(b => b.id === id)?.name ?? null;
   } catch {
     // The check-in already succeeded; a missing name must not turn it into an error.
-    return `Building ${id}`;
+    return null;
   }
 }
 
@@ -52,9 +54,14 @@ export function CheckinScreen({ navigation, deps = deviceLibs }: Props) {
     setPhase({ name: 'submitting' });
     try {
       const checkin: Checkin = await api('post', '/checkins', { body });
-      const building = await buildingName(checkin.building_id);
+      const name = await buildingName(checkin.building_id);
+      setActiveCheckin(checkin, name);
       busy.current = false;
-      setPhase({ name: 'success', checkin, building });
+      setPhase({
+        name: 'success',
+        checkin,
+        building: name ?? `Building ${checkin.building_id}`,
+      });
     } catch (e) {
       fail(e, body.method);
     }

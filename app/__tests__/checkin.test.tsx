@@ -15,6 +15,7 @@ import {
   successText,
   type ErrorKind,
 } from '../src/checkin/state';
+import NativeFloorSensors from '../src/native/NativeFloorSensors';
 import { CheckinScreen } from '../src/screens/CheckinScreen';
 
 jest.mock('../src/api/client', () => {
@@ -22,6 +23,7 @@ jest.mock('../src/api/client', () => {
   return { ...actual, api: jest.fn() };
 });
 const apiMock = api as unknown as jest.Mock;
+const native = jest.mocked(NativeFloorSensors);
 
 // Node global in Jest; the app tsconfig has no node types.
 declare const Buffer: { from(s: string): { toString(enc: string): string } };
@@ -162,7 +164,10 @@ describe('CheckinScreen', () => {
   });
   const open = (d: CheckinDeps) =>
     render(<CheckinScreen navigation={nav} route={{} as any} deps={d} />);
-  beforeEach(() => apiMock.mockReset());
+  beforeEach(() => {
+    apiMock.mockReset();
+    native.setActiveCheckin.mockClear();
+  });
 
   test('asks for nothing until a button is tapped', async () => {
     const d = deps({ requestCameraPermission: jest.fn(async () => true) });
@@ -186,6 +191,31 @@ describe('CheckinScreen', () => {
     const posts = apiMock.mock.calls.filter(c => c[1] === '/checkins');
     expect(posts).toHaveLength(1);
     expect(posts[0][2].body).toMatchObject({ method: 'qr' });
+  });
+
+  test('success hands the check-in to the native service', async () => {
+    const c = created();
+    apiMock.mockImplementation(async (_m, path) =>
+      path === '/checkins' ? c : [{ id: 2, name: 'Building X' }],
+    );
+    await open(deps());
+    await fireEvent.press(screen.getByText('Use my location'));
+    await screen.findByText(/Checked in: Building X/);
+    expect(native.setActiveCheckin).toHaveBeenCalledTimes(1);
+    expect(native.setActiveCheckin).toHaveBeenCalledWith(
+      'u',
+      2,
+      'Building X',
+      Date.parse(c.valid_until),
+    );
+  });
+
+  test('failed check-in does not touch the native service', async () => {
+    apiMock.mockRejectedValue(problem('outside-geofence'));
+    await open(deps());
+    await fireEvent.press(screen.getByText('Use my location'));
+    await screen.findByText(/not close enough/);
+    expect(native.setActiveCheckin).not.toHaveBeenCalled();
   });
 
   test('expired-looking code is not sent', async () => {
@@ -252,5 +282,12 @@ describe('CheckinScreen', () => {
     await fireEvent.press(screen.getByText('Scan again'));
     await fireEvent.press(await screen.findByText('fake-camera'));
     expect(await screen.findByText(/Checked in: Building 2,/)).toBeTruthy();
+    // No name from GET /buildings: null, not the display fallback.
+    expect(native.setActiveCheckin).toHaveBeenCalledWith(
+      'u',
+      2,
+      null,
+      expect.any(Number),
+    );
   });
 });
