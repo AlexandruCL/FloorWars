@@ -11,6 +11,7 @@ import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.ReadableArray
 import java.io.File
 import java.io.IOException
 
@@ -55,6 +56,13 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
             putString("label", label.orEmpty())
             putBoolean("has_barometer", hasBarometer)
             putInt("buffered", FloorSensorsService.buffer.size())
+            // Seam placeholders; w3-engine fills them.
+            putBoolean("detecting", false)
+            putNull("last_segment_ms")
+            putInt("rejected_count", 0)
+            putInt("no_checkin_count", 0)
+            putDouble("longest_gap_s", 0.0)
+            putInt("gaps_over_threshold", 0)
         }
         Log.i(TAG, "getStatus $status")
         promise.resolve(status)
@@ -94,6 +102,38 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
             promise.reject("E_SAVE_TRACE", e)
         }
     }
+
+    // Seam stubs (W3-0). Each owner replaces its own; the others keep rejecting until then.
+    override fun setActiveCheckin(
+        checkinId: String,
+        buildingId: Double,
+        buildingName: String?,
+        validUntilMs: Double
+    ) = Unit // w3-engine
+
+    override fun clearActiveCheckin() = Unit // w3-engine
+
+    override fun getActiveCheckin(promise: Promise) = notImplemented(promise) // w3-engine
+
+    override fun getPending(limit: Double, promise: Promise) = notImplemented(promise) // w3-outbox
+
+    override fun markSynced(ids: ReadableArray, promise: Promise) =
+        notImplemented(promise) // w3-outbox
+
+    override fun markRejected(ids: ReadableArray, reason: String, promise: Promise) =
+        notImplemented(promise) // w3-outbox
+
+    override fun getPendingCount(promise: Promise) = notImplemented(promise) // w3-outbox
+
+    override fun clearPending(promise: Promise) = notImplemented(promise) // w3-outbox
+
+    override fun isIgnoringBatteryOptimizations(promise: Promise) =
+        notImplemented(promise) // w3-sync
+
+    override fun openBatteryOptimizationSettings() = Unit // w3-sync
+
+    private fun notImplemented(promise: Promise) =
+        promise.reject("E_NOT_IMPLEMENTED", "Not implemented yet")
 
     override fun invalidate() {
         if (FloorSensorsService.statusListener === statusListener) {
