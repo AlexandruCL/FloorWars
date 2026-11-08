@@ -8,11 +8,11 @@ Commands are for PowerShell on Windows, run from the repository root unless a st
 
 | Branch | Items | Head | State |
 |---|---|---|---|
-| `feat/w3-outbox` | seam, Room outbox | `932ee79` | pushed, PR not opened yet (the GitHub CLI is not installed on the laptop) |
-| `feat/w3-engine` | live segmenter, check-in attribution, gap counter | `8b13451` | pushed, PR not opened, includes the outbox commits until that PR merges |
-| `feat/w3-sync` | sync worker, WorkManager job, status screen | `da3f845` | pushed, PR not opened, includes the outbox commits |
-| `feat/w3-signout` | sign out | `956f9d0` | pushed, PR not opened, conflicts with the sync PR on Home (see step 1) |
-| `feat/w3-logout-call` | Sign out calls Ionut's `POST /v1/auth/logout` | see `git log` | pushed, PR not opened, stacked on `feat/w3-signout` |
+| `feat/w3-outbox-v2` | seam, Room outbox | `80a9c35` | pushed, PR to be created from the web page (no GitHub CLI on the laptop) |
+| `feat/w3-engine-v2` | live segmenter, check-in attribution, gap counter | `4dc2233` | pushed, PR to be created, includes the outbox commits until that PR merges |
+| `feat/w3-sync-v2` | sync worker, WorkManager job, status screen | `25b7811` | pushed, PR to be created, includes the outbox commits |
+| `feat/w3-signout-v2` | sign out | `d66b87d` | pushed, PR to be created, conflicts with the sync PR on Home (see step 1) |
+| `feat/w3-logout-call-v2` | Sign out calls Ionut's `POST /v1/auth/logout` | `bc26712` | pushed, PR to be created, stacked on `feat/w3-signout-v2` |
 | `docs/w3-finish` | this file, the summary, the tester guide, README and plan updates | n/a | pushed with the PR for it |
 
 All four branches are green on Android tests, ktlint, lint, typecheck, Jest and the generated-client check, against the contract on `main` (now 0.7.0-draft, with `/auth/logout`). They have only been tested against the Prism mock and an emulator, never the real server.
@@ -21,15 +21,15 @@ All four branches are green on Android tests, ktlint, lint, typecheck, Jest and 
 
 Open each PR on GitHub with the compare link, base `main`, and paste the body from `cristea/week_3/pr_descriptions/`. Ask Ionut for review on the parts that touch the contract (`/segments`, `/checkins`).
 
-- [ ] `feat/w3-outbox`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-outbox. Body: `pr_descriptions/01_outbox.md`.
-- [ ] `feat/w3-engine`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-engine, after the outbox PR is merged. Body: `02_engine.md`. Update the branch from `main` first (**Update branch** on the PR page, or a rebase).
-- [ ] `feat/w3-sync`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-sync, after the outbox PR. Body: `03_sync.md`.
-- [ ] `feat/w3-signout`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-signout, **after the sync PR**. Body: `04_signout.md`. It conflicts there, because the sync PR deletes `app/src/screens/PlaceholderScreens.tsx` and the signout PR edits it. Rebase onto `main`, then:
+- [ ] `feat/w3-outbox-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-outbox-v2. Body: `pr_descriptions/01_outbox.md`.
+- [ ] `feat/w3-engine-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-engine-v2, after the outbox PR is merged. Body: `02_engine.md`. Update the branch from `main` first (**Update branch** on the PR page, or a rebase).
+- [ ] `feat/w3-sync-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-sync-v2, after the outbox PR. Body: `03_sync.md`.
+- [ ] `feat/w3-signout-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-signout-v2, **after the sync PR**. Body: `04_signout.md`. It conflicts there, because the sync PR deletes `app/src/screens/PlaceholderScreens.tsx` and the signout PR edits it. Rebase onto `main`, then:
   - keep the deletion of `PlaceholderScreens.tsx`;
   - in `app/src/screens/HomeScreen.tsx` add the imports `Alert` (from `react-native`) and `endSession` (from `../auth/session`), the `confirmSignOut` function from the old `PlaceholderScreens.tsx`, and `<Button title="Sign out" onPress={confirmSignOut} secondary />` as the last child of `<Screen>`;
   - in `app/__tests__/signout.test.tsx` wait for `Status` instead of `Home`, and use `mockResolvedValue` (not `Once`) for `getPendingCount`, because Home reads it too.
   - The resolved version is on a local throwaway branch (`tmp/w3-integ`) if you want to compare; the Jest run on it had 121 tests green.
-- [ ] `feat/w3-logout-call`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-logout-call, **after the signout PR** (it is stacked on it). Body: `05_logout.md`. When the sync PR has merged first, this PR conflicts in the same `confirmSignOut` place as the signout PR: keep the `async onPress` that awaits `revokeRefreshToken()` and then `endSession()`.
+- [ ] `feat/w3-logout-call-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-logout-call-v2, **after the signout PR** (it is stacked on it). Body: `05_logout.md`. When the sync PR has merged first, this PR conflicts in the same `confirmSignOut` place as the signout PR: keep the `async onPress` that awaits `revokeRefreshToken()` and then `endSession()`.
 - [ ] CI is green on each: `android unit tests and trace replay` and `lint, typecheck, test, API client`. If the Android test task fails with a dead test worker and no failing test (it happened once locally), re-run it once and look at the worker log before changing code.
 - [ ] After each merge, bring your main up to date: `git switch main; git pull`.
 
@@ -42,7 +42,7 @@ The state of each was checked against his merges on 2026-11-08 and his message t
 | 1 | The server is up and deployed: `healthz` answers, and `POST /v1/segments` and `GET /v1/buildings` exist | `curl.exe https://api.floorwars.me/healthz` timed out on 2026-11-08 (no answer, not a 404). Ionut says it is a VM problem on his side and he will check it (runbook section 8, merged in #60). The README still says "not yet deployed". | Build and test against the Prism mock |
 | 2 | Steps per metre upper bound 10 (instead of 8) | **Merged** to `main` (#59, contract 0.6.2-draft); Ionut confirms pocket climbs of 6.7 to 8.7 now pass. Waits for the deploy. | A pocket climb rejected as `pressure_steps_mismatch` means the fix is not deployed, not that the app is wrong |
 | 3 | `overlap` rejection reason | **Solved**: in the contract since 0.6.0-draft | The app stores any reason string |
-| 4 | Revoke on sign-out | **Solved on the server**: `POST /v1/auth/logout` with `{refresh_token}`, 204 for any token, is on `main` (#61, contract 0.7.0-draft). The app calls it from the Sign out handler, not from `endSession()`, as he asked: branch `feat/w3-logout-call` | Merge that PR; until then sign-out is local only |
+| 4 | Revoke on sign-out | **Solved on the server**: `POST /v1/auth/logout` with `{refresh_token}`, 204 for any token, is on `main` (#61, contract 0.7.0-draft). The app calls it from the Sign out handler, not from `endSession()`, as he asked: branch `feat/w3-logout-call-v2` | Merge that PR; until then sign-out is local only |
 | 5 | Printed entrance codes for both buildings | **Open.** The generator is `tools/qr/make_entrance_qr.py`; codes must be valid on the test day (`--days` at most 31). Ask for an expired code and a code of another building too. | W3-8 rows wait |
 | 6 | A gap-metric endpoint before the pilot | **Open**, not urgent | The metric stays on the phone |
 
