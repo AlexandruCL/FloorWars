@@ -12,6 +12,7 @@ from sqlalchemy import (
     ColumnElement,
     Interval,
     and_,
+    delete,
     exists,
     func,
     insert,
@@ -39,6 +40,11 @@ from app.segments.rules import DURATION_MAX_S, OVERLAP_TOLERANCE
 # Far above a normal batch (about 1 s), and below the 30 s wait for a pooled connection, so batches
 # queued on one user cannot starve other users of connections.
 LOCK_TIMEOUT_MS = 5000
+
+# A rejected receipt only repeats its answer, and an item older than 7 days is rejected anyway.
+REJECTED_RECEIPT_RETENTION = timedelta(days=30)
+RESOLVED_FLAG_RETENTION = timedelta(days=30)
+UNRESOLVED_FLAG_RETENTION = timedelta(days=365)  # as long as raw segments (plan 3.5)
 
 
 def lock_user(db: Session, user_id: uuid.UUID) -> bool:
@@ -295,4 +301,35 @@ def add_score(
                 "steps": TeamBuildingScore.steps + stmt.excluded.steps,
             },
         )
+    )
+
+
+def purge_rejected(db: Session, now: datetime) -> tuple[int, int]:
+    """Delete old rejected rows that partition drops do not reach; returns ``(receipts, flags)``.
+    Verified receipts stay. No commit.
+
+    TODO(week 5, plan 7.6): run from the retention job (one transaction, then commit).
+    """
+    receipts = db.execute(
+        delete(SegmentReceipt)
+        .where(
+            SegmentReceipt.status != STATUS_VERIFIED,
+            SegmentReceipt.created_at < now - REJECTED_RECEIPT_RETENTION,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    flags = db.execute(
+        delete(FraudFlag)
+        .where(
+            (
+                FraudFlag.resolved_at.is_not(None)
+                & (FraudFlag.created_at < now - RESOLVED_FLAG_RETENTION)
+            )
+            | (FraudFlag.created_at < now - UNRESOLVED_FLAG_RETENTION)
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return (
+        int(getattr(receipts, "rowcount", 0) or 0),
+        int(getattr(flags, "rowcount", 0) or 0),
     )
