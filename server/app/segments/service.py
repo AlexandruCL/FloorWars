@@ -275,14 +275,18 @@ def _add_scores(db: Session, scored: list[ScoredSegment]) -> None:
 
 
 def _notify(board: Leaderboards, scored: list[ScoredSegment], flips: list[Flip]) -> None:
-    """Best effort: stop at the first error, so a dead Valkey costs one timeout, not a hundred."""
+    """Best effort: each loop stops at its first error, so a dead Valkey costs a few timeouts, not
+    a hundred. A failed board update marks its season stale, so the next read rebuilds it."""
     try:
         for segment in scored:
             board.record_verified(segment)
+    except Exception:
+        logger.exception("leaderboard update failed", extra={"flips": len(flips)})
+    try:
         for flip in flips:
             board.publish_flip(flip)
     except Exception:
-        logger.exception("leaderboard update failed", extra={"flips": len(flips)})
+        logger.exception("flip publish failed", extra={"flips": len(flips)})
 
 
 def upload_batch(

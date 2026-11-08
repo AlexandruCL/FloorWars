@@ -5,6 +5,8 @@ Keys (score = season points, always an integer):
 - ``fw:lb:s{season}:users``: member = user id
 - ``fw:lb:s{season}:teams``: member = team id
 - ``fw:lb:s{season}:b{building}:teams``: member = team id
+- ``fw:lb:s{season}:built``: set by ``rebuild`` (expires after ``BUILT_TTL_S``). Missing means
+  "needs rebuild": reads rebuild first, uploads skip the season.
 
 Events are published on the channel ``fw:events`` as JSON.
 
@@ -15,6 +17,7 @@ caused by a failed incremental update is repaired by running it again.
 """
 
 import json
+from contextlib import suppress
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -24,6 +27,9 @@ from sqlalchemy.orm import Session
 from app.valkey import ValkeyClient, ValkeyError
 
 EVENTS_CHANNEL = "fw:events"
+# Expiry of the built marker: an hourly rebuild bounds the drift of an update that failed while
+# Valkey was unreachable (the marker could not be deleted then).
+BUILT_TTL_S = 3600
 
 
 class Commands(Protocol):
@@ -59,15 +65,57 @@ def building_key(season_id: int, building_id: int) -> str:
     return f"fw:lb:s{season_id}:b{building_id}:teams"
 
 
+def built_key(season_id: int) -> str:
+    return f"fw:lb:s{season_id}:built"
+
+
+def is_built(vk: Commands, season_id: int) -> bool:
+    return int(vk.execute("EXISTS", built_key(season_id))) == 1
+
+
+def mark_stale(vk: Commands, season_id: int) -> None:
+    """The next read rebuilds the season."""
+    vk.execute("DEL", built_key(season_id))
+
+
+# KEYS: built, users, teams, building. ARGV: points, user, team. Atomic: all three or none.
+_RECORD = """
+if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+redis.call('ZINCRBY', KEYS[2], ARGV[1], ARGV[2])
+redis.call('ZINCRBY', KEYS[3], ARGV[1], ARGV[3])
+redis.call('ZINCRBY', KEYS[4], ARGV[1], ARGV[3])
+return 1
+"""
+
+
 def record_verified(
     vk: Commands, season_id: int, user_id: object, team_id: int, building_id: int, points: int
-) -> None:
-    """Add ``points`` of one verified segment to the three boards. ``points <= 0`` is ignored."""
+) -> bool:
+    """Add ``points`` of one verified segment to the three boards, in one atomic script.
+
+    Skipped (False) when ``points <= 0`` or the season is not built: the rebuild will count it.
+    On a Valkey error the season is marked stale (best effort) and the error raised.
+    """
     if points <= 0:
-        return
-    vk.execute("ZINCRBY", users_key(season_id), points, str(user_id))
-    vk.execute("ZINCRBY", teams_key(season_id), points, str(team_id))
-    vk.execute("ZINCRBY", building_key(season_id, building_id), points, str(team_id))
+        return False
+    keys = (built_key(season_id), users_key(season_id), teams_key(season_id))
+    try:
+        return bool(
+            vk.execute(
+                "EVAL",
+                _RECORD,
+                4,
+                *keys,
+                building_key(season_id, building_id),
+                points,
+                str(user_id),
+                str(team_id),
+            )
+        )
+    except ValkeyError:
+        with suppress(ValkeyError):  # unreachable: the marker's expiry bounds the drift
+            mark_stale(vk, season_id)
+        raise
 
 
 def flip_message(flip: FlipLike) -> str:
@@ -122,6 +170,7 @@ _BUILDING_TOTALS = text(
     "FROM climb_segment WHERE season_id = :s AND status = 'verified' "
     "GROUP BY building_id, team_id HAVING sum(points) > 0"
 )
+_BUILDING_IDS = text("SELECT id FROM building")
 
 
 def _replace(vk: Commands, key: str, scores: dict[str, int]) -> None:
@@ -140,18 +189,21 @@ def _replace(vk: Commands, key: str, scores: dict[str, int]) -> None:
     vk.execute("RENAME", tmp, key)
 
 
-def rebuild(db: Session, vk: Commands, season_id: int) -> None:
-    """Recompute the three board families of a season from verified segments (season totals)."""
+def rebuild(db: Session, vk: Commands, season_id: int) -> bool:
+    """Recompute the three board families of a season from verified segments (season totals),
+    then set the built marker. True when the season is marked built."""
     params = {"s": season_id}
     users = {r.member: r.points for r in db.execute(_USER_TOTALS, params)}
     teams = {r.member: r.points for r in db.execute(_TEAM_TOTALS, params)}
-    buildings: dict[int, dict[str, int]] = {}
+    buildings: dict[int, dict[str, int]] = {b: {} for b in db.execute(_BUILDING_IDS).scalars()}
     for r in db.execute(_BUILDING_TOTALS, params):
         buildings.setdefault(r.building_id, {})[r.member] = r.points
     _replace(vk, users_key(season_id), users)
     _replace(vk, teams_key(season_id), teams)
-    for building_id, scores in buildings.items():
+    for building_id, scores in buildings.items():  # every building: stale keys go too
         _replace(vk, building_key(season_id, building_id), scores)
+    vk.execute("SET", built_key(season_id), 1, "EX", BUILT_TTL_S)
+    return True
 
 
 __all__ = [
@@ -159,7 +211,10 @@ __all__ = [
     "Commands",
     "ValkeyClient",
     "building_key",
+    "built_key",
     "flip_message",
+    "is_built",
+    "mark_stale",
     "publish_flip",
     "rebuild",
     "record_verified",

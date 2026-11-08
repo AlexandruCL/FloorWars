@@ -53,21 +53,29 @@ def test_keys() -> None:
     assert lb.users_key(3) == "fw:lb:s3:users"
     assert lb.teams_key(3) == "fw:lb:s3:teams"
     assert lb.building_key(3, 9) == "fw:lb:s3:b9:teams"
+    assert lb.built_key(3) == "fw:lb:s3:built"
 
 
-def test_record_verified_updates_three_boards() -> None:
-    vk = FakeClient()
-    user = uuid.uuid4()
-    lb.record_verified(vk, 1, user, 7, 4, 120)
-    lb.record_verified(vk, 1, user, 7, 4, 30)
-    assert vk.sets["fw:lb:s1:users"] == {str(user): 150}
-    assert vk.sets["fw:lb:s1:teams"] == {"7": 150}
-    assert vk.sets["fw:lb:s1:b4:teams"] == {"7": 150}
+def test_a_failed_update_marks_the_season_stale() -> None:
+    class Failing:
+        def __init__(self) -> None:
+            self.deleted: list[object] = []
+
+        def execute(self, *args: str | int) -> Any:
+            if args[0] == "DEL":
+                self.deleted.append(args[1])
+                return 1
+            raise ValkeyError("down")
+
+    vk = Failing()
+    with pytest.raises(ValkeyError):
+        lb.record_verified(vk, 1, uuid.uuid4(), 7, 4, 120)
+    assert vk.deleted == ["fw:lb:s1:built"]
 
 
 def test_record_verified_ignores_zero_points() -> None:
     vk = FakeClient()
-    lb.record_verified(vk, 1, uuid.uuid4(), 7, 4, 0)
+    assert not lb.record_verified(vk, 1, uuid.uuid4(), 7, 4, 0)
     assert vk.sets == {}
 
 

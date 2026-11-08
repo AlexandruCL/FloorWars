@@ -32,9 +32,15 @@ class Flip:
     at: datetime = datetime(2026, 11, 7, tzinfo=UTC)
 
 
+def test_record_skips_a_season_that_is_not_built(vk: ValkeyClient) -> None:
+    assert not lb.record_verified(vk, 2, uuid.uuid4(), 1, 4, 100)
+    assert vk.execute("EXISTS", lb.users_key(2), lb.teams_key(2), lb.building_key(2, 4)) == 0
+
+
 def test_record_and_top(vk: ValkeyClient) -> None:
     ana, bob = uuid.uuid4(), uuid.uuid4()
-    lb.record_verified(vk, 2, ana, 1, 4, 100)
+    vk.execute("SET", lb.built_key(2), 1)
+    assert lb.record_verified(vk, 2, ana, 1, 4, 100)
     lb.record_verified(vk, 2, bob, 2, 4, 250)
     lb.record_verified(vk, 2, ana, 1, 5, 20)
     assert lb.top(vk, lb.users_key(2), 10) == [(str(bob), 250), (str(ana), 120)]
