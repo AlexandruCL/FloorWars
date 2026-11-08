@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { AppState } from 'react-native';
 import * as Keychain from 'react-native-keychain';
 import App from '../App';
 import { RootNavigator } from '../src/navigation/RootNavigator';
@@ -84,5 +85,31 @@ describe('season check at start', () => {
   test('an unreadable season keeps the user in', async () => {
     await startSignedIn('1', 'offline');
     expect((await screen.findAllByText(HOME)).length).toBeGreaterThan(0);
+  });
+
+  test('a season that rolls over while the app is open shows the picker on return', async () => {
+    const handlers: ((status: string) => void)[] = [];
+    jest.spyOn(AppState, 'addEventListener').mockImplementation(((
+      _type: string,
+      fn: (status: string) => void,
+    ) => {
+      handlers.push(fn);
+      return { remove: jest.fn() };
+    }) as never);
+    await startSignedIn('1', 1);
+    expect((await screen.findAllByText(HOME)).length).toBeGreaterThan(0);
+    // Season 2 is now the running one.
+    globalThis.fetch = jest.fn(async (url: string) => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify(
+          url.endsWith('/teams') ? [] : { id: 2, starts_at: '', ends_at: '' },
+        ),
+    })) as never;
+    await act(async () => {
+      handlers.forEach(fn => fn('active'));
+    });
+    expect(await screen.findByText('Pick your team')).toBeTruthy();
   });
 });

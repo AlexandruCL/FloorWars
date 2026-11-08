@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, AppState, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { api } from './src/api/client';
 import {
@@ -44,6 +44,24 @@ function App() {
   }, []);
 
   useEffect(() => (stage === 'in' ? startSyncTriggers() : undefined), [stage]);
+
+  // A season can roll over while the app is open: look again each time it comes back.
+  useEffect(() => {
+    if (stage !== 'in') {
+      return undefined;
+    }
+    const sub = AppState.addEventListener('change', status => {
+      if (status !== 'active') {
+        return;
+      }
+      (async () => {
+        if ((await hasSession()) && (await stageForSession()) === 'needsTeam') {
+          setStage('needsTeam');
+        }
+      })().catch(() => {});
+    });
+    return () => sub.remove();
+  }, [stage]);
 
   if (stage === 'loading') {
     return (
