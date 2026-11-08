@@ -34,3 +34,52 @@ test('stored tokens and a chosen team restore straight into Main', async () => {
   await render(<App />);
   expect((await screen.findAllByText('Home')).length).toBeGreaterThan(0);
 });
+
+describe('season check at start', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  async function startSignedIn(joined: string, active: number | 'offline') {
+    await Keychain.setGenericPassword(
+      'tokens',
+      '{"access":"a","refresh":"r"}',
+      { service: 'floorwars.auth' },
+    );
+    await Keychain.setGenericPassword('team', joined, {
+      service: 'floorwars.team',
+    });
+    globalThis.fetch = jest.fn(async (url: string) => {
+      if (active === 'offline') {
+        throw new TypeError('Network request failed');
+      }
+      const body = url.endsWith('/teams')
+        ? []
+        : { id: active, starts_at: '', ends_at: '' };
+      return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+    }) as never;
+    await render(<App />);
+  }
+
+  test('a different active season shows the team picker again', async () => {
+    await startSignedIn('1', 2);
+    expect(await screen.findByText('Pick your team')).toBeTruthy();
+    expect(screen.queryByText('Home')).toBeNull();
+  });
+
+  test('the same active season goes straight in', async () => {
+    await startSignedIn('2', 2);
+    expect((await screen.findAllByText('Home')).length).toBeGreaterThan(0);
+  });
+
+  test('the old team flag counts as season 1', async () => {
+    await startSignedIn('1', 1);
+    expect((await screen.findAllByText('Home')).length).toBeGreaterThan(0);
+  });
+
+  test('an unreadable season keeps the user in', async () => {
+    await startSignedIn('1', 'offline');
+    expect((await screen.findAllByText('Home')).length).toBeGreaterThan(0);
+  });
+});
