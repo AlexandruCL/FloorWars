@@ -228,7 +228,7 @@ Deliberately not used: Firebase as a platform (database, auth, analytics, crashl
 The PDF rejected cross-platform frameworks because their sensor plugins rarely sample reliably in the background. We keep React Native and remove that risk this way:
 
 - The Kotlin service owns sensor registration, the segmenter, the classifier and persistence. The JS runtime may be killed at any moment, and nothing about detection depends on it.
-- The native module exposes a small API to JS: `start()`, `stop()`, `getStatus()`, `getPending(limit)`, `markSynced(ids)`, `setConfig(json)`, `startLogging(label)`, `stopLogging()`, plus events for status changes. In Week 3 `setActiveCheckin` and `clearActiveCheckin` drive the sensors; `start()`, `stop()` and `setConfig(json)` arrive in Week 5, with the service toggle and the config override.
+- The native module exposes a small API to JS: `start()`, `stop()`, `getStatus()`, `getPending(limit)`, `markSynced(ids)`, `setConfig(json)`, `startLogging(label)`, `stopLogging()`, plus events for status changes. Week 3 added `markRejected(ids, reason)`, `getPendingCount()`, `clearPending()`, `getActiveCheckin()`, `isIgnoringBatteryOptimizations()`, `openBatteryOptimizationSettings()` and the `onPendingChanged` event. In Week 3 `setActiveCheckin` and `clearActiveCheckin` drive the sensors; `start()`, `stop()` and `setConfig(json)` arrive in Week 5, with the service toggle and the config override.
 - The segmenter is a pure Kotlin class with no Android imports, so JUnit can replay recorded traces in CI.
 - Pin the React Native version in Week 1 and do not upgrade during the project.
 - Use no Expo Go. A development build is required either way.
