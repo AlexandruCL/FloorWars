@@ -152,7 +152,11 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
 
     override fun clearActiveCheckin() {
         ActiveCheckinStore.clear(reactApplicationContext)
-        if (FloorSensorsService.detecting) sendToService(FloorSensorsService.ACTION_STOP_DETECT)
+        // Only sign-out clears the check-in: the open climb belongs to the user who is leaving, so
+        // it is dropped, not flushed into the outbox after clearPending() has run.
+        if (FloorSensorsService.detecting) {
+            sendToService(FloorSensorsService.ACTION_STOP_DETECT, discard = true)
+        }
     }
 
     override fun getActiveCheckin(promise: Promise) {
@@ -176,16 +180,26 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
             Log.w(TAG, "ACTIVITY_RECOGNITION not granted, not detecting")
             return
         }
-        ContextCompat.startForegroundService(
-            reactApplicationContext,
-            serviceIntent().setAction(FloorSensorsService.ACTION_DETECT)
-        )
+        try {
+            ContextCompat.startForegroundService(
+                reactApplicationContext,
+                serviceIntent().setAction(FloorSensorsService.ACTION_DETECT)
+            )
+        } catch (e: IllegalStateException) {
+            // The WorkManager sync job loads this module in a background process, where Android 12
+            // and later refuse a foreground service start (ForegroundServiceStartNotAllowedException).
+            // Detection resumes the next time the app opens in the foreground.
+            Log.w(TAG, "detect: foreground start refused in the background", e)
+        }
     }
 
     // startService, not startForegroundService: these paths may not call startForeground.
-    private fun sendToService(action: String) {
+    private fun sendToService(action: String, discard: Boolean = false) {
         try {
-            reactApplicationContext.startService(serviceIntent().setAction(action))
+            val intent = serviceIntent()
+                .setAction(action)
+                .putExtra(FloorSensorsService.EXTRA_DISCARD, discard)
+            reactApplicationContext.startService(intent)
         } catch (e: IllegalStateException) {
             // Background start refused; only possible if the service already stopped.
             Log.w(TAG, "could not send $action", e)

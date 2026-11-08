@@ -68,6 +68,12 @@ export function subscribeSync(fn: () => void): () => void {
 export function setFlipHandler(fn: ((flips: Flip[]) => void) | undefined) {
   flipHandler = fn;
 }
+// The stuck and wait-until state belongs to one session: a sign-out must not leave the next
+// session blocked, so the triggers call this when they stop.
+export function resetSync() {
+  state = { ...initial };
+  listeners.forEach(fn => fn());
+}
 export function resetSyncForTests() {
   state = initial;
   inFlight = null;
@@ -78,28 +84,11 @@ function setState(patch: Partial<SyncState>) {
   listeners.forEach(fn => fn());
 }
 
-/* eslint-disable no-bitwise -- the hash needs 32-bit integer maths */
-// cyrb53, a 53-bit string hash. The key must stay under 255 characters, which 100 UUIDs exceed.
-function hash(text: string): string {
-  let h1 = 0xdeadbeef;
-  let h2 = 0x41c6ce57;
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    h1 = Math.imul(h1 ^ c, 2654435761);
-    h2 = Math.imul(h2 ^ c, 1597334677);
-  }
-  h1 =
-    Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^
-    Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 =
-    Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^
-    Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
-}
-
-// The same ids give the same key, so a retry replays; a different set of ids is a new batch.
+// The server treats the key as informational (duplicates are decided per segment), so a short key
+// is enough: the same ids give the same key, so a retry replays; another batch gets another.
 export function idempotencyKey(ids: string[]): string {
-  return `seg-${ids.length}-${hash([...ids].sort().join(','))}`;
+  const sorted = [...ids].sort();
+  return `seg-${sorted.length}-${sorted[0]}-${sorted[sorted.length - 1]}`;
 }
 
 function stuckFrom(e: ApiError): NonNullable<SyncState['stuck']> {

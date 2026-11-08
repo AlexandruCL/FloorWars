@@ -80,7 +80,8 @@ class FloorSensorsService :
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_DETECT -> startDetecting(ActiveCheckinStore.load(this))
-            ACTION_STOP_DETECT -> stopDetecting()
+            ACTION_STOP_DETECT ->
+                stopDetecting(intent?.getBooleanExtra(EXTRA_DISCARD, false) == true)
             ACTION_STOP_LOGGING -> stopLogging()
             else -> startLogging(intent?.getStringExtra(EXTRA_LABEL).orEmpty())
         }
@@ -153,19 +154,26 @@ class FloorSensorsService :
         statusListener?.invoke()
     }
 
-    private fun stopDetecting() {
+    private fun stopDetecting(discard: Boolean = false) {
         mainHandler.removeCallbacks(expire)
         // A climb that started before now keeps its check-in; the flush below still finds it.
         history.end(SystemClock.elapsedRealtime() + offsetMs)
         checkin = null
         detecting = false
-        flushDetector()
+        if (discard) dropDetector() else flushDetector()
         updateSensorsAndWakeLock()
         if (label == null) stopSelf() else startForeground()
         statusListener?.invoke()
     }
 
     // Flushes an open climb into the outbox before the detector goes.
+    // Sign-out: the open climb is not stored.
+    private fun dropDetector() = sensorHandler.post {
+        detector = null
+        logGaps()
+        gaps = null
+    }
+
     private fun flushDetector() = sensorHandler.post {
         detector?.stop()
         detector = null
@@ -317,6 +325,7 @@ class FloorSensorsService :
 
     companion object {
         const val EXTRA_LABEL = "label"
+        const val EXTRA_DISCARD = "discard"
 
         // Reads the check-in from ActiveCheckinStore. Send with startForegroundService.
         const val ACTION_DETECT = "com.floorwars.floorsensors.DETECT"

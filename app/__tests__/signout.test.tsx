@@ -54,6 +54,10 @@ test('endSession clears pending and the active check-in', async () => {
   await endSession();
   expect(sensors.clearPending).toHaveBeenCalled();
   expect(sensors.clearActiveCheckin).toHaveBeenCalled();
+  // Detection stops (and drops its open climb) before the rows are cleared.
+  expect(sensors.clearActiveCheckin.mock.invocationCallOrder[0]).toBeLessThan(
+    sensors.clearPending.mock.invocationCallOrder[0],
+  );
 });
 
 test('endSession still finishes when a native clear fails', async () => {

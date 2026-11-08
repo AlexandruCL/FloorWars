@@ -211,7 +211,6 @@ describe('CheckinScreen', () => {
     await open(deps());
     await fireEvent.press(screen.getByText('Use my location'));
     await screen.findByText(/Checked in: Building X/);
-    expect(native.setActiveCheckin).toHaveBeenCalledTimes(1);
     expect(native.setActiveCheckin).toHaveBeenCalledWith(
       'u',
       2,
@@ -220,7 +219,7 @@ describe('CheckinScreen', () => {
     );
   });
 
-  test('permissions are asked before the check-in reaches native, so a grant starts detection', async () => {
+  test('the check-in reaches native before the dialogs, and again after a grant so detection starts', async () => {
     apiMock.mockImplementation(async (_m, path) =>
       path === '/checkins' ? created() : [{ id: 2, name: 'Building X' }],
     );
@@ -228,9 +227,25 @@ describe('CheckinScreen', () => {
     await fireEvent.press(screen.getByText('Use my location'));
     await screen.findByText(/Checked in: Building X, 90 min left/);
     expect(permissions).toHaveBeenCalledTimes(1);
-    expect(permissions.mock.invocationCallOrder[0]).toBeLessThan(
-      native.setActiveCheckin.mock.invocationCallOrder[0],
+    expect(native.setActiveCheckin.mock.invocationCallOrder[0]).toBeLessThan(
+      permissions.mock.invocationCallOrder[0],
     );
+    await waitFor(() =>
+      expect(native.setActiveCheckin).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  test('a permission prompt that never answers does not hold up the success screen', async () => {
+    permissions.mockReturnValue(new Promise(() => {}));
+    apiMock.mockImplementation(async (_m, path) =>
+      path === '/checkins' ? created() : [{ id: 2, name: 'Building X' }],
+    );
+    await open(deps());
+    await fireEvent.press(screen.getByText('Use my location'));
+    expect(
+      await screen.findByText(/Checked in: Building X, 90 min left/),
+    ).toBeTruthy();
+    expect(native.setActiveCheckin).toHaveBeenCalledTimes(1);
   });
 
   test.each([
@@ -249,6 +264,8 @@ describe('CheckinScreen', () => {
     expect(
       await screen.findByText(/Checked in: Building X, 90 min left/),
     ).toBeTruthy();
+    await waitFor(() => expect(permissions).toHaveBeenCalled());
+    expect(native.setActiveCheckin).toHaveBeenCalledTimes(1);
     expect(native.setActiveCheckin).toHaveBeenCalledWith(
       'u',
       2,

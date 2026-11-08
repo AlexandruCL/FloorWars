@@ -82,9 +82,10 @@ export function setOnSessionEnded(fn: (() => void) | undefined): void {
 // Unsent segments and the active check-in belong to the leaving user, so they go too;
 // a native failure must not keep the user signed in.
 export async function endSession(): Promise<void> {
+  // Detection stops first, and drops its open climb, so nothing is written after clearPending.
   for (const clear of [
-    () => FloorSensors.clearPending(),
     () => FloorSensors.clearActiveCheckin(),
+    () => FloorSensors.clearPending(),
   ]) {
     try {
       await clear();
