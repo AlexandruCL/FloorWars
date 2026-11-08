@@ -1,6 +1,7 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+apply plugin: "com.google.devtools.ksp"
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -107,6 +108,11 @@ android {
     }
 }
 
+// Room writes each schema version here, so later migrations can be checked against it.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 configurations {
     ktlint
 }
@@ -121,7 +127,12 @@ dependencies {
         implementation jscFlavor
     }
 
+    implementation("androidx.room:room-runtime:2.8.5")
+    ksp("androidx.room:room-compiler:2.8.5")
+
     testImplementation("junit:junit:4.13.2")
+    // Room needs a Context and the framework SQLite; Robolectric provides both on the JVM.
+    testImplementation("org.robolectric:robolectric:4.17")
 
     ktlint("com.pinterest.ktlint:ktlint-cli:1.7.1") {
         attributes {

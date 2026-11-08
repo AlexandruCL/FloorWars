@@ -28,7 +28,7 @@ test('getStatus() button shows the native status', async () => {
   expect(native.getStatus).toHaveBeenCalled();
   expect(
     await screen.findByText(
-      '{"logging":false,"label":"","has_barometer":true,"buffered":0}',
+      '{"logging":false,"label":"","has_barometer":true,"buffered":0,"detecting":false,"last_segment_ms":null,"rejected_count":0,"no_checkin_count":0,"longest_gap_s":0,"gaps_over_threshold":0}',
     ),
   ).toBeTruthy();
 });
