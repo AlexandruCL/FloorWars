@@ -239,6 +239,20 @@ class LiveSegmenterTest {
     }
 
     @Test
+    fun climbRightAfterADeliveryGapIsEmitted() {
+        // 300 s flat, no events for 300 s (a throttled phone), then a climb 5 s after they resume.
+        val full = climb(flatS = 605.0, climbS = 30.0, afterS = 40.0)
+        val t0 = full.pressure.first().timestampNanos
+        val gap = t0 + nanos(300.0) until t0 + nanos(600.0)
+        val s = Stream("gap", full.pressure.filter { it.timestampNanos !in gap }, full.steps)
+        val expected = batch(s)
+        assertEquals(1, expected.size)
+        val live = LiveSegmenter()
+        assertEquals(expected, feed(live, s, null) + live.stop())
+        assertEquals(0, live.truncatedCount)
+    }
+
+    @Test
     fun windowHoldsTheLongestStairsClimb() {
         with(LiveSegmenterParams) {
             assertTrue(

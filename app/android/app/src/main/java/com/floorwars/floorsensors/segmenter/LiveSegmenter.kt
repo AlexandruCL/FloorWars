@@ -12,8 +12,8 @@ object LiveSegmenterParams {
     // MAX_PAUSE_S would still join it, and the flags up to there need CONTEXT_S of data after.
     const val CLOSE_S = SegmenterParams.MAX_PAUSE_S + CONTEXT_S + SegmenterParams.STEP_LAG_S
 
-    // After a trim, the first CONTEXT_S of the window reads a shrunken median, and a climb within
-    // MAX_PAUSE_S of that would join it. A segment starting closer than this to a trimmed edge is not trusted.
+    // After a trim, samples within CONTEXT_S of the cutoff read a shrunken median, and a climb within
+    // MAX_PAUSE_S of those would join them. A segment starting closer than this to the cutoff is not trusted.
     const val EDGE_S = CONTEXT_S + SegmenterParams.MAX_PAUSE_S
 
     // Must hold the longest STAIRS climb (180 s) plus CLOSE_S and EDGE_S, about 222 s. A segment is
@@ -39,7 +39,8 @@ class LiveSegmenter(
     private var newestNanos = Long.MIN_VALUE
     private var lastEvalNanos: Long? = null
 
-    // Oldest pressure time still trusted after a trim; Long.MIN_VALUE until the first trim.
+    // The last trim's cutoff; Long.MIN_VALUE until the first trim. The cutoff, not the oldest sample
+    // kept: after a delivery gap the oldest sample is far later, and batch reads that edge the same way.
     private var trimmedAtNanos = Long.MIN_VALUE
 
     // Every segment ending at or before this has been emitted or counted; a new one starts after it.
@@ -89,8 +90,10 @@ class LiveSegmenter(
         val fresh = segments.filter { it.startNanos > lastEmittedEndNanos }
         fresh.lastOrNull()?.let { lastEmittedEndNanos = it.endNanos }
         val (cut, whole) = fresh.partition { it.startNanos < edge }
-        // One that ends inside the edge zone too is an artefact of the shrunken median there (a raw
-        // blow spike reads as a jump), not a climb; only one that runs past the zone was cut.
+        // A segment taken for the first time ends at least WINDOW_S - CLOSE_S after the last cutoff, far
+        // past the edge zone. So one that also ends inside the zone is an artefact of the shrunken median
+        // there (a raw blow spike reads as a jump), not a climb; one that runs past it was cut, and is
+        // too long to be STAIRS.
         truncatedCount += cut.count { it.endNanos >= edge }
         return whole
     }
@@ -100,7 +103,7 @@ class LiveSegmenter(
         if (pressure.none { it.timestampNanos < cutoff }) return
         pressure.removeAll { it.timestampNanos < cutoff }
         steps.removeAll { it.timestampNanos < cutoff }
-        trimmedAtNanos = pressure.minOf { it.timestampNanos }
+        trimmedAtNanos = cutoff
     }
 
     private fun seconds(s: Double) = (s * 1e9).toLong()
