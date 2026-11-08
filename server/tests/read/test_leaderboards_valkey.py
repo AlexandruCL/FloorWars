@@ -37,6 +37,42 @@ def test_record_skips_a_season_that_is_not_built(vk: ValkeyClient) -> None:
     assert vk.execute("EXISTS", lb.users_key(2), lb.teams_key(2), lb.building_key(2, 4)) == 0
 
 
+def test_record_during_a_rebuild_skips_and_marks_the_lock_dirty(vk: ValkeyClient) -> None:
+    vk.execute("SET", lb.lock_key(2), "tok")
+    vk.execute("SET", lb.built_key(2), 1)
+    assert not lb.record_verified(vk, 2, uuid.uuid4(), 1, 4, 100)
+    assert vk.execute("GET", lb.lock_key(2)) == b"tok:dirty"
+    assert vk.execute("EXISTS", lb.users_key(2), lb.teams_key(2), lb.building_key(2, 4)) == 0
+
+
+def _finish(vk: ValkeyClient, token: str, expiry: int = lb.BUILT_TTL_S) -> object:
+    return vk.execute("EVAL", lb._FINISH, 2, lb.lock_key(2), lb.built_key(2), token, expiry)
+
+
+def test_finish_of_a_dirty_rebuild_deletes_the_marker(vk: ValkeyClient) -> None:
+    vk.execute("SET", lb.lock_key(2), "tok:dirty")
+    vk.execute("SET", lb.built_key(2), 1)
+    assert _finish(vk, "tok") == 0
+    assert vk.execute("EXISTS", lb.lock_key(2), lb.built_key(2)) == 0
+
+
+def test_finish_without_the_lock_keeps_the_other_lock_and_drops_the_marker(
+    vk: ValkeyClient,
+) -> None:
+    vk.execute("SET", lb.lock_key(2), "other")
+    vk.execute("SET", lb.built_key(2), 1)
+    assert _finish(vk, "tok") == 0
+    assert vk.execute("GET", lb.lock_key(2)) == b"other"
+    assert vk.execute("EXISTS", lb.built_key(2)) == 0
+
+
+def test_clean_finish_sets_the_marker_and_releases(vk: ValkeyClient) -> None:
+    vk.execute("SET", lb.lock_key(2), "tok")
+    assert _finish(vk, "tok") == 1
+    assert vk.execute("EXISTS", lb.lock_key(2)) == 0
+    assert 0 < vk.execute("TTL", lb.built_key(2)) <= lb.BUILT_TTL_S
+
+
 def test_record_and_top(vk: ValkeyClient) -> None:
     ana, bob = uuid.uuid4(), uuid.uuid4()
     vk.execute("SET", lb.built_key(2), 1)

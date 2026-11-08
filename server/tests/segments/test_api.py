@@ -420,6 +420,9 @@ class _Board:
     def publish_flip(self, flip: Flip) -> None:
         self.flips.append(flip)
 
+    def mark_stale(self, season_id: int) -> None:
+        pass
+
 
 def _batch_for(world: World) -> tuple[Any, SegmentBatch]:
     user = world.climber()

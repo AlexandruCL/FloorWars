@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from app import leaderboards as lb
+from app.segments import service
 from app.valkey import ValkeyError
 
 
@@ -56,21 +57,33 @@ def test_keys() -> None:
     assert lb.built_key(3) == "fw:lb:s3:built"
 
 
-def test_a_failed_update_marks_the_season_stale() -> None:
-    class Failing:
-        def __init__(self) -> None:
-            self.deleted: list[object] = []
+class Failing:
+    """Every ``EVAL`` fails; ``DEL`` is recorded, or fails too with ``del_fails``."""
 
-        def execute(self, *args: str | int) -> Any:
-            if args[0] == "DEL":
-                self.deleted.append(args[1])
-                return 1
-            raise ValkeyError("down")
+    def __init__(self, del_fails: bool = False) -> None:
+        self.del_fails = del_fails
+        self.deleted: list[object] = []
 
+    def execute(self, *args: str | int) -> Any:
+        if args[0] == "DEL" and not self.del_fails:
+            self.deleted.append(args[1])
+            return 1
+        raise ValkeyError("down")
+
+
+def _scored(season_id: int) -> service.ScoredSegment:
+    return service.ScoredSegment(season_id, uuid.uuid4(), 7, 4, 60, 60)
+
+
+def test_a_failed_update_marks_every_season_of_the_batch_stale() -> None:
     vk = Failing()
-    with pytest.raises(ValkeyError):
-        lb.record_verified(vk, 1, uuid.uuid4(), 7, 4, 120)
-    assert vk.deleted == ["fw:lb:s1:built"]
+    service._notify(service.ValkeyLeaderboards(vk), [_scored(1), _scored(2), _scored(1)], [])
+    assert vk.deleted == ["fw:lb:s1:built", "fw:lb:s2:built"]
+
+
+def test_a_failed_update_and_a_failed_mark_still_return(caplog: pytest.LogCaptureFixture) -> None:
+    service._notify(service.ValkeyLeaderboards(Failing(del_fails=True)), [_scored(1)], [])
+    assert any(r.message == "leaderboard update failed" for r in caplog.records)
 
 
 def test_record_verified_ignores_zero_points() -> None:

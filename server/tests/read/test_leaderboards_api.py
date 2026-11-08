@@ -1,6 +1,8 @@
 """``GET /v1/leaderboards``: the three scopes, the database fallback, the built marker."""
 
 from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,7 +10,7 @@ from httpx import Response
 from sqlalchemy.orm import Session
 
 from app import leaderboards as lb
-from app.valkey import ValkeyClient
+from app.valkey import ValkeyClient, ValkeyError
 from tests.helpers import TEST_VALKEY_URL, auth_headers
 from tests.read.seed import World, add_segment, seed
 
@@ -307,6 +309,52 @@ def test_a_failed_rebuild_releases_the_lock(
         lb.rebuild(db, valkey_client, world.season_id)
     assert valkey_client.execute("EXISTS", lb.lock_key(world.season_id)) == 0
     assert valkey_client.execute("EXISTS", lb.built_key(world.season_id)) == 0
+
+
+def test_a_rebuild_that_loses_its_lock_leaves_the_season_unbuilt(
+    client: TestClient, valkey_client: ValkeyClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = _populate(client)
+    lock = lb.lock_key(world.season_id)
+    real = lb._replace
+
+    def expire_then_replace(*args: Any) -> None:
+        valkey_client.execute("SET", lock, "other-rebuild")  # ours expired, another took it
+        real(*args)
+
+    monkeypatch.setattr(lb, "_replace", expire_then_replace)
+    with client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
+        assert not lb.rebuild(db, valkey_client, world.season_id)
+    assert valkey_client.execute("GET", lock) == b"other-rebuild"
+    assert valkey_client.execute("EXISTS", lb.built_key(world.season_id)) == 0
+
+
+def test_a_slow_rebuild_stops_and_releases_the_lock(
+    client: TestClient, valkey_client: ValkeyClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = _populate(client)
+    clock = iter([0.0, 1000.0])  # lock taken at 0, first board written at 1000 s
+    monkeypatch.setattr(lb, "time", SimpleNamespace(monotonic=lambda: next(clock)))
+    with client.app.state.sessionmaker() as db, pytest.raises(ValkeyError):  # type: ignore[attr-defined]
+        lb.rebuild(db, valkey_client, world.season_id)
+    assert valkey_client.execute("EXISTS", lb.lock_key(world.season_id)) == 0
+    assert valkey_client.execute("EXISTS", lb.users_key(world.season_id)) == 0
+
+
+def test_a_redundant_rebuild_only_releases_the_lock(
+    client: TestClient, valkey_client: ValkeyClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = _populate(client)
+    valkey_client.execute("SET", lb.built_key(world.season_id), 1)
+
+    def never(*args: object) -> None:
+        raise AssertionError("rebuilt although the season is built")
+
+    monkeypatch.setattr(lb, "_rebuild_keys", never)
+    with client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
+        assert lb.rebuild(db, valkey_client, world.season_id)
+    assert valkey_client.execute("EXISTS", lb.lock_key(world.season_id)) == 0
+    assert valkey_client.execute("EXISTS", lb.built_key(world.season_id)) == 1
 
 
 def test_valkey_down_falls_back_to_the_database(client: TestClient) -> None:

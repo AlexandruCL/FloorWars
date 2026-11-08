@@ -19,7 +19,7 @@ caused by a failed incremental update is repaired by running it again.
 
 import json
 import secrets
-from contextlib import suppress
+import time
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -103,10 +103,14 @@ return 1
 """
 
 # KEYS: lock, built. ARGV: token, marker expiry (0: the rebuild failed). Releases the lock only if
-# this rebuild still owns it; sets the marker only if no upload overlapped (lock not dirty).
+# this rebuild still owns it; sets the marker only if no upload overlapped (lock not dirty). A lost
+# lock (expired, maybe taken by another rebuild) means unknown keys: drop the marker.
 _FINISH = """
 local v = redis.call('GET', KEYS[1])
-if not v or string.sub(v, 1, #ARGV[1]) ~= ARGV[1] then return 0 end
+if not v or string.sub(v, 1, #ARGV[1]) ~= ARGV[1] then
+  redis.call('DEL', KEYS[2])
+  return 0
+end
 redis.call('DEL', KEYS[1])
 if v == ARGV[1] and ARGV[2] ~= '0' then
   redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])
@@ -123,28 +127,23 @@ def record_verified(
     """Add ``points`` of one verified segment to the three boards, in one atomic script.
 
     Skipped (False) when ``points <= 0`` or the season is not built: the rebuild will count it.
-    On a Valkey error the season is marked stale (best effort) and the error raised.
+    On an error the caller marks the season stale (``mark_stale``).
     """
     if points <= 0:
         return False
     keys = (lock_key(season_id), built_key(season_id), users_key(season_id), teams_key(season_id))
-    try:
-        return bool(
-            vk.execute(
-                "EVAL",
-                _RECORD,
-                5,
-                *keys,
-                building_key(season_id, building_id),
-                points,
-                str(user_id),
-                str(team_id),
-            )
+    return bool(
+        vk.execute(
+            "EVAL",
+            _RECORD,
+            5,
+            *keys,
+            building_key(season_id, building_id),
+            points,
+            str(user_id),
+            str(team_id),
         )
-    except ValkeyError:
-        with suppress(ValkeyError):  # unreachable: the marker's expiry bounds the drift
-            mark_stale(vk, season_id)
-        raise
+    )
 
 
 def flip_message(flip: FlipLike) -> str:
@@ -202,12 +201,12 @@ _BUILDING_TOTALS = text(
 _BUILDING_IDS = text("SELECT id FROM building")
 
 
-def _replace(vk: Commands, key: str, scores: dict[str, int]) -> None:
+def _replace(vk: Commands, key: str, scores: dict[str, int], token: str) -> None:
     """Swap ``key`` for ``scores`` atomically enough: build aside, then RENAME over it."""
     if not scores:
         vk.execute("DEL", key)
         return
-    tmp = f"{key}:rebuild"
+    tmp = f"{key}:rebuild:{token}"  # per rebuild: one that lost its lock cannot mix into another
     vk.execute("DEL", tmp)
     for i in range(0, len(scores), 500):
         chunk = list(scores.items())[i : i + 500]
@@ -225,9 +224,13 @@ def rebuild(db: Session, vk: Commands, season_id: int) -> bool:
     token = secrets.token_hex(16)
     if not vk.execute("SET", lock_key(season_id), token, "NX", "PX", LOCK_TTL_MS):
         return False
+    # Stop at half the lock expiry, while the lock is still ours.
+    deadline = time.monotonic() + LOCK_TTL_MS / 2000
     ok = False
     try:
-        _rebuild_keys(db, vk, season_id)
+        # Another reader rebuilt it while we waited for the lock: only release (the finish below).
+        if not is_built(vk, season_id):
+            _rebuild_keys(db, vk, season_id, token, deadline)
         ok = True
     finally:
         expiry = BUILT_TTL_S if ok else 0
@@ -237,17 +240,20 @@ def rebuild(db: Session, vk: Commands, season_id: int) -> bool:
     return bool(built)
 
 
-def _rebuild_keys(db: Session, vk: Commands, season_id: int) -> None:
+def _rebuild_keys(db: Session, vk: Commands, season_id: int, token: str, deadline: float) -> None:
     params = {"s": season_id}
     users = {r.member: r.points for r in db.execute(_USER_TOTALS, params)}
     teams = {r.member: r.points for r in db.execute(_TEAM_TOTALS, params)}
     buildings: dict[int, dict[str, int]] = {b: {} for b in db.execute(_BUILDING_IDS).scalars()}
     for r in db.execute(_BUILDING_TOTALS, params):
         buildings.setdefault(r.building_id, {})[r.member] = r.points
-    _replace(vk, users_key(season_id), users)
-    _replace(vk, teams_key(season_id), teams)
-    for building_id, scores in buildings.items():  # every building: stale keys go too
-        _replace(vk, building_key(season_id, building_id), scores)
+    boards = [(users_key(season_id), users), (teams_key(season_id), teams)]
+    # Every building, so stale keys go too.
+    boards += [(building_key(season_id, b), scores) for b, scores in buildings.items()]
+    for key, scores in boards:
+        if time.monotonic() > deadline:  # a ValkeyError, so a read falls back to the database
+            raise ValkeyError("leaderboard rebuild took over half the lock expiry")
+        _replace(vk, key, scores, token)
 
 
 __all__ = [
