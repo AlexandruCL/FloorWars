@@ -6,6 +6,7 @@ import {
   hasSession,
   setOnSessionEnded,
 } from './src/auth/session';
+import { startSyncTriggers } from './src/sync/triggers';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { colors } from './src/ui/parts';
 
@@ -25,11 +26,11 @@ function App() {
     return () => setOnSessionEnded(undefined);
   }, []);
 
+  useEffect(() => (stage === 'in' ? startSyncTriggers() : undefined), [stage]);
+
   if (stage === 'loading') {
     return (
-      <View
-        style={styles.loading}
-      >
+      <View style={styles.loading}>
         <ActivityIndicator accessibilityLabel="Loading" color={colors.accent} />
       </View>
     );
