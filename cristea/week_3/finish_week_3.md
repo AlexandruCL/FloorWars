@@ -14,6 +14,7 @@ Commands are for PowerShell on Windows, run from the repository root unless a st
 | `feat/w3-signout-v2` | sign out | `d66b87d` | pushed, PR #65, conflicts with the sync PR on Home (see step 1) |
 | `feat/w3-logout-call-v2` | Sign out calls Ionut's `POST /v1/auth/logout` | `bc26712` | pushed, PR #66, stacked on `feat/w3-signout-v2` |
 | `feat/w3-season-check` | team picker again when a new season starts | `c0cd8a3` | pushed, PR #68, independent of the others, branches from `main` |
+| `fix/w3-audit` | the nine audit findings (eight fixed, `attempts` left on purpose) | `bece19c` | pushed, PR page opened in the browser (create it), based on the merged state of the other PRs |
 | `docs/w3-finish` | this file, the summary, the tester guide, README and plan updates | n/a | pushed with the PR for it |
 
 All four branches are green on Android tests, ktlint, lint, typecheck, Jest and the generated-client check, against the contract on `main` (now 0.7.0-draft, with `/auth/logout`). They have only been tested against the Prism mock and an emulator, never the real server.
@@ -28,6 +29,7 @@ The PRs are open (#62 outbox, #63 engine, #64 sync, #65 signout, #66 logout call
 - [ ] `feat/w3-signout-v2` (#65), **after the sync PR**. The Sign out button conflicted with the sync PR on Home (that PR replaces `PlaceholderScreens.tsx` with `HomeScreen.tsx`). This is already resolved on the PR branch (the sync branch is merged into it, the button lives in `HomeScreen.tsx`), so it merges without a conflict.
 - [ ] `feat/w3-season-check` (#68): https://github.com/AlexandruCL/FloorWars/pull/68. Body: `06_season_check.md`. It is independent: it can merge at any time, and it must be in the build before season 2 for the picker to reappear on its own.
 - [ ] `feat/w3-logout-call-v2` (#66), **after the signout PR** (it is stacked on it). Already resolved on the PR branch the same way (the signout branch is merged into it, `HomeScreen.tsx` has the `async onPress` that awaits `revokeRefreshToken()` and then `endSession()`), so it merges without a conflict.
+- [ ] `fix/w3-audit` (create it from the browser page, or `https://github.com/AlexandruCL/FloorWars/pull/new/fix/w3-audit`): body `07_audit_fixes.md`. It merges the other PR branches, so merge it **last**, after #62 to #68; then its diff is only the fixes.
 - [ ] CI is green on each: `android unit tests and trace replay` and `lint, typecheck, test, API client`. If the Android test task fails with a dead test worker and no failing test, it is the JVM crash described in the summary: re-run it once, and look for an `hs_err_pid*.log` file under `app/android/app`.
 - [ ] After each merge, bring your main up to date: `git switch main; git pull`.
 
@@ -42,6 +44,7 @@ The state of each was checked against his merges on 2026-11-08 and his message t
 | 3 | `overlap` rejection reason | **Solved**: in the contract since 0.6.0-draft | The app stores any reason string |
 | 4 | Revoke on sign-out | **Solved on the server**: `POST /v1/auth/logout` with `{refresh_token}`, 204 for any token, is on `main` (#61, contract 0.7.0-draft). The app calls it from the Sign out handler, not from `endSession()`, as he asked: branch `feat/w3-logout-call-v2` | Merge that PR (the endpoint is live); until then sign-out is local only |
 | 5 | Printed entrance codes for both buildings | **Open.** The generator is `tools/qr/make_entrance_qr.py`; codes must be valid on the test day (`--days` at most 31). Ask for an expired code and a code of another building too. | W3-8 rows wait |
+| 6b | Can a rejected `no_team` segment be re-sent with the same id after the user joins, and be accepted? | **Open question** (audit finding 4). Today the app marks every rejected reason final, so climbs made before joining a new season are lost. | If yes: keep `no_team` rows pending. Until then: the season is also re-checked when the app returns to the foreground |
 | 6 | A gap-metric endpoint before the pilot | **Open**, not urgent | The metric stays on the phone |
 
 - [x] Message sent to Ionut (he answered on 2026-11-08: logout merged, steps bound 10, `overlap` already in 0.6.0, healthz is his to fix).
