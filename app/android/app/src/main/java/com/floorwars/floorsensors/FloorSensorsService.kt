@@ -24,6 +24,8 @@ import androidx.core.app.ServiceCompat
 import com.floorwars.R
 import com.floorwars.floorsensors.detection.ActiveCheckin
 import com.floorwars.floorsensors.detection.CheckinHistory
+import com.floorwars.floorsensors.detection.GAP_THRESHOLD_S
+import com.floorwars.floorsensors.detection.GapCounter
 import com.floorwars.floorsensors.detection.SegmentDetector
 import com.floorwars.floorsensors.detection.detectionEndMs
 import com.floorwars.floorsensors.outbox.OutboxSegment
@@ -57,6 +59,7 @@ class FloorSensorsService :
 
     // Sensor thread only.
     private var detector: SegmentDetector? = null
+    private var gaps: GapCounter? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -130,6 +133,13 @@ class FloorSensorsService :
                 ).also { lastDetector = it }
             }
         }
+        // A new check-in starts a new gap session (W3-7).
+        if (newCheckin.id != checkin?.id) {
+            sensorHandler.post {
+                logGaps()
+                gaps = GapCounter().also { lastGaps = it }
+            }
+        }
         history.set(newCheckin, SystemClock.elapsedRealtime() + offsetMs)
         checkin = newCheckin
         detecting = true
@@ -158,6 +168,17 @@ class FloorSensorsService :
     private fun flushDetector() = sensorHandler.post {
         detector?.stop()
         detector = null
+        logGaps()
+        gaps = null
+    }
+
+    // Sensor thread. Local only, never uploaded.
+    private fun logGaps() {
+        val g = gaps ?: return
+        Log.i(
+            TAG,
+            "gap session: longest=${g.longestGapS} s over${GAP_THRESHOLD_S}s=${g.gapsOverThreshold}"
+        )
     }
 
     // Called on every mode change: sensors and the wake lock run while either mode is on.
@@ -214,6 +235,7 @@ class FloorSensorsService :
         if (label != null) buffer.add(raw)
         detector?.let {
             if (raw.sensorType == Sensor.TYPE_PRESSURE) {
+                gaps?.onPressure(raw.timestampNanos)
                 it.add(listOf(raw), emptyList())
             } else {
                 it.add(emptyList(), listOf(raw))
@@ -311,6 +333,11 @@ class FloorSensorsService :
         // True while detection runs (a check-in is active, or in its grace after expiry).
         @Volatile
         var detecting = false
+            private set
+
+        // The current or last gap session, kept for getStatus after detection stops.
+        @Volatile
+        var lastGaps: GapCounter? = null
             private set
 
         // The current or last detector, for its counters; it outlives the session for getStatus.

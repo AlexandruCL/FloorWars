@@ -78,8 +78,10 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
             }
             putInt("rejected_count", detector?.rejectedCount ?: 0)
             putInt("no_checkin_count", detector?.noCheckinCount ?: 0)
-            putDouble("longest_gap_s", 0.0)
-            putInt("gaps_over_threshold", 0)
+            // Gap metric (W3-7), local only.
+            val gaps = FloorSensorsService.lastGaps
+            putDouble("longest_gap_s", gaps?.longestGapS ?: 0.0)
+            putInt("gaps_over_threshold", gaps?.gapsOverThreshold ?: 0)
         }
         Log.i(TAG, "getStatus $status")
         promise.resolve(status)
