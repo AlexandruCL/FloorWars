@@ -20,19 +20,15 @@ All four branches are green on Android tests, ktlint, lint, typecheck, Jest and 
 
 ## Step 1. Open and merge the pull requests, in this order
 
-The PRs are open (#62 outbox, #63 engine, #64 sync, #65 signout, #66 logout call, #67 these docs, #68 season check), base `main`. The links below are only for reference. Ask Ionut for review on the parts that touch the contract (`/segments`, `/checkins`).
+The PRs are open (#62 outbox, #63 engine, #64 sync, #65 signout, #66 logout call, #67 these docs, #68 season check), base `main`. **Merge each with "Create a merge commit", not "Squash and merge" and not "Rebase and merge"**: the PRs are stacked, and a squash makes every later PR conflict with content that is already on `main`. The merge order was simulated from `main` on 2026-11-08 and all seven merge without a conflict; the merged tree passes lint, typecheck, 137 Jest tests and 59 Android tests. Order: #62, #63, #64, #68, #65, #66, #67. Ask Ionut for review on the parts that touch the contract (`/segments`, `/checkins`).
 
 - [ ] `feat/w3-outbox-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-outbox-v2. Body: `pr_descriptions/01_outbox.md`.
 - [ ] `feat/w3-engine-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-engine-v2, after the outbox PR is merged. Body: `02_engine.md`. Update the branch from `main` first (**Update branch** on the PR page, or a rebase).
 - [ ] `feat/w3-sync-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-sync-v2, after the outbox PR. Body: `03_sync.md`.
-- [ ] `feat/w3-signout-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-signout-v2, **after the sync PR**. Body: `04_signout.md`. It conflicts there, because the sync PR deletes `app/src/screens/PlaceholderScreens.tsx` and the signout PR edits it. Rebase onto `main`, then:
-  - keep the deletion of `PlaceholderScreens.tsx`;
-  - in `app/src/screens/HomeScreen.tsx` add the imports `Alert` (from `react-native`) and `endSession` (from `../auth/session`), the `confirmSignOut` function from the old `PlaceholderScreens.tsx`, and `<Button title="Sign out" onPress={confirmSignOut} secondary />` as the last child of `<Screen>`;
-  - in `app/__tests__/signout.test.tsx` wait for `Status` instead of `Home`, and use `mockResolvedValue` (not `Once`) for `getPendingCount`, because Home reads it too.
-  - The resolved version is on a local throwaway branch (`tmp/w3-integ`) if you want to compare; the Jest run on it had 121 tests green.
+- [ ] `feat/w3-signout-v2` (#65), **after the sync PR**. The Sign out button conflicted with the sync PR on Home (that PR replaces `PlaceholderScreens.tsx` with `HomeScreen.tsx`). This is already resolved on the PR branch (the sync branch is merged into it, the button lives in `HomeScreen.tsx`), so it merges without a conflict.
 - [ ] `feat/w3-season-check` (#68): https://github.com/AlexandruCL/FloorWars/pull/68. Body: `06_season_check.md`. It is independent: it can merge at any time, and it must be in the build before season 2 for the picker to reappear on its own.
-- [ ] `feat/w3-logout-call-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-logout-call-v2, **after the signout PR** (it is stacked on it). Body: `05_logout.md`. When the sync PR has merged first, this PR conflicts in the same `confirmSignOut` place as the signout PR: keep the `async onPress` that awaits `revokeRefreshToken()` and then `endSession()`.
-- [ ] CI is green on each: `android unit tests and trace replay` and `lint, typecheck, test, API client`. If the Android test task fails with a dead test worker and no failing test (it happened once locally), re-run it once and look at the worker log before changing code.
+- [ ] `feat/w3-logout-call-v2` (#66), **after the signout PR** (it is stacked on it). Already resolved on the PR branch the same way (the signout branch is merged into it, `HomeScreen.tsx` has the `async onPress` that awaits `revokeRefreshToken()` and then `endSession()`), so it merges without a conflict.
+- [ ] CI is green on each: `android unit tests and trace replay` and `lint, typecheck, test, API client`. If the Android test task fails with a dead test worker and no failing test, it is the JVM crash described in the summary: re-run it once, and look for an `hs_err_pid*.log` file under `app/android/app`.
 - [ ] After each merge, bring your main up to date: `git switch main; git pull`.
 
 ## Step 2. What is left on Ionut's side
