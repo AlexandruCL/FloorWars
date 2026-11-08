@@ -14,14 +14,14 @@ Commands are for PowerShell on Windows, run from the repository root unless a st
 | `feat/w3-signout-v2` | sign out | `d66b87d` | pushed, PR #65, conflicts with the sync PR on Home (see step 1) |
 | `feat/w3-logout-call-v2` | Sign out calls Ionut's `POST /v1/auth/logout` | `bc26712` | pushed, PR #66, stacked on `feat/w3-signout-v2` |
 | `feat/w3-season-check` | team picker again when a new season starts | `c0cd8a3` | pushed, PR #68, independent of the others, branches from `main` |
-| `fix/w3-audit` | the nine audit findings (eight fixed, `attempts` left on purpose) | `bece19c` | pushed, PR page opened in the browser (create it), based on the merged state of the other PRs |
+| `fix/w3-audit` | the nine audit findings (eight fixed, `attempts` left on purpose) | `bece19c` | pushed, PR #70, based on the merged state of the other PRs |
 | `docs/w3-finish` | this file, the summary, the tester guide, README and plan updates | n/a | pushed with the PR for it |
 
 All four branches are green on Android tests, ktlint, lint, typecheck, Jest and the generated-client check, against the contract on `main` (now 0.7.0-draft, with `/auth/logout`). They have only been tested against the Prism mock and an emulator, never the real server.
 
 ## Step 1. Open and merge the pull requests, in this order
 
-The PRs are open (#62 outbox, #63 engine, #64 sync, #65 signout, #66 logout call, #67 these docs, #68 season check), base `main`. **Merge each with "Create a merge commit", not "Squash and merge" and not "Rebase and merge"**: the PRs are stacked, and a squash makes every later PR conflict with content that is already on `main`. The merge order was simulated from `main` on 2026-11-08 and all seven merge without a conflict; the merged tree passes lint, typecheck, 137 Jest tests and 59 Android tests. Order: #62, #63, #64, #68, #65, #66, #67. Ask Ionut for review on the parts that touch the contract (`/segments`, `/checkins`).
+The PRs are open (#62 outbox, #63 engine, #64 sync, #65 signout, #66 logout call, #67 these docs, #68 season check, #70 audit fixes), base `main`. **Merge each with "Create a merge commit", not "Squash and merge" and not "Rebase and merge"**: the PRs are stacked, and a squash makes every later PR conflict with content that is already on `main`. The merge order was simulated from `main` on 2026-11-08 and all seven merge without a conflict; the merged tree passes lint, typecheck, 137 Jest tests and 59 Android tests. Order: #62, #63, #64, #68, #65, #66, #67. Ask Ionut for review on the parts that touch the contract (`/segments`, `/checkins`).
 
 - [ ] `feat/w3-outbox-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-outbox-v2. Body: `pr_descriptions/01_outbox.md`.
 - [ ] `feat/w3-engine-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-engine-v2, after the outbox PR is merged. Body: `02_engine.md`. Update the branch from `main` first (**Update branch** on the PR page, or a rebase).
@@ -29,7 +29,7 @@ The PRs are open (#62 outbox, #63 engine, #64 sync, #65 signout, #66 logout call
 - [ ] `feat/w3-signout-v2` (#65), **after the sync PR**. The Sign out button conflicted with the sync PR on Home (that PR replaces `PlaceholderScreens.tsx` with `HomeScreen.tsx`). This is already resolved on the PR branch (the sync branch is merged into it, the button lives in `HomeScreen.tsx`), so it merges without a conflict.
 - [ ] `feat/w3-season-check` (#68): https://github.com/AlexandruCL/FloorWars/pull/68. Body: `06_season_check.md`. It is independent: it can merge at any time, and it must be in the build before season 2 for the picker to reappear on its own.
 - [ ] `feat/w3-logout-call-v2` (#66), **after the signout PR** (it is stacked on it). Already resolved on the PR branch the same way (the signout branch is merged into it, `HomeScreen.tsx` has the `async onPress` that awaits `revokeRefreshToken()` and then `endSession()`), so it merges without a conflict.
-- [ ] `fix/w3-audit` (create it from the browser page, or `https://github.com/AlexandruCL/FloorWars/pull/new/fix/w3-audit`): body `07_audit_fixes.md`. It merges the other PR branches, so merge it **last**, after #62 to #68; then its diff is only the fixes.
+- [ ] `fix/w3-audit` (#70): https://github.com/AlexandruCL/FloorWars/pull/70. Body: `07_audit_fixes.md`. It merges the other PR branches, so merge it **last**, after #62 to #68; then its diff is only the fixes.
 - [ ] CI is green on each: `android unit tests and trace replay` and `lint, typecheck, test, API client`. If the Android test task fails with a dead test worker and no failing test, it is the JVM crash described in the summary: re-run it once, and look for an `hs_err_pid*.log` file under `app/android/app`.
 - [ ] After each merge, bring your main up to date: `git switch main; git pull`.
 
