@@ -58,16 +58,19 @@ def test_keys() -> None:
 
 
 class Failing:
-    """Every ``EVAL`` fails; ``DEL`` is recorded, or fails too with ``del_fails``."""
+    """Board updates fail. ``mark_stale`` calls are recorded (by marker key); the first
+    ``failed_marks`` of them fail too."""
 
-    def __init__(self, del_fails: bool = False) -> None:
-        self.del_fails = del_fails
-        self.deleted: list[object] = []
+    def __init__(self, failed_marks: int = 0) -> None:
+        self.failed_marks = failed_marks
+        self.marked: list[object] = []
 
     def execute(self, *args: str | int) -> Any:
-        if args[0] == "DEL" and not self.del_fails:
-            self.deleted.append(args[1])
-            return 1
+        if args[:2] == ("EVAL", lb._STALE):
+            self.marked.append(args[4])
+            if len(self.marked) <= self.failed_marks:
+                raise ValkeyError("down")
+            return None
         raise ValkeyError("down")
 
 
@@ -78,11 +81,17 @@ def _scored(season_id: int) -> service.ScoredSegment:
 def test_a_failed_update_marks_every_season_of_the_batch_stale() -> None:
     vk = Failing()
     service._notify(service.ValkeyLeaderboards(vk), [_scored(1), _scored(2), _scored(1)], [])
-    assert vk.deleted == ["fw:lb:s1:built", "fw:lb:s2:built"]
+    assert vk.marked == ["fw:lb:s1:built", "fw:lb:s2:built"]
+
+
+def test_a_failed_mark_does_not_stop_the_next_season() -> None:
+    vk = Failing(failed_marks=1)
+    service._notify(service.ValkeyLeaderboards(vk), [_scored(1), _scored(2)], [])
+    assert vk.marked == ["fw:lb:s1:built", "fw:lb:s2:built"]
 
 
 def test_a_failed_update_and_a_failed_mark_still_return(caplog: pytest.LogCaptureFixture) -> None:
-    service._notify(service.ValkeyLeaderboards(Failing(del_fails=True)), [_scored(1)], [])
+    service._notify(service.ValkeyLeaderboards(Failing(failed_marks=9)), [_scored(1)], [])
     assert any(r.message == "leaderboard update failed" for r in caplog.records)
 
 

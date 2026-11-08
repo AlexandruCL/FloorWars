@@ -333,19 +333,30 @@ def test_a_slow_rebuild_stops_and_releases_the_lock(
     client: TestClient, valkey_client: ValkeyClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     world = _populate(client)
-    clock = iter([0.0, 1000.0])  # lock taken at 0, first board written at 1000 s
-    monkeypatch.setattr(lb, "time", SimpleNamespace(monotonic=lambda: next(clock)))
+    written: list[str] = []
+    real = lb._replace
+
+    def replace(vk: lb.Commands, key: str, *args: Any) -> None:
+        real(vk, key, *args)
+        written.append(key)
+
+    monkeypatch.setattr(lb, "_replace", replace)
+    # 0 s until the first board is written, then 1000 s: the second board is never started.
+    monkeypatch.setattr(lb, "time", SimpleNamespace(monotonic=lambda: 1000.0 if written else 0.0))
     with client.app.state.sessionmaker() as db, pytest.raises(ValkeyError):  # type: ignore[attr-defined]
         lb.rebuild(db, valkey_client, world.season_id)
+    assert written == [lb.users_key(world.season_id)]
     assert valkey_client.execute("EXISTS", lb.lock_key(world.season_id)) == 0
-    assert valkey_client.execute("EXISTS", lb.users_key(world.season_id)) == 0
+    assert valkey_client.execute("EXISTS", lb.built_key(world.season_id)) == 0
+    assert valkey_client.execute("EXISTS", lb.teams_key(world.season_id)) == 0
+    assert valkey_client.execute("KEYS", "*:rebuild:*") == []
 
 
 def test_a_redundant_rebuild_only_releases_the_lock(
     client: TestClient, valkey_client: ValkeyClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     world = _populate(client)
-    valkey_client.execute("SET", lb.built_key(world.season_id), 1)
+    valkey_client.execute("SET", lb.built_key(world.season_id), 1, "EX", 100)
 
     def never(*args: object) -> None:
         raise AssertionError("rebuilt although the season is built")
@@ -354,7 +365,7 @@ def test_a_redundant_rebuild_only_releases_the_lock(
     with client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
         assert lb.rebuild(db, valkey_client, world.season_id)
     assert valkey_client.execute("EXISTS", lb.lock_key(world.season_id)) == 0
-    assert valkey_client.execute("EXISTS", lb.built_key(world.season_id)) == 1
+    assert 0 < valkey_client.execute("TTL", lb.built_key(world.season_id)) <= 100  # not reset
 
 
 def test_valkey_down_falls_back_to_the_database(client: TestClient) -> None:

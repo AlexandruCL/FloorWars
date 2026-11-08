@@ -4,11 +4,12 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
 from app import leaderboards as lb
-from app.valkey import ValkeyClient
+from app.valkey import ValkeyClient, ValkeyError
 from tests.helpers import TEST_VALKEY_URL
 
 
@@ -64,6 +65,32 @@ def test_finish_without_the_lock_keeps_the_other_lock_and_drops_the_marker(
     assert _finish(vk, "tok") == 0
     assert vk.execute("GET", lb.lock_key(2)) == b"other"
     assert vk.execute("EXISTS", lb.built_key(2)) == 0
+
+
+def test_mark_stale_during_a_rebuild_keeps_that_rebuild_from_setting_the_marker(
+    vk: ValkeyClient,
+) -> None:
+    vk.execute("SET", lb.lock_key(2), "tok")
+    lb.mark_stale(vk, 2)
+    assert vk.execute("GET", lb.lock_key(2)).endswith(b":dirty")
+    assert _finish(vk, "tok") == 0
+    assert vk.execute("EXISTS", lb.lock_key(2), lb.built_key(2)) == 0
+
+
+def test_a_replace_past_the_deadline_stops_inside_its_chunks(
+    vk: ValkeyClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[None] = []
+
+    def clock() -> float:  # the first chunk in time, the second one late
+        calls.append(None)
+        return 0.0 if len(calls) == 1 else 1000.0
+
+    monkeypatch.setattr(lb, "time", SimpleNamespace(monotonic=clock))
+    with pytest.raises(ValkeyError):
+        lb._replace(vk, "k", {str(i): i + 1 for i in range(501)}, "tok", 15.0)
+    assert len(calls) == 2
+    assert vk.execute("EXISTS", "k", "k:rebuild:tok") == 0
 
 
 def test_clean_finish_sets_the_marker_and_releases(vk: ValkeyClient) -> None:

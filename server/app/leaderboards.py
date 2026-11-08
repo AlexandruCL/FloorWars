@@ -82,9 +82,17 @@ def lock_key(season_id: int) -> str:
     return f"fw:lb:s{season_id}:lock"
 
 
+# KEYS: lock, built. A running rebuild is marked dirty (as in ``_RECORD``), so it cannot set the
+# marker again over an update that failed during it.
+_STALE = """
+redis.call('DEL', KEYS[2])
+if redis.call('EXISTS', KEYS[1]) == 1 then redis.call('APPEND', KEYS[1], ':dirty') end
+"""
+
+
 def mark_stale(vk: Commands, season_id: int) -> None:
     """The next read rebuilds the season."""
-    vk.execute("DEL", built_key(season_id))
+    vk.execute("EVAL", _STALE, 2, lock_key(season_id), built_key(season_id))
 
 
 # KEYS: lock, built, users, teams, building. ARGV: points, user, team. Atomic: all three or none.
@@ -113,7 +121,7 @@ if not v or string.sub(v, 1, #ARGV[1]) ~= ARGV[1] then
 end
 redis.call('DEL', KEYS[1])
 if v == ARGV[1] and ARGV[2] ~= '0' then
-  redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])
+  redis.call('SET', KEYS[2], '1', 'EX', ARGV[2], 'NX')
   return 1
 end
 redis.call('DEL', KEYS[2])
@@ -201,20 +209,31 @@ _BUILDING_TOTALS = text(
 _BUILDING_IDS = text("SELECT id FROM building")
 
 
-def _replace(vk: Commands, key: str, scores: dict[str, int], token: str) -> None:
+def _check_deadline(deadline: float) -> None:
+    """A ValkeyError, so the rebuild's ``finally`` releases the lock and a read falls back to the
+    database. A season that always needs more than half the lock expiry never converges: its
+    reads stay on the database."""
+    if time.monotonic() > deadline:
+        raise ValkeyError("leaderboard rebuild took over half the lock expiry")
+
+
+def _replace(vk: Commands, key: str, scores: dict[str, int], token: str, deadline: float) -> None:
     """Swap ``key`` for ``scores`` atomically enough: build aside, then RENAME over it."""
     if not scores:
         vk.execute("DEL", key)
         return
     tmp = f"{key}:rebuild:{token}"  # per rebuild: one that lost its lock cannot mix into another
-    vk.execute("DEL", tmp)
-    for i in range(0, len(scores), 500):
-        chunk = list(scores.items())[i : i + 500]
-        args: list[str | int] = []
-        for member, points in chunk:
-            args += [points, member]
-        vk.execute("ZADD", tmp, *args)
-    vk.execute("RENAME", tmp, key)
+    try:
+        for i in range(0, len(scores), 500):
+            _check_deadline(deadline)
+            chunk = list(scores.items())[i : i + 500]
+            args: list[str | int] = []
+            for member, points in chunk:
+                args += [points, member]
+            vk.execute("ZADD", tmp, *args)
+        vk.execute("RENAME", tmp, key)
+    finally:
+        vk.execute("DEL", tmp)  # no-op after the RENAME; drops a half-written key
 
 
 def rebuild(db: Session, vk: Commands, season_id: int) -> bool:
@@ -251,9 +270,8 @@ def _rebuild_keys(db: Session, vk: Commands, season_id: int, token: str, deadlin
     # Every building, so stale keys go too.
     boards += [(building_key(season_id, b), scores) for b, scores in buildings.items()]
     for key, scores in boards:
-        if time.monotonic() > deadline:  # a ValkeyError, so a read falls back to the database
-            raise ValkeyError("leaderboard rebuild took over half the lock expiry")
-        _replace(vk, key, scores, token)
+        _check_deadline(deadline)
+        _replace(vk, key, scores, token, deadline)
 
 
 __all__ = [

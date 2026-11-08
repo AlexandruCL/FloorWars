@@ -67,13 +67,13 @@ def _team_board(world: World, user: Climber) -> list[tuple[str, int]]:
 
 
 class _FailingScripts:
-    """The real client, but every ``EVAL`` (the board update) fails."""
+    """The real client, but the board update script fails."""
 
     def __init__(self, real: Any) -> None:
         self.real = real
 
     def execute(self, *args: Any) -> Any:
-        if args[0] == "EVAL":
+        if args[:2] == ("EVAL", leaderboards._RECORD):
             raise ValkeyError("injected")
         return self.real.execute(*args)
 
