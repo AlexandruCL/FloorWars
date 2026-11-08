@@ -10,12 +10,21 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.dialects.postgresql import Range
 
-from app.segments import service
+from app.segments import repository, service
 from app.segments.models import Flip
 from app.segments.schemas import Segment, SegmentBatch
 from app.valkey import ValkeyError
 from tests.helpers import TEST_DB_URL, TEST_VALKEY_URL
-from tests.segments.api_world import TSTZRANGE_SQL, World, climb, make_world, scalar, utcnow
+from tests.segments.api_world import (
+    TSTZRANGE_SQL,
+    World,
+    climb,
+    climb_at,
+    clock_hour,
+    make_world,
+    scalar,
+    utcnow,
+)
 
 pytestmark = pytest.mark.skipif(not TEST_VALKEY_URL, reason="FLOORWARS_TEST_VALKEY_URL not set")
 
@@ -89,7 +98,9 @@ def test_items_run_in_started_at_order_whatever_the_request_order(world: World) 
         "duration_s": 100.0,
         "vert_speed_mps": 0.4,
     }
-    late, early = climb(minutes_ago=2, **big), climb(minutes_ago=30, **big)
+    hour = clock_hour()
+    late = climb_at(hour + timedelta(minutes=40), **big)
+    early = climb_at(hour + timedelta(minutes=10), **big)
     accepted = {a["id"]: a["points"] for a in user.ok(late, early)["accepted"]}
     assert accepted == {early["id"]: 200, late["id"]: 150}
     assert scalar(world.client, "SELECT points FROM team_building_score") == 350
@@ -104,9 +115,11 @@ def test_hourly_points_count_earlier_batches(world: World) -> None:
         "duration_s": 140.0,
         "vert_speed_mps": 0.4,
     }
-    user.ok(climb(minutes_ago=30, **big))
-    # 280 earlier, so 20 full and 40 halved.
-    assert user.ok(climb(minutes_ago=1))["accepted"][0]["points"] == 40
+    hour = clock_hour()
+    user.ok(climb_at(hour + timedelta(minutes=10), **big))
+    # 280 earlier in the hour, so 20 full and 40 halved.
+    later = climb_at(hour + timedelta(minutes=40))
+    assert user.ok(later)["accepted"][0]["points"] == 40
 
 
 def test_600_verified_steps_per_ten_minutes(world: World) -> None:
@@ -125,6 +138,57 @@ def test_600_verified_steps_per_ten_minutes(world: World) -> None:
     # The rejected climb is kept for the history, and does not score.
     assert scalar(world.client, "SELECT steps FROM team_building_score") == 600
     assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 3
+
+
+def test_upload_order_cannot_bypass_the_rate_limit(world: World) -> None:
+    user = world.climber()
+    big: dict[str, Any] = {
+        "steps": 300,
+        "ascent_m": 60.0,
+        "duration_s": 120.0,
+        "vert_speed_mps": 0.5,
+    }
+    newest, middle, oldest = (climb(minutes_ago=m, **big) for m in (3, 6, 9))
+    user.ok(newest)
+    user.ok(middle)
+    assert user.ok(oldest)["rejected"] == [{"id": oldest["id"], "reason": "rate_limit"}]
+    assert scalar(world.client, "SELECT steps FROM team_building_score") == 600
+
+
+def test_upload_order_cannot_bypass_the_hourly_halving(world: World) -> None:
+    user = world.climber()
+    big: dict[str, Any] = {
+        "steps": 280,
+        "ascent_m": 56.0,
+        "duration_s": 140.0,
+        "vert_speed_mps": 0.4,
+    }
+    hour = clock_hour()
+    user.ok(climb_at(hour + timedelta(minutes=40), **big))
+    # 280 later in the hour, so 20 full and 40 halved.
+    earlier = climb_at(hour + timedelta(minutes=10))
+    assert user.ok(earlier)["accepted"][0]["points"] == 40
+
+
+def test_the_windows_are_open_at_both_ends(world: World) -> None:
+    user = world.climber()
+    big: dict[str, Any] = {
+        "steps": 540,
+        "ascent_m": 100.0,
+        "duration_s": 180.0,
+        "vert_speed_mps": 0.55,
+    }
+    base = utcnow() - timedelta(minutes=30)
+
+    def at(delta: timedelta, **fields: Any) -> dict[str, Any]:
+        return climb(started_at=(base + delta).isoformat(), **fields)
+
+    assert user.ok(at(timedelta(minutes=10), **big))["accepted"]
+    # Exactly 10 minutes before the first: neither counts the other.
+    assert user.ok(at(timedelta(0), **big))["accepted"]
+    # Inside both windows.
+    between = at(timedelta(minutes=5))
+    assert user.ok(between)["rejected"] == [{"id": between["id"], "reason": "rate_limit"}]
 
 
 @pytest.mark.parametrize(
@@ -262,19 +326,81 @@ def test_same_segment_from_a_second_device_scores_once(world: World) -> None:
     user = world.climber()
     item = climb()
     user.ok(item)
-    with world.client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
-        second = uuid.uuid4()
-        db.execute(
-            text(
-                "INSERT INTO device (user_id, id, model, has_barometer) "
-                "VALUES (:u, :d, 'test', true)"
-            ),
-            {"u": user.user_id, "d": second},
-        )
-        db.commit()
-    result = user.ok(item, device_id=str(second))
+    result = user.ok(item, device_id=world.second_device(user))
     assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
     assert scalar(world.client, "SELECT points FROM team_building_score") == 60
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
+
+
+def test_a_rejected_climb_resent_from_a_second_device_is_flagged_once(world: World) -> None:
+    user = world.climber()
+    item = climb(steps=500)
+    assert user.ok(item)["rejected"] == [{"id": item["id"], "reason": "pressure_steps_mismatch"}]
+    result = user.ok(item, device_id=world.second_device(user))
+    assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 1
+    assert scalar(world.client, "SELECT count(*) FROM segment_receipt") == 2
+
+
+@pytest.mark.parametrize("body", [{"steps": 0}, {"building_id": 10**30}])
+def test_a_taken_id_is_answered_before_the_rules_judge_the_caller(
+    world: World, body: dict[str, Any]
+) -> None:
+    # These rules store no row, so no insert conflict would catch the id: only the check before
+    # the rules stops a flag on the caller.
+    item = climb()
+    world.climber("AC").ok(item)
+    result = world.climber("ETC").ok({**item, **body})
+    assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
+    assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 1
+
+
+def test_a_taken_id_overlapping_the_callers_own_climb_is_not_flagged(world: World) -> None:
+    # B's own climb shares the time of A's. Judged, A's id would be B's overlap, with a flag.
+    item = climb(minutes_ago=5)
+    world.climber("AC").ok(item)
+    other = world.climber("ETC")
+    started = datetime.fromisoformat(item["started_at"]) + timedelta(seconds=10)
+    assert other.ok(climb(started_at=started.isoformat()))["accepted"]
+    result = other.ok(item)
+    assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
+    assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 2
+
+
+@pytest.fixture
+def lost_race(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The check before the rules sees nothing, as when a concurrent upload has not committed."""
+    monkeypatch.setattr(repository, "stored_segments", lambda *_: set())
+
+
+@pytest.mark.usefixtures("lost_race")
+def test_a_verified_item_losing_the_insert_race_changes_nothing(world: World) -> None:
+    item = climb()
+    world.climber("AC").ok(item)
+    result = world.climber("ETC").ok(item)
+    assert result == {
+        "accepted": [],
+        "rejected": [{"id": item["id"], "reason": "no_checkin"}],
+        "flips": [],
+    }
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
+    assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 1
+    assert scalar(world.client, "SELECT count(*) FROM team_building_score") == 1
+    assert scalar(world.client, "SELECT points FROM team_building_score") == 60
+
+
+@pytest.mark.usefixtures("lost_race")
+def test_a_rejected_item_losing_the_insert_race_is_not_flagged(world: World) -> None:
+    item = climb()
+    world.climber("AC").ok(item)
+    # Fails a rule that stores a row: too many steps per metre.
+    result = world.climber("ETC").ok({**item, "steps": 500})
+    assert result["rejected"] == [{"id": item["id"], "reason": "no_checkin"}]
+    assert scalar(world.client, "SELECT count(*) FROM fraud_flag") == 0
+    assert scalar(world.client, "SELECT count(*) FROM climb_segment") == 1
+    assert scalar(world.client, "SELECT status FROM climb_segment") == "verified"
 
 
 # After the commit.
@@ -293,6 +419,9 @@ class _Board:
 
     def publish_flip(self, flip: Flip) -> None:
         self.flips.append(flip)
+
+    def mark_stale(self, season_id: int) -> None:
+        pass
 
 
 def _batch_for(world: World) -> tuple[Any, SegmentBatch]:

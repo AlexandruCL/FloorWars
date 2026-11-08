@@ -1,4 +1,4 @@
-"""Segment upload route: ``POST /v1/segments`` (contract 0.5.0-draft, ``uploadSegments``).
+"""Segment upload route: ``POST /v1/segments`` (contract 0.6.0-draft, ``uploadSegments``).
 
 Thin handler: validation by ``app.segments.schemas``, the flow in ``app.segments.service``. The
 response drops unset fields, so ``points`` is absent for a repeat while a ``from_team`` of null
@@ -62,9 +62,10 @@ def upload_segments(
     user: CurrentUser,
     db: DbSession,
     board: Annotated[service.Leaderboards, Depends(_leaderboards)],
+    limiter: Limiter,
 ) -> SegmentBatchResult:
     """Upload a batch of climb segments. Each item is judged on its own; a repeat is success."""
-    result = service.upload_batch(db, user.id, batch, board)
+    result = service.upload_batch(db, user.id, batch, board, limiter=limiter)
     logger.info(
         "segment batch",
         extra={

@@ -1,4 +1,4 @@
-"""Auth routes: ``POST /v1/auth/otp``, ``/v1/auth/verify``, ``/v1/auth/refresh`` (contract 0.4.0).
+"""Auth routes: ``POST /v1/auth/otp``, ``/verify``, ``/refresh`` and ``/logout`` (contract 0.7.0).
 
 Thin handlers: validation by the schemas, the flows in ``app.auth.service``. Every route is rate
 limited per client IP (IPv6 per /64) before any database work, and fails closed (503) when the
@@ -100,3 +100,27 @@ def refresh_tokens(
     """Rotate the refresh token and return a new pair."""
     response.headers.update(NO_STORE)
     return service.refresh(db, settings, tokens, limiter, body.refresh_token, _client_ip(request))
+
+
+@router.post(
+    "/logout",
+    status_code=204,
+    response_class=Response,
+    responses={
+        204: {"description": "The token's family is revoked, or the token was not known. No body."},
+        422: _422,
+        429: problem_doc("Rate limit hit; see Retry-After."),
+        503: _503,
+    },
+    operation_id="logout",
+)
+def logout(
+    body: RefreshRequest,
+    request: Request,
+    db: DbSession,
+    settings: AppSettings,
+    limiter: Limiter,
+) -> Response:
+    """Revoke a refresh token and every token rotated from it (sign-out)."""
+    service.logout(db, settings, limiter, body.refresh_token, _client_ip(request))
+    return Response(status_code=204)

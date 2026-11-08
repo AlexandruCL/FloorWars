@@ -27,10 +27,26 @@ type SuccessBody<O> = O extends { responses: infer R }
   ? Json<R[Extract<keyof R, 200 | 201 | 202 | 204>]>
   : never;
 
+// Plan 7.10. fetch has no connect timeout, so the wait for the response headers stands in for it.
+export const HEADERS_TIMEOUT_MS = 10_000;
+export const BODY_TIMEOUT_MS = 20_000;
+
 export class ApiError extends Error {
-  constructor(readonly status: number, readonly problem: unknown) {
+  constructor(
+    readonly status: number,
+    readonly problem: unknown,
+    // Retry-After in seconds (the contract's form), when the server sent one.
+    readonly retryAfterS?: number,
+  ) {
     super(`HTTP ${status}`);
   }
+}
+
+function retryAfterOf(response: Response): number | undefined {
+  const n = Number(response.headers?.get('Retry-After'));
+  return response.headers?.get('Retry-After') && Number.isFinite(n) && n >= 0
+    ? n
+    : undefined;
 }
 
 async function send(
@@ -38,7 +54,7 @@ async function send(
   url: string,
   token: string | null,
   options: { header?: unknown; body?: unknown },
-): Promise<Response> {
+): Promise<{ response: Response; data: any }> {
   const headers: Record<string, string> = {
     Accept: 'application/json, application/problem+json',
     ...((options.header ?? {}) as Record<string, string>),
@@ -49,16 +65,28 @@ async function send(
   if (options.body !== undefined) {
     headers['Content-Type'] = 'application/json';
   }
-  return fetch(API_BASE_URL + url, {
-    method: method.toUpperCase(),
-    headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
-}
-
-async function parse(response: Response) {
-  const text = await response.text();
-  return text ? JSON.parse(text) : undefined;
+  // A timeout aborts the request and rejects, which callers treat like any network error.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), HEADERS_TIMEOUT_MS);
+  try {
+    const response = await fetch(API_BASE_URL + url, {
+      method: method.toUpperCase(),
+      headers,
+      body:
+        options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const bodyTimer = setTimeout(() => controller.abort(), BODY_TIMEOUT_MS);
+    try {
+      const text = await response.text();
+      return { response, data: text ? JSON.parse(text) : undefined };
+    } finally {
+      clearTimeout(bodyTimer);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 let refreshing: Promise<void> | null = null;
@@ -71,10 +99,9 @@ function refreshTokens(): Promise<void> {
       await endSession();
       throw new ApiError(401, undefined);
     }
-    const response = await send('post', '/auth/refresh', null, {
+    const { response, data } = await send('post', '/auth/refresh', null, {
       body: { refresh_token },
     });
-    const data = await parse(response);
     if (response.status === 401) {
       // Unknown, expired or reused: the server has revoked the family, so the session is over.
       await endSession();
@@ -112,17 +139,21 @@ export async function api<P extends keyof paths, M extends Method>(
   }
 
   const token = await getAccessToken();
-  let response = await send(method, url, token, options);
+  let { response, data } = await send(method, url, token, options);
   if (response.status === 401 && token && !String(path).startsWith('/auth/')) {
     // If another call already rotated the tokens, just retry with the new one.
     if ((await getAccessToken()) === token) {
       await refreshTokens();
     }
-    response = await send(method, url, await getAccessToken(), options);
+    ({ response, data } = await send(
+      method,
+      url,
+      await getAccessToken(),
+      options,
+    ));
   }
-  const data = await parse(response);
   if (!response.ok) {
-    throw new ApiError(response.status, data);
+    throw new ApiError(response.status, data, retryAfterOf(response));
   }
   return data;
 }

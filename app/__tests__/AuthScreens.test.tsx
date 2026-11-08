@@ -6,7 +6,11 @@ import {
 } from '@testing-library/react-native';
 import * as Keychain from 'react-native-keychain';
 import { api, ApiError } from '../src/api/client';
-import { getAccessToken, hasChosenTeam } from '../src/auth/session';
+import {
+  getAccessToken,
+  getChosenSeason,
+  hasChosenTeam,
+} from '../src/auth/session';
 import { EmailScreen, OtpScreen, TeamScreen } from '../src/screens/AuthScreens';
 
 jest.mock('../src/api/client', () => {
@@ -195,9 +199,10 @@ describe('TeamScreen', () => {
       body: { team_id: 2 },
     });
     expect(await hasChosenTeam()).toBe(true);
+    expect(await getChosenSeason()).toBe(7);
   });
 
-  test('a 409 means the team is already chosen and moves on', async () => {
+  test('an already-joined 409 means the team is chosen and moves on', async () => {
     apiMock.mockImplementation(async (_m: string, path: string) => {
       if (path === '/teams') {
         return teams;
@@ -205,13 +210,36 @@ describe('TeamScreen', () => {
       if (path === '/seasons/active') {
         return { id: 7 };
       }
-      throw new ApiError(409, {});
+      throw new ApiError(409, { type: 'urn:floorwars:problem:already-joined' });
     });
     const onDone = jest.fn();
     await render(<TeamScreen onDone={onDone} />);
     await fireEvent.press(await screen.findByText('AC'));
     await fireEvent.press(screen.getByText('Join team'));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(await getChosenSeason()).toBe(7);
+  });
+
+  test('a season-not-active 409 shows a message and does not mark the team chosen', async () => {
+    await Keychain.resetGenericPassword({ service: 'floorwars.team' });
+    apiMock.mockImplementation(async (_m: string, path: string) => {
+      if (path === '/teams') {
+        return teams;
+      }
+      if (path === '/seasons/active') {
+        return { id: 7 };
+      }
+      throw new ApiError(409, {
+        type: 'urn:floorwars:problem:season-not-active',
+      });
+    });
+    const onDone = jest.fn();
+    await render(<TeamScreen onDone={onDone} />);
+    await fireEvent.press(await screen.findByText('AC'));
+    await fireEvent.press(screen.getByText('Join team'));
+    expect(await screen.findByText(/season is not running/)).toBeTruthy();
+    expect(onDone).not.toHaveBeenCalled();
+    expect(await hasChosenTeam()).toBe(false);
   });
 });
 

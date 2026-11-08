@@ -1,9 +1,8 @@
 """``GET /v1/leaderboards``: individual, team and building boards for a season.
 
 Served from the Valkey sorted sets of ``app.leaderboards``. When Valkey is not configured or
-fails, the board is computed from ``climb_segment`` (season totals). When a key is missing and the
-database holds points for that board, the season is rebuilt once and the key read again; without
-points the board is empty and nothing is rebuilt.
+fails, the board is computed from ``climb_segment`` (season totals). When the season's built marker
+is missing, the season is rebuilt first; with the marker, a missing key is an empty board.
 
 ``scope=building`` ranks the **teams** in that building for the season (spec section 8).
 
@@ -87,13 +86,10 @@ def _from_valkey(
         if building_id is None:
             raise ValueError("building_id is required for the building board")
         key = lb.building_key(season_id, building_id)
+    if not lb.is_built(vk, season_id) and not lb.rebuild(db, vk, season_id):
+        return None  # the rebuild did not finish cleanly: the database answers
     entries = lb.top(vk, key, limit)
-    if entries is None:  # never built or evicted: rebuild the season once, then read again
-        if not _from_database(db, scope, season_id, building_id, 1):
-            return []  # no points: a rebuild would not create the key, so it would repeat
-        lb.rebuild(db, vk, season_id)
-        entries = lb.top(vk, key, limit)
-    return entries
+    return [] if entries is None else entries  # built: no key means no points
 
 
 def _names(db: Session, scope: Scope, members: list[str]) -> dict[str, str]:

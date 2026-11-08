@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from app import leaderboards as lb
+from app.segments import service
 from app.valkey import ValkeyError
 
 
@@ -53,21 +54,50 @@ def test_keys() -> None:
     assert lb.users_key(3) == "fw:lb:s3:users"
     assert lb.teams_key(3) == "fw:lb:s3:teams"
     assert lb.building_key(3, 9) == "fw:lb:s3:b9:teams"
+    assert lb.built_key(3) == "fw:lb:s3:built"
 
 
-def test_record_verified_updates_three_boards() -> None:
-    vk = FakeClient()
-    user = uuid.uuid4()
-    lb.record_verified(vk, 1, user, 7, 4, 120)
-    lb.record_verified(vk, 1, user, 7, 4, 30)
-    assert vk.sets["fw:lb:s1:users"] == {str(user): 150}
-    assert vk.sets["fw:lb:s1:teams"] == {"7": 150}
-    assert vk.sets["fw:lb:s1:b4:teams"] == {"7": 150}
+class Failing:
+    """Board updates fail. ``mark_stale`` calls are recorded (by marker key); the first
+    ``failed_marks`` of them fail too."""
+
+    def __init__(self, failed_marks: int = 0) -> None:
+        self.failed_marks = failed_marks
+        self.marked: list[object] = []
+
+    def execute(self, *args: str | int) -> Any:
+        if args[:2] == ("EVAL", lb._STALE):
+            self.marked.append(args[4])
+            if len(self.marked) <= self.failed_marks:
+                raise ValkeyError("down")
+            return None
+        raise ValkeyError("down")
+
+
+def _scored(season_id: int) -> service.ScoredSegment:
+    return service.ScoredSegment(season_id, uuid.uuid4(), 7, 4, 60, 60)
+
+
+def test_a_failed_update_marks_every_season_of_the_batch_stale() -> None:
+    vk = Failing()
+    service._notify(service.ValkeyLeaderboards(vk), [_scored(1), _scored(2), _scored(1)], [])
+    assert vk.marked == ["fw:lb:s1:built", "fw:lb:s2:built"]
+
+
+def test_a_failed_mark_does_not_stop_the_next_season() -> None:
+    vk = Failing(failed_marks=1)
+    service._notify(service.ValkeyLeaderboards(vk), [_scored(1), _scored(2)], [])
+    assert vk.marked == ["fw:lb:s1:built", "fw:lb:s2:built"]
+
+
+def test_a_failed_update_and_a_failed_mark_still_return(caplog: pytest.LogCaptureFixture) -> None:
+    service._notify(service.ValkeyLeaderboards(Failing(failed_marks=9)), [_scored(1)], [])
+    assert any(r.message == "leaderboard update failed" for r in caplog.records)
 
 
 def test_record_verified_ignores_zero_points() -> None:
     vk = FakeClient()
-    lb.record_verified(vk, 1, uuid.uuid4(), 7, 4, 0)
+    assert not lb.record_verified(vk, 1, uuid.uuid4(), 7, 4, 0)
     assert vk.sets == {}
 
 

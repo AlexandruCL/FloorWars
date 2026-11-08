@@ -218,6 +218,15 @@ export function OtpScreen({ navigation, route }: Nav<'Otp'>) {
 
 type TeamData = { teams: Team[]; seasonId: number };
 
+function isAlreadyJoined(e: unknown): boolean {
+  return (
+    e instanceof ApiError &&
+    e.status === 409 &&
+    (e.problem as { type?: string } | undefined)?.type ===
+      'urn:floorwars:problem:already-joined'
+  );
+}
+
 export function TeamScreen({ onDone }: { onDone: () => void }) {
   const [data, setData] = useState<TeamData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -257,14 +266,14 @@ export function TeamScreen({ onDone }: { onDone: () => void }) {
         body: { team_id: selected },
       });
     } catch (e) {
-      // 409: already on a team this season, so there is nothing left to choose.
-      if (!(e instanceof ApiError && e.status === 409)) {
+      // Only already-joined means there is nothing left to choose; season-not-active is a 409 too.
+      if (!isAlreadyJoined(e)) {
         setError(describeError(e, 'join'));
         setJoining(false);
         return;
       }
     }
-    await markTeamChosen();
+    await markTeamChosen(data.seasonId);
     onDone();
   };
 

@@ -1,5 +1,6 @@
 import * as Keychain from 'react-native-keychain';
 import type { components } from '../api/schema';
+import { FloorSensors } from '../native/floorSensors';
 
 type TokenPair = components['schemas']['TokenPair'];
 
@@ -38,12 +39,22 @@ export async function saveTokens(pair: TokenPair): Promise<void> {
   });
 }
 
-export async function hasChosenTeam(): Promise<boolean> {
-  return (await Keychain.getGenericPassword({ service: TEAM })) !== false;
+// The season the user joined a team in. The flag stored before seasons were tracked was '1',
+// which is season 1, the only one that existed, so old installs read correctly.
+export async function getChosenSeason(): Promise<number | null> {
+  const stored = await Keychain.getGenericPassword({ service: TEAM });
+  const id = stored ? Number(stored.password) : NaN;
+  return Number.isInteger(id) ? id : null;
 }
 
-export async function markTeamChosen(): Promise<void> {
-  await Keychain.setGenericPassword('team', '1', { service: TEAM });
+export async function hasChosenTeam(): Promise<boolean> {
+  return (await getChosenSeason()) !== null;
+}
+
+export async function markTeamChosen(seasonId: number): Promise<void> {
+  await Keychain.setGenericPassword('team', String(seasonId), {
+    service: TEAM,
+  });
 }
 
 // Random v4 id kept for the install; it is an identifier, not a secret, so Math.random is enough.
@@ -68,7 +79,18 @@ export function setOnSessionEnded(fn: (() => void) | undefined): void {
 }
 
 // Clears the stored tokens and team flag (the device id stays) and tells the app.
+// Unsent segments and the active check-in belong to the leaving user, so they go too;
+// a native failure must not keep the user signed in.
 export async function endSession(): Promise<void> {
+  // Detection stops first, and drops its open climb, so nothing is written after clearPending.
+  for (const clear of [
+    () => FloorSensors.clearActiveCheckin(),
+    () => FloorSensors.clearPending(),
+  ]) {
+    try {
+      await clear();
+    } catch {}
+  }
   await Keychain.resetGenericPassword({ service: TOKENS });
   await Keychain.resetGenericPassword({ service: TEAM });
   onSessionEnded?.();

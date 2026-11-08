@@ -1,11 +1,24 @@
 openapi: 3.1.0
 info:
   title: FloorWars API
-  version: 0.5.1-draft
+  version: 0.7.0-draft
   description: |
     Approved by both members on 2026-10-21. Every later change is a PR reviewed by the other member.
 
     Changelog:
+    - 0.7.0-draft (2026-11-08): new POST /auth/logout (revokes a refresh token family, 204 for any token).
+    - 0.6.2-draft (2026-11-08): the pressure_steps_mismatch upper bound is 10 steps per metre of ascent
+      (was 8); real pocket climbs measured 6.7 to 8.7.
+    - 0.6.1-draft (2026-11-07): the hourly points curve counts the user's verified steps in the same
+      UTC clock hour as started_at, so a verified segment's points no longer depend on upload
+      order (whether it passes the 600-step cap still can). POST /segments also answers 503 with
+      Retry-After when a batch waits more than 5 s for an earlier batch of the same user (nothing
+      is stored; retry later).
+    - 0.6.0-draft (2026-11-07): new rejection reason overlap (the climb overlaps a verified climb of
+      the same user). The 600-step cap now counts verified steps on both sides of started_at, so
+      upload order cannot bypass it; the hourly points curve counts both sides too, but the points
+      total can still depend on upload order. A resend of a stored segment from another device is
+      rejected as no_checkin. Segment ids must be random UUIDv4 (wording only, not validated).
     - 0.5.1-draft (2026-11-07): 404 NotFound on GET /leaderboards (unknown season_id, unknown
       building_id with scope building, or no active season when season_id is omitted). Season,
       building and team ids in the request are at most 2147483647 (422 above that): season_id and
@@ -144,6 +157,28 @@ paths:
         '422': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Sign out (revoke a refresh token)
+      description: >-
+        Revokes the refresh token and every token rotated from it. An unknown or already revoked
+        token also answers 204, so the route cannot be used to probe tokens. The access token stays
+        valid until it expires. Clients call it best-effort on sign-out and clear their tokens
+        regardless of the answer.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '204':
+          description: Signed out. No body.
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /teams:
     get:
       tags: [teams]
@@ -239,14 +274,21 @@ paths:
       operationId: uploadSegments
       summary: Upload a batch of climb segments
       description: |
-        Idempotent. Segments are inserted ON CONFLICT DO NOTHING on (device, id), so a re-sent segment
-        counts as accepted. Server plausibility checks repeat the on-device rules (plan 3.3, 3.4).
-        A segment scores only if its steps match its pressure change (about 4 to 8 steps per metre of
+        Idempotent per device: receipts are inserted ON CONFLICT DO NOTHING on (device, id), so a repeat
+        from the same device gets its first answer again (accepted, or rejected with the same reason).
+        A resend of a stored segment from another device is rejected as no_checkin and scores nothing.
+        An item rejected without a stored row has nothing to match, so another device's resend of it
+        is judged again.
+        Server plausibility checks repeat the on-device rules (plan 3.3, 3.4).
+        A segment scores only if its steps match its pressure change (about 4 to 10 steps per metre of
         ascent); points go to the building of the active check-in, and the building's owner is
         recomputed in the same transaction. Building flips caused by the batch are returned in flips.
         Inferred: each item is checked on its own, so an item outside the bounds or failing a rule is
         returned in rejected and does not fail the batch; 422 is for a body that is not a valid batch.
-        Rate limits (plan 2, 3.4): 60 uploads per hour and 600 verified steps per 10 minutes per user.
+        Rate limits (plan 2, 3.4): 60 uploads per hour per user, and 600 verified steps per 10 minutes
+        per user, counted on both sides of started_at so that upload order cannot bypass the cap.
+        Points: 1 per verified step up to 300 verified steps of the user in one UTC clock hour (by
+        started_at), then 0.5.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -784,7 +826,7 @@ components:
         id:
           type: string
           format: uuid
-          description: Client-generated UUID. Unique per device; a repeat is treated as success.
+          description: Client-generated. Must be a random UUIDv4. A repeat from the same device gets its first answer again; a stored segment sent from another device is rejected as no_checkin.
         checkin_id: { type: string, format: uuid }
         started_at: { type: string, format: date-time }
         building_id:
@@ -841,7 +883,7 @@ components:
       properties:
         accepted:
           type: array
-          description: 'Inferred: accepted segments, including repeats of already stored ones.'
+          description: 'Inferred: accepted segments, including repeats from the device that stored them. A resend of a stored segment from another device is rejected as no_checkin.'
           items: { $ref: '#/components/schemas/AcceptedSegment' }
         rejected:
           type: array
@@ -866,7 +908,7 @@ components:
         points:
           type: integer
           minimum: 0
-          description: 'Inferred: points added by this segment after the hourly diminishing returns. Omitted for a repeat of an already stored segment.'
+          description: 'Inferred: points added by this segment after the diminishing returns of its UTC clock hour. Omitted for a repeat from the device that stored the segment.'
 
     RejectedSegment:
       type: object
@@ -890,17 +932,22 @@ components:
             - season_inactive
             - no_team
             - stair_prob_range
+            - overlap
           description: |
             Inferred: the rule that failed (plan 2, 3.3, 3.4).
-            pressure_steps_mismatch: steps per metre of ascent outside 4 to 8 (elevator, flat walking, shaking).
+            pressure_steps_mismatch: steps per metre of ascent outside 4 to 10 (elevator, flat walking, shaking).
             ascent_range: ascent_m outside 2.0 to 120.0. steps_range: steps outside 1 to 2000.
             stair_prob_range: stair_prob outside 0 to 1 or not finite.
             speed: vertical speed outside 0.1 to 0.9 m/s. cadence: implausible step rate.
             started_at_range: started_at older than 7 days or more than 5 minutes in the future.
             season_inactive: no season was running at started_at. no_team: the user had no team in that season.
-            duration: window outside 5 s to 3 min. rate_limit: the user is over 600 verified steps per
-            10 minutes (over 60 uploads per hour returns 429 for the whole batch). no_checkin: no check-in valid at started_at. building_mismatch:
-            building_id differs from the check-in's building.
+            duration: window outside 5 s to 3 min. rate_limit: the user's verified steps with started_at
+            less than 10 minutes before or after this segment's, plus its own steps, are above 600 (over 60
+            uploads per hour returns 429 for the whole batch). overlap: [started_at, started_at + duration_s)
+            overlaps that of a verified segment of the same user; climbs that only touch at an end do not
+            overlap (1 ms tolerance for real rounding). no_checkin: no check-in valid at started_at, or
+            the segment is already stored (a resend from another device, or another user's id).
+            building_mismatch: building_id differs from the check-in's building.
 
     Building:
       type: object

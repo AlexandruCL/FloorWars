@@ -117,6 +117,15 @@ def upload_checks(base: str, access: str, device_id: str, checkin: dict[str, Any
             return {}
         return {a["id"]: a for a in result.get("accepted") or []}
 
+    def rejected_by_id(status: int, result: Any) -> dict[str, str]:
+        if status != 200 or not isinstance(result, dict):
+            return {}
+        return {r["id"]: r["reason"] for r in result.get("rejected") or []}
+
+    def failure(status: int, result: Any, segment_id: str) -> str:
+        reason = rejected_by_id(status, result).get(segment_id)
+        return f"rejected as {reason}" if reason else f"HTTP {status} {problem(result)}"
+
     status, before = call("GET", base, f"/buildings/{building_id}/standings", token=access)
     if not step(status == 200, "standings before", f"HTTP {status}"):
         return False
@@ -130,7 +139,7 @@ def upload_checks(base: str, access: str, device_id: str, checkin: dict[str, Any
         "upload a valid segment (fresh Idempotency-Key)",
         f"{first['steps_scored']} steps scored, {first['points']} points"
         if first is not None and scored
-        else f"HTTP {status} {problem(result)}",
+        else failure(status, result, good["id"]),
     ):
         return False
 
@@ -145,9 +154,7 @@ def upload_checks(base: str, access: str, device_id: str, checkin: dict[str, Any
 
     bad = make("bad_ratio", started_at + timedelta(seconds=1))
     status, result = upload(bad)
-    rejected = {}
-    if status == 200 and isinstance(result, dict):
-        rejected = {r["id"]: r["reason"] for r in result.get("rejected") or []}
+    rejected = rejected_by_id(status, result)
     if not step(
         rejected.get(bad["id"]) == "pressure_steps_mismatch",
         "upload a bad-ratio segment: rejected as pressure_steps_mismatch",

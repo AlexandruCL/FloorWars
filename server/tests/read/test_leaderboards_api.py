@@ -1,6 +1,8 @@
-"""``GET /v1/leaderboards``: the three scopes, the database fallback, the lazy rebuild."""
+"""``GET /v1/leaderboards``: the three scopes, the database fallback, the built marker."""
 
 from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,7 +10,7 @@ from httpx import Response
 from sqlalchemy.orm import Session
 
 from app import leaderboards as lb
-from app.valkey import ValkeyClient
+from app.valkey import ValkeyClient, ValkeyError
 from tests.helpers import TEST_VALKEY_URL, auth_headers
 from tests.read.seed import World, add_segment, seed
 
@@ -28,9 +30,9 @@ def rebuilds(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     calls: list[int] = []
     real = lb.rebuild
 
-    def spy(db: Session, vk: lb.Commands, season_id: int) -> None:
+    def spy(db: Session, vk: lb.Commands, season_id: int) -> bool:
         calls.append(season_id)
-        real(db, vk, season_id)
+        return real(db, vk, season_id)
 
     monkeypatch.setattr(lb, "rebuild", spy)
     return calls
@@ -181,7 +183,7 @@ def test_missing_keys_are_rebuilt_from_the_database(
     assert valkey_client.execute("EXISTS", lb.users_key(world.season_id)) == 1
 
 
-def test_missing_key_with_points_is_rebuilt_once(
+def test_a_season_is_rebuilt_once(
     client: TestClient, valkey_client: ValkeyClient, rebuilds: list[int]
 ) -> None:
     world = _populate(client)
@@ -192,7 +194,7 @@ def test_missing_key_with_points_is_rebuilt_once(
 
 
 @pytest.mark.parametrize("scope", ["individual", "team", "building"])
-def test_a_season_without_points_is_empty_and_never_rebuilt(
+def test_a_season_without_points_is_empty_and_rebuilt_once(
     client: TestClient, valkey_client: ValkeyClient, rebuilds: list[int], scope: str
 ) -> None:
     world = seed(client)
@@ -202,19 +204,22 @@ def test_a_season_without_points_is_empty_and_never_rebuilt(
     params = {"scope": scope, "building_id": world.building_ids[0]}
     for _ in range(2):
         assert _rows(_board(client, world, **params)) == []
-    assert rebuilds == []
+    assert rebuilds == [world.season_id]
     assert valkey_client.execute("EXISTS", lb.teams_key(world.season_id)) == 0
 
 
-def test_a_building_without_points_is_empty_and_not_rebuilt(
+def test_a_building_without_points_is_empty_once_built(
     client: TestClient, valkey_client: ValkeyClient, rebuilds: list[int]
 ) -> None:
     world = seed(client)
     with client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
         add_segment(db, world, "ETC", 0, 100)
-    assert _rows(_board(client, world, scope="building", building_id=world.building_ids[1])) == []
-    assert rebuilds == []
-    assert valkey_client.execute("EXISTS", lb.teams_key(world.season_id)) == 0
+    for _ in range(2):
+        board = _board(client, world, scope="building", building_id=world.building_ids[1])
+        assert _rows(board) == []
+    assert rebuilds == [world.season_id]
+    empty = lb.building_key(world.season_id, world.building_ids[1])
+    assert valkey_client.execute("EXISTS", empty) == 0
 
 
 def test_a_building_with_points_is_rebuilt_when_its_key_is_missing(
@@ -229,8 +234,11 @@ def test_a_building_with_points_is_rebuilt_when_its_key_is_missing(
     assert valkey_client.execute("EXISTS", lb.building_key(world.season_id, world.building_ids[0]))
 
 
-def test_reads_valkey_when_the_key_exists(client: TestClient, valkey_client: ValkeyClient) -> None:
+def test_reads_valkey_when_the_season_is_built(
+    client: TestClient, valkey_client: ValkeyClient
+) -> None:
     world = _populate(client)
+    valkey_client.execute("SET", lb.built_key(world.season_id), 1)
     valkey_client.execute("ZADD", lb.teams_key(world.season_id), 999, str(world.team_ids["MEC"]))
     assert _rows(_board(client, world, scope="team")) == [(1, "MEC", 999)]
 
@@ -238,6 +246,7 @@ def test_reads_valkey_when_the_key_exists(client: TestClient, valkey_client: Val
 def test_rebuild_equals_incremental(client: TestClient, valkey_client: ValkeyClient) -> None:
     world = _populate(client)
     season = world.season_id
+    valkey_client.execute("SET", lb.built_key(season), 1)
     for team, building, user_team, points in (
         ("ETC", 0, "ETC", 100),
         ("ETC", 1, "ETC", 50),
@@ -259,9 +268,104 @@ def test_rebuild_equals_incremental(client: TestClient, valkey_client: ValkeyCli
     ]
     incremental = {k: lb.top(valkey_client, k, 100) for k in keys}
     with client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
-        lb.rebuild(db, valkey_client, season)
-        lb.rebuild(db, valkey_client, season)  # idempotent
+        assert lb.rebuild(db, valkey_client, season)
+        assert lb.rebuild(db, valkey_client, season)  # idempotent
     assert {k: lb.top(valkey_client, k, 100) for k in keys} == incremental
+
+
+def test_a_rebuild_drops_keys_without_points(
+    client: TestClient, valkey_client: ValkeyClient
+) -> None:
+    world = seed(client)
+    stale = lb.building_key(world.season_id, world.building_ids[1])
+    valkey_client.execute("ZADD", stale, 50, str(world.team_ids["AC"]))  # e.g. a deleted user
+    with client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
+        assert lb.rebuild(db, valkey_client, world.season_id)
+    assert valkey_client.execute("EXISTS", stale) == 0
+    assert valkey_client.execute("TTL", lb.built_key(world.season_id)) > 0
+
+
+def test_a_read_during_a_rebuild_is_answered_from_the_database(
+    client: TestClient, valkey_client: ValkeyClient
+) -> None:
+    world = _populate(client)
+    lock = lb.lock_key(world.season_id)
+    valkey_client.execute("SET", lock, "other-rebuild")
+    assert _rows(_board(client, world, scope="team"))[0] == (1, "ETC", 150)
+    assert valkey_client.execute("GET", lock) == b"other-rebuild"  # not ours: left alone
+    assert valkey_client.execute("EXISTS", lb.built_key(world.season_id)) == 0
+
+
+def test_a_failed_rebuild_releases_the_lock(
+    client: TestClient, valkey_client: ValkeyClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = _populate(client)
+
+    def boom(*args: object) -> None:
+        raise RuntimeError("bug")
+
+    monkeypatch.setattr(lb, "_replace", boom)
+    with client.app.state.sessionmaker() as db, pytest.raises(RuntimeError):  # type: ignore[attr-defined]
+        lb.rebuild(db, valkey_client, world.season_id)
+    assert valkey_client.execute("EXISTS", lb.lock_key(world.season_id)) == 0
+    assert valkey_client.execute("EXISTS", lb.built_key(world.season_id)) == 0
+
+
+def test_a_rebuild_that_loses_its_lock_leaves_the_season_unbuilt(
+    client: TestClient, valkey_client: ValkeyClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = _populate(client)
+    lock = lb.lock_key(world.season_id)
+    real = lb._replace
+
+    def expire_then_replace(*args: Any) -> None:
+        valkey_client.execute("SET", lock, "other-rebuild")  # ours expired, another took it
+        real(*args)
+
+    monkeypatch.setattr(lb, "_replace", expire_then_replace)
+    with client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
+        assert not lb.rebuild(db, valkey_client, world.season_id)
+    assert valkey_client.execute("GET", lock) == b"other-rebuild"
+    assert valkey_client.execute("EXISTS", lb.built_key(world.season_id)) == 0
+
+
+def test_a_slow_rebuild_stops_and_releases_the_lock(
+    client: TestClient, valkey_client: ValkeyClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = _populate(client)
+    written: list[str] = []
+    real = lb._replace
+
+    def replace(vk: lb.Commands, key: str, *args: Any) -> None:
+        real(vk, key, *args)
+        written.append(key)
+
+    monkeypatch.setattr(lb, "_replace", replace)
+    # 0 s until the first board is written, then 1000 s: the second board is never started.
+    monkeypatch.setattr(lb, "time", SimpleNamespace(monotonic=lambda: 1000.0 if written else 0.0))
+    with client.app.state.sessionmaker() as db, pytest.raises(ValkeyError):  # type: ignore[attr-defined]
+        lb.rebuild(db, valkey_client, world.season_id)
+    assert written == [lb.users_key(world.season_id)]
+    assert valkey_client.execute("EXISTS", lb.lock_key(world.season_id)) == 0
+    assert valkey_client.execute("EXISTS", lb.built_key(world.season_id)) == 0
+    assert valkey_client.execute("EXISTS", lb.teams_key(world.season_id)) == 0
+    assert valkey_client.execute("KEYS", "*:rebuild:*") == []
+
+
+def test_a_redundant_rebuild_only_releases_the_lock(
+    client: TestClient, valkey_client: ValkeyClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = _populate(client)
+    valkey_client.execute("SET", lb.built_key(world.season_id), 1, "EX", 100)
+
+    def never(*args: object) -> None:
+        raise AssertionError("rebuilt although the season is built")
+
+    monkeypatch.setattr(lb, "_rebuild_keys", never)
+    with client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
+        assert lb.rebuild(db, valkey_client, world.season_id)
+    assert valkey_client.execute("EXISTS", lb.lock_key(world.season_id)) == 0
+    assert 0 < valkey_client.execute("TTL", lb.built_key(world.season_id)) <= 100  # not reset
 
 
 def test_valkey_down_falls_back_to_the_database(client: TestClient) -> None:

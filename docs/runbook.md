@@ -186,6 +186,19 @@ tail -n 30 /srv/floorwars/deploy.log
 If the certificate fails: DNS (`nslookup <DOMAIN>`), NSG and `ufw` rules for 80/443, and Let's
 Encrypt rate limits (use a staging CA while experimenting).
 
+**`/healthz` times out (curl exit 28, no HTTP status).** A timeout means nothing answered; a 404 or 502 would mean
+the server is up. Check in this order:
+
+1. VM state in the portal. A deallocated VM (see Cost hygiene) answers nothing. Start it. With a dynamic public IP the
+   address changes on start: compare it with the DNS A record (`nslookup <DOMAIN>`) and update the record if they differ.
+2. `ssh` in. If it fails but the VM runs: NSG inbound rules for 22, 80, 443, then `sudo ufw status`.
+3. After a start or reboot the containers can be down (section 10): `docker compose ps`, then
+   `sudo /srv/floorwars/deploy.sh "$(cat /srv/floorwars/current)"`.
+4. From the VM: `curl -i https://localhost/healthz --resolve <DOMAIN>:443:127.0.0.1`. Works here but not from outside:
+   NSG or DNS. Fails here too: `docker compose logs --tail=50 caddy api`.
+5. Once it answers, check that the running tag is the Week 3 release (`cat /srv/floorwars/current`) and that
+   `GET /v1/buildings` answers 401 without a token (the route exists).
+
 ## 9. Rollback
 
 ```sh
@@ -322,11 +335,16 @@ upkeep for a team of two with no users yet. Consequences to keep in mind:
 
 - The deploy runs migration `0004_segments` through the `migrate` service (migration role), like earlier migrations. It creates `climb_segment` partitions for the current month and the next two.
 - The same `migrate` run applies `0005_fk_indexes`: three indexes (`climb_segment(checkin_id)`, `segment_receipt(user_id)`, `fraud_flag(user_id)`), built in the migration's transaction, so writes to those tables wait until it commits.
-- `deploy.sh` does not apply Caddyfile changes: Compose does not recreate Caddy when only the mounted file changed, and the running container keeps the old file. After a deploy that changes `infra/caddy/Caddyfile` (the 1MB body cap does), run `docker compose ... up -d --force-recreate caddy`. Then check that a POST over 1MB gets 413 and that normal requests still work.
+- Caddy reads its config once at start. The `infra/caddy` folder is mounted (not the single file, which kept the old file after a checkout), and `deploy.sh` ends each release with `caddy reload`. That applies a changed Caddyfile without dropping connections and does nothing when it is unchanged. An invalid Caddyfile fails the reload and the release, and Caddy keeps serving its previous config.
+- The first deploy with the folder mount recreates Caddy once (its mounts changed), which also applies the 1MB body cap. Afterwards check that a POST over 1MB gets 413 and that normal requests still work.
+- After editing the Caddyfile by hand on the VM: `docker compose ... exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile`.
 - `btree_gist` already exists (created in the superuser setup, `infra/sql/roles.sql`); the migration does not create extensions.
 - New partitions are created by the migrator, not the app role. Run it monthly until Celery beat does it (Week 5):
   `docker compose ... run --rm migrate python -m app.segments.partitions`
-- After a Valkey restart or data loss the leaderboard keys are gone. A read that finds a board's key missing rebuilds the season once from the database (`rebuild`, `server/app/leaderboards.py`) if that board has points; without points it answers an empty board and rebuilds nothing. While Valkey is unreachable, reads are computed from the database.
+- Rejected-row retention: `app.segments.repository.purge_rejected(db, now)` is not scheduled yet (Week 5 retention job, plan 7.6). Until then, run the equivalent by hand with the migration role if the tables grow (verified receipts are kept):
+  `DELETE FROM segment_receipt WHERE status <> 'verified' AND created_at < now() - interval '30 days';`
+  `DELETE FROM fraud_flag WHERE (resolved_at IS NOT NULL AND created_at < now() - interval '30 days') OR (resolved_at IS NULL AND created_at < now() - interval '365 days');`
+- Leaderboards (`server/app/leaderboards.py`): a season's boards are trusted only while its marker `fw:lb:s{season}:built` exists (1 h expiry). After a Valkey restart or data loss, a failed board update, or an upload that overlapped a rebuild, the marker is missing and the next read rebuilds the season from the database; uploads skip a season without the marker. A rebuild holds `fw:lb:s{season}:lock` (30 s expiry); reads that find it held are computed from the database. While Valkey is unreachable, reads are computed from the database. To force a rebuild: `DEL fw:lb:s{season}:built` in `valkey-cli`. Keep Valkey at `maxmemory-policy noeviction` (the default; `CONFIG GET maxmemory-policy`): an evicted board key with a live marker reads as an empty board.
 
 **Wednesday check (Ionut):**
 

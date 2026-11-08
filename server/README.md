@@ -140,6 +140,7 @@ Notes:
 | `POST /v1/auth/otp` | Sends a 6-digit code to an allow-listed e-mail (no `+` sub-addresses: 422). 202, no body. 403 wrong domain, 429 rate limit (`Retry-After`; IP bucket first, then e-mail), 503 mail or Valkey down (fails closed). |
 | `POST /v1/auth/verify` | Code, device and (new accounts) `accept_terms` + `confirm_adult` for a token pair. 401 wrong/expired, 403 confirmations missing (challenge stays usable), 429 after 5 attempts or per-IP limit, 503 Valkey down. |
 | `POST /v1/auth/refresh` | Rotates the refresh token. 401 unknown, expired or reused; reuse revokes the whole family. 429 per-IP limit, 503 Valkey down. |
+| `POST /v1/auth/logout` | Body `{refresh_token}`. Revokes the token's whole family. 204 for any token (unknown or already revoked too), 422, 429 per-IP limit, 503 Valkey down. The access token lives until it expires (15 minutes by default); the client clears its own tokens whatever the answer, and may retry the revoke later. |
 | `GET /v1/teams` | Public. All teams `{id, code, color_hex}` ordered by `code`. |
 | `GET /v1/seasons/active` | Public. The running season `{id, starts_at, ends_at}`; 404 `no-active-season`. |
 | `POST /v1/seasons/{id}/join` | Body `{team_id}`, 201 `{season_id, team_id}`. 404 `season-not-found`, 422 `team-not-found`, 409 `season-not-active` or `already-joined` (the primary key `(user_id, season_id)` decides, so concurrent joins give one 201). |
@@ -157,7 +158,7 @@ signed in by two users gives two rows, and sign-in never moves a device between 
 tokens are never logged; database errors are logged as class, SQLSTATE and constraint only
 (PostgreSQL error details repeat row values), and the engine hides bound parameters.
 
-Per-IP limits run before any database work on all three routes. The bucket is the client address
+Per-IP limits run before any database work on all four routes. The bucket is the client address
 for IPv4 and its /64 network for IPv6. Client IP: `request.client.host`. Behind Caddy, uvicorn only
 trusts `X-Forwarded-For` from `--forwarded-allow-ips` (default `127.0.0.1`), so the deployment must
 set `FORWARDED_ALLOW_IPS` to Caddy's address, or every request counts against Caddy's IP.
@@ -228,7 +229,7 @@ the host files to these names, see `infra/secrets/README.md`.
 | `FLOORWARS_OTP_RATE_PER_EMAIL_PER_HOUR` | `5` | Token bucket size and hourly refill for code requests per e-mail. |
 | `FLOORWARS_OTP_RATE_PER_IP_PER_HOUR` | `60` | Same, per client IP (IPv6 per /64). Students behind the campus NAT share one IP, so keep it generous. |
 | `FLOORWARS_VERIFY_RATE_PER_IP_PER_HOUR` | `300` | Token bucket per client IP for `POST /v1/auth/verify`. |
-| `FLOORWARS_REFRESH_RATE_PER_IP_PER_HOUR` | `1200` | Token bucket per client IP for `POST /v1/auth/refresh` (every signed-in phone refreshes about 4 times an hour). |
+| `FLOORWARS_REFRESH_RATE_PER_IP_PER_HOUR` | `1200` | Token bucket per client IP for `POST /v1/auth/refresh` and `POST /v1/auth/logout`, one bucket each (every signed-in phone refreshes about 4 times an hour). |
 | `FLOORWARS_QR_HMAC_KEY` | unset | 32-byte HMAC key for entrance QR codes, hex. Secret. Without it QR check-ins answer 503 `qr-unavailable`. |
 | `FLOORWARS_CHECKIN_TTL_S` | `5400` | Check-in validity (plan 3.2: 90 minutes), 60 s to 1 day. |
 | `FLOORWARS_GEOFENCE_RADIUS_M` | `30` | Geofence check-in: maximum distance in metres from a building footprint, 1 to 1000. |

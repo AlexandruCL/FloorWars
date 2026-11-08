@@ -11,7 +11,7 @@ The batches follow `SegmentBatch` in `contracts/openapi.yaml` (0.5.0-draft): a b
 | `shake` | ascent 2.0 to 2.6 m with 20 to 60 steps per metre | rejected (`pressure_steps_mismatch`) |
 | `bad_speed` | 8 to 30 m at 1.0 to 1.5 m/s, 5 to 7 steps per metre | rejected: `speed` |
 | `bad_cadence` | valid speed, 6 to 7 steps per metre, 4 to 6 steps per second | rejected: `cadence` |
-| `bad_ratio` | valid speed, about 1 to 3 or 10 to 15 steps per metre | rejected: `pressure_steps_mismatch` |
+| `bad_ratio` | valid speed, about 1 to 3 or 11 to 15 steps per metre | rejected: `pressure_steps_mismatch` |
 | `out_of_range` | ascent over 120 m or under 2 m, or over 2000 steps | rejected: `ascent_range` or `steps_range`; outside the contract bounds, so a strict request model may answer 422 (spec decision 4) |
 | `late` | a good climb with `started_at` 8 to 20 days before its batch time | rejected: `started_at_range` |
 | `mixed` | about 60% stairs, 20% elevator, 20% shake | both |
@@ -61,6 +61,8 @@ batch 1/1 status=200 accepted=4 rejected=1 flips=0 reasons=pressure_steps_mismat
 Exit code 0 on success, 1 on an HTTP error status, 2 on a connection error or bad arguments.
 
 A seeded run repeats its ids and keys, so sending it twice to a real server tests idempotency too. Pass `--start now` (or a time inside the check-in) when the server checks that a check-in is valid at `started_at`; the fixed seeded start would be rejected with `no_checkin`.
+
+A rerun with new ids on the same account (no `--seed`, or another seed) can get `overlap` when its times overlap verified climbs of the earlier run: the same `--start`, or `--start now` soon after a run. Use a `--start` after the earlier run's last climb has ended, or another account.
 
 ## Tests
 
