@@ -13,14 +13,14 @@ Commands are for PowerShell on Windows, run from the repository root unless a st
 | `feat/w3-sync-v2` | sync worker, WorkManager job, status screen | `25b7811` | pushed, PR #64, includes the outbox commits |
 | `feat/w3-signout-v2` | sign out | `d66b87d` | pushed, PR #65, conflicts with the sync PR on Home (see step 1) |
 | `feat/w3-logout-call-v2` | Sign out calls Ionut's `POST /v1/auth/logout` | `bc26712` | pushed, PR #66, stacked on `feat/w3-signout-v2` |
-| `feat/w3-season-check` | team picker again when a new season starts | `c0cd8a3` | pushed, PR page opened in the browser (create it), independent of the others, branches from `main` |
+| `feat/w3-season-check` | team picker again when a new season starts | `c0cd8a3` | pushed, PR #68, independent of the others, branches from `main` |
 | `docs/w3-finish` | this file, the summary, the tester guide, README and plan updates | n/a | pushed with the PR for it |
 
 All four branches are green on Android tests, ktlint, lint, typecheck, Jest and the generated-client check, against the contract on `main` (now 0.7.0-draft, with `/auth/logout`). They have only been tested against the Prism mock and an emulator, never the real server.
 
 ## Step 1. Open and merge the pull requests, in this order
 
-The PRs are open (#62 outbox, #63 engine, #64 sync, #65 signout, #66 logout call, #67 these docs), base `main`. The links below are only for reference. Ask Ionut for review on the parts that touch the contract (`/segments`, `/checkins`).
+The PRs are open (#62 outbox, #63 engine, #64 sync, #65 signout, #66 logout call, #67 these docs, #68 season check), base `main`. The links below are only for reference. Ask Ionut for review on the parts that touch the contract (`/segments`, `/checkins`).
 
 - [ ] `feat/w3-outbox-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-outbox-v2. Body: `pr_descriptions/01_outbox.md`.
 - [ ] `feat/w3-engine-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-engine-v2, after the outbox PR is merged. Body: `02_engine.md`. Update the branch from `main` first (**Update branch** on the PR page, or a rebase).
@@ -30,7 +30,7 @@ The PRs are open (#62 outbox, #63 engine, #64 sync, #65 signout, #66 logout call
   - in `app/src/screens/HomeScreen.tsx` add the imports `Alert` (from `react-native`) and `endSession` (from `../auth/session`), the `confirmSignOut` function from the old `PlaceholderScreens.tsx`, and `<Button title="Sign out" onPress={confirmSignOut} secondary />` as the last child of `<Screen>`;
   - in `app/__tests__/signout.test.tsx` wait for `Status` instead of `Home`, and use `mockResolvedValue` (not `Once`) for `getPendingCount`, because Home reads it too.
   - The resolved version is on a local throwaway branch (`tmp/w3-integ`) if you want to compare; the Jest run on it had 121 tests green.
-- [ ] `feat/w3-season-check`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-season-check. Body: `06_season_check.md`. It is independent: it can merge at any time, and it must be in the build before season 2 for the picker to reappear on its own.
+- [ ] `feat/w3-season-check` (#68): https://github.com/AlexandruCL/FloorWars/pull/68. Body: `06_season_check.md`. It is independent: it can merge at any time, and it must be in the build before season 2 for the picker to reappear on its own.
 - [ ] `feat/w3-logout-call-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-logout-call-v2, **after the signout PR** (it is stacked on it). Body: `05_logout.md`. When the sync PR has merged first, this PR conflicts in the same `confirmSignOut` place as the signout PR: keep the `async onPress` that awaits `revokeRefreshToken()` and then `endSession()`.
 - [ ] CI is green on each: `android unit tests and trace replay` and `lint, typecheck, test, API client`. If the Android test task fails with a dead test worker and no failing test (it happened once locally), re-run it once and look at the worker log before changing code.
 - [ ] After each merge, bring your main up to date: `git switch main; git pull`.
