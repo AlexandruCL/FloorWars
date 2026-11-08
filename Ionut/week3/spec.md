@@ -40,6 +40,7 @@ Indexes on `climb_segment` (created on the parent): `(building_id, started_at DE
 | `VERIFIED_STEPS_PER_10_MIN` | 600 |
 | `OVERLAP_TOLERANCE` | 1 ms |
 | `UPLOADS_PER_HOUR` | 60 (requests, Valkey bucket, existing `Limiter`) |
+| `REJECTED_STORED_PER_HOUR` | 200 (rejected items stored per user and hour, Valkey bucket `seg:rej`, `RateLimiter.hit`) |
 | `FULL_POINT_STEPS_PER_HOUR` | 300 (1.0 point per step up to here), then `REDUCED_POINT_PER_STEP` 0.5 |
 | `OWNERSHIP_WINDOW` | 7 days |
 
@@ -63,7 +64,7 @@ Rules 1 to 2 and 5 to 7 are pure (no database). Rules 3, 4, 8 and 9 need `ctx` (
 
 ## 5. Batch algorithm (`app/segments/service.py`, owned by B)
 
-1. Request level (before any database work): `Limiter` bucket `fw:rl:seg:user:{user_id}` 60 per hour (429 `Retry-After`, fail closed 503 if Valkey is down); batch of 1..100 items (422 otherwise); header `Idempotency-Key` required (non-empty, at most 255 characters). The key is logged (not secret) and otherwise informational: duplicates are decided per segment by `segment_receipt`.
+1. Request level (before any database work): `Limiter` bucket `fw:rl:seg:user:{user_id}` 60 per hour (429 `Retry-After`, fail closed 503 if Valkey is down); batch of 1..100 items (422 otherwise); header `Idempotency-Key` required (non-empty, at most 255 characters). The key is logged (not secret) and otherwise informational: duplicates are decided per segment by `segment_receipt`. Stored-rejection cap: each rejected item that would be stored takes one token of the per-user hourly bucket `seg:rej` (`REJECTED_STORED_PER_HOUR`). Past the cap the item is answered with its real reason but no `segment_receipt`, `fraud_flag` or `climb_segment` row is written (a resend is judged again); a Valkey error mid-batch counts as capped; verified items never use the bucket; no 429, no new reason. `repository.purge_rejected(db, now)` (called by the Week 5 retention job, not scheduled yet) deletes rejected receipts and resolved flags older than 30 days and unresolved flags older than 365 days.
 2. One transaction: `repository.lock_user(db, user_id)` (`SELECT ... FROM "user" WHERE id = :id FOR UPDATE` under a 5 s `lock_timeout`, restored afterwards so later lock waits are not limited; a longer wait answers 503 with `Retry-After` and stores nothing), then `repository.device_belongs(db, user_id, batch.device_id)` (403 `device-unknown` and roll back if not), then items in ascending `(started_at, id)`:
    - `receipt = repository.get_receipt(db, device_id, id)`; if present: answer from it (verified: accepted without `points`; rejected: rejected with the stored reason; a receipt of another user: rejected `no_checkin`). No other effect.
    - Otherwise, before the rules, `repository.segment_exists(db, id, started_at)` (any user, any status): a resend from a second device, or an id another user stored, is not a new climb. It is answered rejected `no_checkin` with a receipt, and no segment row, score or flag.

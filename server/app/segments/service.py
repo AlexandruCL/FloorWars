@@ -127,6 +127,37 @@ def enforce_upload_limit(limiter: RateLimiter | None, user_id: uuid.UUID) -> Non
         raise too_many_requests("Too many uploads.", decision.retry_after_s)
 
 
+class _RejectionBudget:
+    """The user's ``seg:rej`` bucket for one batch. ``take()`` False means: answer the rejection
+    but write nothing. After the first Valkey failure it stops calling Valkey (the batch holds the
+    user's row lock) and answers False, so storage fails closed and a 503 cannot drop the verified
+    items of the batch. ``limiter=None`` (direct callers; the route always passes one) is
+    uncapped."""
+
+    def __init__(self, limiter: RateLimiter | None, user_id: uuid.UUID) -> None:
+        self._limiter = limiter
+        self._subject = str(user_id)
+        self._down = False
+        self.capped = 0
+
+    def take(self) -> bool:
+        if self._limiter is None:
+            return True
+        allowed = False
+        if not self._down:
+            try:
+                decision = self._limiter.hit(
+                    "seg:rej", self._subject, rules.REJECTED_STORED_PER_HOUR, HOUR_S
+                )
+                allowed = decision.allowed
+            except ValkeyError:
+                self._down = True
+                logger.error("rejection limiter unavailable")
+        if not allowed:
+            self.capped += 1
+        return allowed
+
+
 def _from_receipt(receipt: Receipt, user_id: uuid.UUID, result: SegmentBatchResult) -> None:
     """Answer a repeat from its stored outcome. A receipt of another user is not shown."""
     if receipt.user_id != user_id:
@@ -179,8 +210,12 @@ def _id_taken(
     device_id: uuid.UUID,
     user_id: uuid.UUID,
     result: SegmentBatchResult,
+    store: bool = True,
 ) -> None:
-    repository.insert_receipt(db, device_id, item.id, user_id, STATUS_REJECTED, ID_TAKEN_REASON, 0)
+    if store:
+        repository.insert_receipt(
+            db, device_id, item.id, user_id, STATUS_REJECTED, ID_TAKEN_REASON, 0
+        )
     result.rejected.append(RejectedSegment(id=item.id, reason=ID_TAKEN_REASON))
 
 
@@ -234,7 +269,11 @@ def _reject(
     reason: rules.RejectReason,
     ctx: ItemContext | None,
     result: SegmentBatchResult,
+    budget: _RejectionBudget,
 ) -> None:
+    if not budget.take():
+        result.rejected.append(RejectedSegment(id=item.id, reason=reason))
+        return
     if ctx is not None and reason not in rules.RECEIPT_ONLY:
         row = _row(item, device_id, user_id, ctx, reason, 0)
         if not repository.insert_segment(db, row):  # a concurrent upload stored this id first
@@ -308,14 +347,18 @@ def upload_batch(
     batch: SegmentBatch,
     board: Leaderboards | None = None,
     now: datetime | None = None,
+    limiter: RateLimiter | None = None,
 ) -> SegmentBatchResult:
-    """Process one batch in one transaction and answer per item."""
+    """Process one batch in one transaction and answer per item. ``limiter`` caps how many
+    rejections are stored per user and hour; verified items never touch it. A rejection past the
+    cap has no receipt, so a resend is judged again (it can change if the user's state did)."""
     now = now or datetime.now(UTC)
     if not repository.lock_user(db, user_id):
         raise unauthorized("Invalid or expired access token.")
     if not repository.device_belongs(db, user_id, batch.device_id):
         raise forbidden("This device is not registered to you.", type_=DEVICE_UNKNOWN)
 
+    budget = _RejectionBudget(limiter, user_id)
     result = SegmentBatchResult(accepted=[], rejected=[], flips=[])
     scored: list[ScoredSegment] = []
     # A full order: two batches holding the same items lock their rows in the same order.
@@ -327,11 +370,11 @@ def upload_batch(
         # Before the rules: a resend of a stored segment is not a new climb, so it must not be
         # judged, flagged or counted against itself.
         if repository.segment_exists(db, item.id, item.started_at):
-            _id_taken(db, item, batch.device_id, user_id, result)
+            _id_taken(db, item, batch.device_id, user_id, result, budget.take())
             continue
         reason, ctx = _check(db, item, user_id, now)
         if reason is not None:
-            _reject(db, item, batch.device_id, user_id, reason, ctx, result)
+            _reject(db, item, batch.device_id, user_id, reason, ctx, result, budget)
             continue
         if ctx is None:
             raise RuntimeError("verified segment without a context")
@@ -339,6 +382,11 @@ def upload_batch(
         if segment is not None:
             scored.append(segment)
 
+    if budget.capped:
+        logger.warning(
+            "rejection cap reached",
+            extra={"limit": "seg:rej", "user_id": str(user_id), "capped": budget.capped},
+        )
     _add_scores(db, scored)
     flips: list[Flip] = []
     for season_id, building_id in sorted({(s.season_id, s.building_id) for s in scored}):
