@@ -194,12 +194,12 @@ def test_segment_foreign_keys(db: Session, world: World) -> None:
 
 def test_primary_key_is_id_and_started_at(db: Session, world: World) -> None:
     row = _row(world)
-    assert repository.insert_segment(db, row) is True
+    assert repository.insert_segment(db, row) is not None
     # Same id at another time: allowed by the key (segment_receipt decides resends).
     later = replace(row, started_at=row.started_at + timedelta(seconds=1))
-    assert repository.insert_segment(db, later) is True
+    assert repository.insert_segment(db, later) is not None
     # Same key, other values: reported, and the stored row stays as it was.
-    assert repository.insert_segment(db, replace(row, steps=99, device_id=uuid.uuid4())) is False
+    assert repository.insert_segment(db, replace(row, steps=99, device_id=uuid.uuid4())) is None
     stored = db.execute(
         text("SELECT steps FROM climb_segment WHERE id = :i AND started_at = :s"),
         {"i": row.id, "s": row.started_at},

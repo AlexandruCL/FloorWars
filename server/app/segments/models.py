@@ -44,6 +44,17 @@ class ItemContext:
 
 
 @dataclass(frozen=True, slots=True)
+class VerifiedClimb:
+    """A verified segment of the user, as the step and overlap rules read it. ``ends_at`` is the
+    end the database computes from the stored ``real`` duration."""
+
+    started_at: datetime
+    ends_at: datetime
+    steps_scored: int
+    device_id: uuid.UUID
+
+
+@dataclass(frozen=True, slots=True)
 class SegmentRow:
     """One ``climb_segment`` row. ``received_at`` is set by the database."""
 

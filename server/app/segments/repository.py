@@ -6,6 +6,7 @@ on the caller's connection, so it sees the earlier items of the same transaction
 """
 
 import uuid
+from collections.abc import Collection, Sequence
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import (
@@ -18,8 +19,10 @@ from sqlalchemy import (
     insert,
     literal,
     literal_column,
+    or_,
     select,
 )
+from sqlalchemy.dialects.postgresql import ARRAY, TIMESTAMP, UUID
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -34,7 +37,7 @@ from app.db.models import (
     TeamMembership,
     User,
 )
-from app.segments.models import STATUS_VERIFIED, ItemContext, Receipt, SegmentRow
+from app.segments.models import STATUS_VERIFIED, ItemContext, Receipt, SegmentRow, VerifiedClimb
 from app.segments.rules import DURATION_MAX_S, OVERLAP_TOLERANCE
 
 # Far above a normal batch (about 1 s), and below the 30 s wait for a pooled connection, so batches
@@ -45,6 +48,11 @@ LOCK_TIMEOUT_MS = 5000
 REJECTED_RECEIPT_RETENTION = timedelta(days=30)
 RESOLVED_FLAG_RETENTION = timedelta(days=30)
 UNRESOLVED_FLAG_RETENTION = timedelta(days=365)  # as long as raw segments (plan 3.5)
+
+# The end of a stored segment, from its ``real`` duration.
+_stored_end = ClimbSegment.started_at + ClimbSegment.duration_s * literal_column(
+    "interval '1 second'", Interval
+)
 
 
 def lock_user(db: Session, user_id: uuid.UUID) -> bool:
@@ -90,6 +98,55 @@ def get_receipt(db: Session, device_id: uuid.UUID, segment_id: uuid.UUID) -> Rec
         status=row.status,
         reject_reason=row.reject_reason,
         steps_scored=row.steps_scored,
+    )
+
+
+def get_receipts(
+    db: Session, device_id: uuid.UUID, segment_ids: Collection[uuid.UUID]
+) -> dict[uuid.UUID, Receipt]:
+    """``get_receipt`` for many ids in one query, keyed by segment id."""
+    rows = db.execute(
+        select(
+            SegmentReceipt.id,
+            SegmentReceipt.user_id,
+            SegmentReceipt.status,
+            SegmentReceipt.reject_reason,
+            SegmentReceipt.steps_scored,
+        ).where(SegmentReceipt.device_id == device_id, SegmentReceipt.id.in_(segment_ids))
+    )
+    return {
+        row.id: Receipt(
+            device_id=device_id,
+            id=row.id,
+            user_id=row.user_id,
+            status=row.status,
+            reject_reason=row.reject_reason,
+            steps_scored=row.steps_scored,
+        )
+        for row in rows
+    }
+
+
+def insert_receipts(db: Session, receipts: Sequence[Receipt]) -> None:
+    """``insert_receipt`` for many answers in one statement (``ON CONFLICT DO NOTHING``)."""
+    if not receipts:
+        return
+    db.execute(
+        pg_insert(SegmentReceipt)
+        .values(
+            [
+                {
+                    "device_id": r.device_id,
+                    "id": r.id,
+                    "user_id": r.user_id,
+                    "status": r.status,
+                    "reject_reason": r.reject_reason,
+                    "steps_scored": r.steps_scored,
+                }
+                for r in receipts
+            ]
+        )
+        .on_conflict_do_nothing(index_elements=[SegmentReceipt.device_id, SegmentReceipt.id])
     )
 
 
@@ -151,6 +208,77 @@ def load_context(
     )
 
 
+def load_contexts(
+    db: Session, user_id: uuid.UUID, keys: Sequence[tuple[uuid.UUID, datetime]]
+) -> list[ItemContext]:
+    """``load_context`` for many ``(checkin_id, started_at)`` in one query, in the order given.
+
+    The same joins over an ``unnest`` of the keys, so each key gets its row exactly as before.
+    """
+    if not keys:
+        return []
+    k = (
+        func.unnest(
+            literal([c for c, _ in keys], ARRAY(UUID(as_uuid=True))),
+            literal([s for _, s in keys], ARRAY(TIMESTAMP(timezone=True))),
+        )
+        .table_valued("checkin_id", "started_at", with_ordinality="ord")
+        .render_derived()
+    )
+    rows = db.execute(
+        select(
+            Checkin.user_id,
+            Checkin.building_id,
+            Checkin.valid_during,
+            Season.id.label("season_id"),
+            TeamMembership.team_id,
+        )
+        .select_from(k)
+        .outerjoin(Checkin, Checkin.id == k.c.checkin_id)
+        .outerjoin(Season, Season.active_during.contains(k.c.started_at))
+        .outerjoin(
+            TeamMembership,
+            and_(TeamMembership.user_id == user_id, TeamMembership.season_id == Season.id),
+        )
+        .order_by(k.c.ord)
+    ).all()
+    if len(rows) != len(keys):  # at most one season and one membership match a key
+        raise RuntimeError("load_contexts: not one row per key")
+    return [
+        ItemContext(
+            checkin_user_id=row.user_id,
+            checkin_building_id=row.building_id,
+            checkin_valid_during=row.valid_during,
+            season_id=row.season_id,
+            team_id=row.team_id,
+        )
+        for row in rows
+    ]
+
+
+def verified_climbs(
+    db: Session, user_id: uuid.UUID, ranges: Sequence[tuple[datetime, datetime]]
+) -> list[VerifiedClimb]:
+    """The user's verified segments with ``started_at`` in any of the closed ``ranges``."""
+    if not ranges:
+        return []
+    rows = db.execute(
+        select(
+            ClimbSegment.started_at,
+            _stored_end.label("ends_at"),
+            ClimbSegment.steps_scored,
+            ClimbSegment.device_id,
+        ).where(
+            ClimbSegment.user_id == user_id,
+            ClimbSegment.status == STATUS_VERIFIED,
+            or_(*(ClimbSegment.started_at.between(lo, hi) for lo, hi in ranges)),
+        )
+    )
+    return [
+        VerifiedClimb(row.started_at, row.ends_at, row.steps_scored, row.device_id) for row in rows
+    ]
+
+
 def _verified_steps(db: Session, user_id: uuid.UUID, *range_: ColumnElement[bool]) -> int:
     total = db.scalar(
         select(func.coalesce(func.sum(ClimbSegment.steps_scored), 0)).where(
@@ -203,6 +331,22 @@ def segment_exists(db: Session, id: uuid.UUID, started_at: datetime) -> bool:
     )
 
 
+def stored_segments(
+    db: Session, keys: Collection[tuple[uuid.UUID, datetime]]
+) -> set[tuple[uuid.UUID, datetime]]:
+    """Which of ``keys`` (``(id, started_at)``) are stored, for any user and with any status."""
+    if not keys:
+        return set()
+    rows = db.execute(
+        select(ClimbSegment.id, ClimbSegment.started_at).where(
+            ClimbSegment.id.in_({i for i, _ in keys}),
+            ClimbSegment.started_at.in_({s for _, s in keys}),  # lets the planner prune partitions
+        )
+    )
+    found = {(row.id, row.started_at) for row in rows}
+    return {key for key in keys if key in found}
+
+
 def overlaps_verified(
     db: Session,
     user_id: uuid.UUID,
@@ -219,9 +363,6 @@ def overlaps_verified(
     Lowering that constant hides longer climbs already stored, until they leave the upload range.
     """
     end = started_at + timedelta(seconds=duration_s)
-    stored_end = ClimbSegment.started_at + ClimbSegment.duration_s * literal_column(
-        "interval '1 second'", Interval
-    )
     return bool(
         db.scalar(
             select(
@@ -230,7 +371,7 @@ def overlaps_verified(
                     ClimbSegment.status == STATUS_VERIFIED,
                     ClimbSegment.started_at > started_at - timedelta(seconds=DURATION_MAX_S),
                     ClimbSegment.started_at < end - OVERLAP_TOLERANCE,
-                    stored_end > started_at + OVERLAP_TOLERANCE,
+                    _stored_end > started_at + OVERLAP_TOLERANCE,
                     *([] if device_id is None else [ClimbSegment.device_id == device_id]),
                 )
             )
@@ -238,10 +379,11 @@ def overlaps_verified(
     )
 
 
-def insert_segment(db: Session, row: SegmentRow) -> bool:
-    """Insert one row; False if ``(id, started_at)`` already exists (nothing is changed then).
+def insert_segment(db: Session, row: SegmentRow) -> datetime | None:
+    """Insert one row and return its stored end (``started_at`` plus the ``real`` duration); None
+    if ``(id, started_at)`` already exists (nothing is changed then).
 
-    ``segment_exists`` catches a resend earlier, so this only happens when a concurrent upload
+    ``stored_segments`` catches a resend earlier, so this only happens when a concurrent upload
     stores the same segment first. ``received_at`` is left to the database default.
     """
     stmt = (
@@ -267,9 +409,9 @@ def insert_segment(db: Session, row: SegmentRow) -> bool:
             started_at=row.started_at,
         )
         .on_conflict_do_nothing(index_elements=[ClimbSegment.id, ClimbSegment.started_at])
-        .returning(ClimbSegment.id)
+        .returning(_stored_end)
     )
-    return db.execute(stmt).first() is not None
+    return db.execute(stmt).scalar()
 
 
 def add_fraud_flag(

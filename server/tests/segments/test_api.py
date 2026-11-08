@@ -372,7 +372,7 @@ def test_a_taken_id_overlapping_the_callers_own_climb_is_not_flagged(world: Worl
 @pytest.fixture
 def lost_race(monkeypatch: pytest.MonkeyPatch) -> None:
     """The check before the rules sees nothing, as when a concurrent upload has not committed."""
-    monkeypatch.setattr(repository, "segment_exists", lambda *_: False)
+    monkeypatch.setattr(repository, "stored_segments", lambda *_: set())
 
 
 @pytest.mark.usefixtures("lost_race")

@@ -217,8 +217,7 @@ def test_an_item_failing_the_pure_rules_runs_no_query_over_the_users_climbs(
     def fail(*_: Any, **__: Any) -> None:
         raise AssertionError("queried the user's climbs for an item already rejected")
 
-    monkeypatch.setattr(repository, "overlaps_verified", fail)
-    monkeypatch.setattr(repository, "verified_steps_around", fail)
+    monkeypatch.setattr(repository, "verified_climbs", fail)
     item = climb(steps=500)
     result = world.climber().ok(item)
     assert result["rejected"] == [{"id": item["id"], "reason": "pressure_steps_mismatch"}]

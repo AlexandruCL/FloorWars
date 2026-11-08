@@ -65,7 +65,7 @@ Rules 1 to 2 and 5 to 7 are pure (no database). Rules 3, 4, 8 and 9 need `ctx` (
 ## 5. Batch algorithm (`app/segments/service.py`, owned by B)
 
 1. Request level (before any database work): `Limiter` bucket `fw:rl:seg:user:{user_id}` 60 per hour (429 `Retry-After`, fail closed 503 if Valkey is down); batch of 1..100 items (422 otherwise); header `Idempotency-Key` required (non-empty, at most 255 characters). The key is logged (not secret) and otherwise informational: duplicates are decided per segment by `segment_receipt`. Stored-rejection cap: each rejected item that would be stored takes one token of the per-user hourly bucket `seg:rej` (`REJECTED_STORED_PER_HOUR`). Past the cap the item is answered with its real reason but no `segment_receipt`, `fraud_flag` or `climb_segment` row is written (a resend is judged again); a Valkey error mid-batch counts as capped; verified items never use the bucket; no 429, no new reason. `repository.purge_rejected(db, now)` (called by the Week 5 retention job, not scheduled yet) deletes rejected receipts and resolved flags older than 30 days and unresolved flags older than 365 days.
-2. One transaction: `repository.lock_user(db, user_id)` (`SELECT ... FROM "user" WHERE id = :id FOR UPDATE` under a 5 s `lock_timeout`, restored afterwards so later lock waits are not limited; a longer wait answers 503 with `Retry-After` and stores nothing), then `repository.device_belongs(db, user_id, batch.device_id)` (403 `device-unknown` and roll back if not), then items in ascending `(started_at, id)`:
+2. One transaction: `repository.lock_user(db, user_id)` (`SELECT ... FROM "user" WHERE id = :id FOR UPDATE` under a 5 s `lock_timeout`, restored afterwards so later lock waits are not limited; a longer wait answers 503 with `Retry-After` and stores nothing), then `repository.device_belongs(db, user_id, batch.device_id)` (403 `device-unknown` and roll back if not), then items in ascending `(started_at, id)` (the reads below are done once per batch since finding 9, section 5a; the answers are the same):
    - `receipt = repository.get_receipt(db, device_id, id)`; if present: answer from it (verified: accepted without `points`; rejected: rejected with the stored reason; a receipt of another user: rejected `no_checkin`). No other effect.
    - Otherwise, before the rules, `repository.segment_exists(db, id, started_at)` (any user, any status): a resend from a second device, or an id another user stored, is not a new climb. It is answered rejected `no_checkin` with a receipt, and no segment row, score or flag.
    - Otherwise check in this order, first failure wins: bounds (rules 1, 2), state (3, 4), physics (5 to 7), `overlap` (8), `rate_limit` (9). The queries for rules 8 and 9 run only for an item that passed rules 1 to 7. `repository.insert_receipt(...)` for every new item. For a verified item: `insert_segment`, remember `(season_id, building_id, team_id)` and its points as affected; for a rejected item with a stored row: `insert_segment` (status rejected); `add_fraud_flag` follows section 4 (every reason except `started_at_range`, `no_checkin`, `season_inactive`, `no_team`, and the honest cases of `overlap` and `rate_limit`) and is written even when the item has no `climb_segment` row (for example a range rule or `building_mismatch`). An insert that loses to a concurrent upload of the same `(id, started_at)` is answered rejected `no_checkin`, with no score and no flag.
@@ -74,11 +74,34 @@ Rules 1 to 2 and 5 to 7 are pure (no database). Rules 3, 4, 8 and 9 need `ctx` (
 4. Commit. **After** the commit, best effort (never fail the request): `leaderboards.record_verified(...)` per verified segment and `leaderboards.publish_flip(...)` per flip. A Valkey error is logged and ignored (leaderboards are rebuildable from the database).
 5. Response 200 `SegmentBatchResult {accepted:[{id, steps_scored, points?}], rejected:[{id, reason}], flips:[{building_id, from_team, to_team, at}]}` (team codes in `from_team`/`to_team`, as the contract says).
 
+### 5a. Batch cost (review finding 9; 2026-11-08)
+
+The user lock is held for the whole batch, so the batch must not cost one set of queries per item. Target for a 100-item batch: at most about 10 reads for the whole batch plus the writes (one `insert_segment` per stored row, one `add_fraud_flag` per flag), one multi-row receipt insert, and the claim step. Results stay identical (statuses, reasons, points, flips, flags, receipts, rows).
+
+Reads that may be done once per batch, after `lock_user` and `device_belongs`, and then kept in memory:
+
+- **Receipts** of the device for all item ids (`id = ANY`). The batch adds its own answers to the map as it goes (first answer wins, like `ON CONFLICT DO NOTHING`), so a repeated id in one batch is answered as before. The receipts are written once, in one multi-row insert after the item loop (`created_at` is the transaction time either way).
+- **Stored segments** `(id, started_at)` for the items without a receipt (any user). Rows the batch inserts need no entry: each comes with a receipt, which answers a repeat first.
+- **Contexts** of the items that pass rules 1 and 2: one query, the joins of `load_context` over an `unnest` of `(checkin_id, started_at)`, so each item gets the same check-in, season and team as before. Rules 3 to 7 then run for all items before the loop.
+- **The user's verified climbs** (`started_at`, stored end, `steps_scored`, `device_id`) in the time ranges the items can read: for each item that passes rules 1 to 7, from `min(started_at - 10 min, started_at - DURATION_MAX_S, its clock hour)` to `max(started_at + 10 min, its end, its clock hour + 1 h)` (the duration terms only guard a later change of the constants), merged into a few ranges; no query when no item passes rules 1 to 7. Every step count and overlap test of sections 4 and 5 is answered from this list with the same bounds as the SQL. An accepted item is appended with the end the database stored (`insert_segment` returns it), because `duration_s` is a `real`.
+
+Why this is safe: only the user's own batches write the user's verified rows, check-ins and receipts, and they are serialised by the user lock. Not under the user lock, so read once at the start instead of per item (races with no fixed order; the window is now the batch instead of one item):
+
+- Another user committing the same `(id, started_at)` during the batch. An item that stores a row still loses on the `ON CONFLICT` of `insert_segment` and is answered `no_checkin`. An item rejected by a receipt-only rule that is flagged (`steps_range`, `ascent_range`, `duration`, `stair_prob_range`, `building_mismatch`), or past the rejection cap, keeps its real reason and gets its flag where the per-item check might have answered `no_checkin`. No points are lost or doubled. Accepted (Ionut, 2026-11-08, finding 9).
+- A team join during the batch: the batch sees the team state of its start; before, items after the join could see the new team.
+
 ## 6. Repository interface (owned by A, `app/segments/repository.py`; sync SQLAlchemy `Session`)
 
 ```python
 lock_user(db, user_id) -> bool                       # False if the user row is gone (then 401)
 device_belongs(db, user_id, device_id) -> bool       # False -> 403 device-unknown
+# Used by the batch since finding 9 (one query each, section 5a):
+get_receipts(db, device_id, segment_ids) -> dict[UUID, Receipt]
+insert_receipts(db, receipts: Sequence[Receipt]) -> None   # one multi-row insert, ON CONFLICT DO NOTHING
+stored_segments(db, keys: {(id, started_at)}) -> set     # the stored keys, any user, any status
+load_contexts(db, user_id, [(checkin_id, started_at)]) -> list[ItemContext]   # in the order given
+verified_climbs(db, user_id, ranges) -> list[VerifiedClimb]   # started_at in any closed range; with the stored end
+# Per-item forms, kept for tests and the reference path in tests/segments/test_batch_equivalence.py:
 get_receipt(db, device_id, segment_id) -> Receipt | None
 insert_receipt(db, device_id, segment_id, user_id, status, reject_reason, steps_scored) -> None
 load_context(db, user_id, checkin_id, started_at) -> ItemContext   # checkin (building, valid_during, owner),
@@ -88,7 +111,7 @@ verified_steps_before(db, user_id, at, window) -> int   # started_at in (at - wi
 verified_steps_in_hour(db, user_id, at) -> int          # started_at in the UTC clock hour of at
 overlaps_verified(db, user_id, started_at, duration_s, *, device_id=None) -> bool
 segment_exists(db, id, started_at) -> bool           # any user, any status
-insert_segment(db, row: SegmentRow) -> None
+insert_segment(db, row: SegmentRow) -> datetime | None   # the stored end; None if (id, started_at) exists
 add_fraud_flag(db, segment_id, started_at, user_id, rule) -> None
 add_score(db, season_id, building_id, team_id, points, steps) -> None
 # app/segments/claim.py
@@ -97,7 +120,7 @@ recompute_owner(db, season_id, building_id, now) -> Flip | None   # ensures the 
 rolling_points(db, season_id, building_id, now) -> list[TeamPoints]   # same query, used by standings
 ```
 
-`Receipt`, `ItemContext`, `SegmentRow`, `Flip`, `TeamPoints` are frozen dataclasses in `app/segments/models.py` (A writes them in its first commit). `Flip` has `building_id`, `season_id`, `from_team_id`, `to_team_id`, `from_code`, `to_code`, `at`, `event_id`.
+`Receipt`, `ItemContext`, `VerifiedClimb`, `SegmentRow`, `Flip`, `TeamPoints` are frozen dataclasses in `app/segments/models.py` (A writes them in its first commit). `Flip` has `building_id`, `season_id`, `from_team_id`, `to_team_id`, `from_code`, `to_code`, `at`, `event_id`.
 
 ## 7. Valkey (owned by C, `app/leaderboards.py`)
 
