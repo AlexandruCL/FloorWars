@@ -1,6 +1,24 @@
-import { Button, StyleSheet, Text, View } from 'react-native';
+import { Alert, Button, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { endSession } from '../auth/session';
+import { FloorSensors } from '../native/floorSensors';
 import type { MainStackParamList } from '../navigation/types';
+
+async function confirmSignOut() {
+  const n = await FloorSensors.getPendingCount().catch(() => 0);
+  Alert.alert(
+    'Sign out?',
+    n > 0
+      ? `${n} ${
+          n === 1 ? 'segment is' : 'segments are'
+        } not uploaded yet and will be deleted.`
+      : 'You will need to sign in again.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => endSession() },
+    ],
+  );
+}
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -21,6 +39,7 @@ export function HomeScreen({
         title="Sensor logger"
         onPress={() => navigation.navigate('SensorLogger')}
       />
+      <Button title="Sign out" onPress={confirmSignOut} />
     </>
   );
 }
