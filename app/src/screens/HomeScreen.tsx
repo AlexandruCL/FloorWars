@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { revokeRefreshToken } from '../auth/logout';
 import { endSession } from '../auth/session';
 import { FloorSensors } from '../native/floorSensors';
 import type {
@@ -51,7 +52,14 @@ async function confirmSignOut() {
       : 'You will need to sign in again.',
     [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: () => endSession() },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          await revokeRefreshToken();
+          await endSession();
+        },
+      },
     ],
   );
 }
