@@ -12,9 +12,10 @@ Commands are for PowerShell on Windows, run from the repository root unless a st
 | `feat/w3-engine` | live segmenter, check-in attribution, gap counter | `8b13451` | pushed, PR not opened, includes the outbox commits until that PR merges |
 | `feat/w3-sync` | sync worker, WorkManager job, status screen | `da3f845` | pushed, PR not opened, includes the outbox commits |
 | `feat/w3-signout` | sign out | `956f9d0` | pushed, PR not opened, conflicts with the sync PR on Home (see step 1) |
+| `feat/w3-logout-call` | Sign out calls Ionut's `POST /v1/auth/logout` | see `git log` | pushed, PR not opened, stacked on `feat/w3-signout` |
 | `docs/w3-finish` | this file, the summary, the tester guide, README and plan updates | n/a | pushed with the PR for it |
 
-All four branches are green on Android tests, ktlint, lint, typecheck, Jest and the generated-client check, against the contract on `main` (0.6.2-draft). They have only been tested against the Prism mock and an emulator, never the real server.
+All four branches are green on Android tests, ktlint, lint, typecheck, Jest and the generated-client check, against the contract on `main` (now 0.7.0-draft, with `/auth/logout`). They have only been tested against the Prism mock and an emulator, never the real server.
 
 ## Step 1. Open and merge the pull requests, in this order
 
@@ -28,23 +29,24 @@ Open each PR on GitHub with the compare link, base `main`, and paste the body fr
   - in `app/src/screens/HomeScreen.tsx` add the imports `Alert` (from `react-native`) and `endSession` (from `../auth/session`), the `confirmSignOut` function from the old `PlaceholderScreens.tsx`, and `<Button title="Sign out" onPress={confirmSignOut} secondary />` as the last child of `<Screen>`;
   - in `app/__tests__/signout.test.tsx` wait for `Status` instead of `Home`, and use `mockResolvedValue` (not `Once`) for `getPendingCount`, because Home reads it too.
   - The resolved version is on a local throwaway branch (`tmp/w3-integ`) if you want to compare; the Jest run on it had 121 tests green.
+- [ ] `feat/w3-logout-call`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-logout-call, **after the signout PR** (it is stacked on it). Body: `05_logout.md`. When the sync PR has merged first, this PR conflicts in the same `confirmSignOut` place as the signout PR: keep the `async onPress` that awaits `revokeRefreshToken()` and then `endSession()`.
 - [ ] CI is green on each: `android unit tests and trace replay` and `lint, typecheck, test, API client`. If the Android test task fails with a dead test worker and no failing test (it happened once locally), re-run it once and look at the worker log before changing code.
 - [ ] After each merge, bring your main up to date: `git switch main; git pull`.
 
-## Step 2. Ask Ionut for these
+## Step 2. What is left on Ionut's side
 
-Send him the list below. The state of each was checked against his pushes on 2026-11-08.
+The state of each was checked against his merges on 2026-11-08 and his message the same day.
 
 | # | Item | State | App default until it is done |
 |---|---|---|---|
-| 1 | The server is up and deployed: `healthz` answers, and `POST /v1/segments` and `GET /v1/buildings` exist | `curl.exe https://api.floorwars.me/healthz` timed out on 2026-11-08 (no answer, not a 404). His runbook note says a timeout usually means a deallocated VM. The README still says "not yet deployed". | Build and test against the Prism mock |
-| 2 | Steps per metre upper bound 10 (instead of 8) | **Merged** to `main` (#59, contract 0.6.2-draft). Waits for the deploy. | A pocket climb rejected as `pressure_steps_mismatch` means the fix is not deployed, not that the app is wrong |
+| 1 | The server is up and deployed: `healthz` answers, and `POST /v1/segments` and `GET /v1/buildings` exist | `curl.exe https://api.floorwars.me/healthz` timed out on 2026-11-08 (no answer, not a 404). Ionut says it is a VM problem on his side and he will check it (runbook section 8, merged in #60). The README still says "not yet deployed". | Build and test against the Prism mock |
+| 2 | Steps per metre upper bound 10 (instead of 8) | **Merged** to `main` (#59, contract 0.6.2-draft); Ionut confirms pocket climbs of 6.7 to 8.7 now pass. Waits for the deploy. | A pocket climb rejected as `pressure_steps_mismatch` means the fix is not deployed, not that the app is wrong |
 | 3 | `overlap` rejection reason | **Solved**: in the contract since 0.6.0-draft | The app stores any reason string |
-| 4 | Revoke on sign-out | `POST /v1/auth/logout` is on his branch `feat/w3-auth-logout` (contract 0.7.0-draft), not merged | Local sign-out only; after it merges, regenerate the client and call it best-effort from `endSession()` in a new branch and PR |
+| 4 | Revoke on sign-out | **Solved on the server**: `POST /v1/auth/logout` with `{refresh_token}`, 204 for any token, is on `main` (#61, contract 0.7.0-draft). The app calls it from the Sign out handler, not from `endSession()`, as he asked: branch `feat/w3-logout-call` | Merge that PR; until then sign-out is local only |
 | 5 | Printed entrance codes for both buildings | **Open.** The generator is `tools/qr/make_entrance_qr.py`; codes must be valid on the test day (`--days` at most 31). Ask for an expired code and a code of another building too. | W3-8 rows wait |
 | 6 | A gap-metric endpoint before the pilot | **Open**, not urgent | The metric stays on the phone |
 
-- [ ] Message sent to Ionut.
+- [x] Message sent to Ionut (he answered on 2026-11-08: logout merged, steps bound 10, `overlap` already in 0.6.0, healthz is his to fix).
 - [ ] `healthz` answers: `curl.exe -i https://api.floorwars.me/healthz`
 - [ ] `POST /v1/segments` exists on the server. A request without a token must answer 401, not 404: `curl.exe -i -X POST https://api.floorwars.me/v1/segments`
 - [ ] The running release is the Week 3 one. Ionut can tell you (`cat /srv/floorwars/current` on the VM).
@@ -129,7 +131,7 @@ Write down anything that surprised you (field names, time zones, auth edges, rou
 
 1. Put the step 4, 5 and 6 results into `docs/devices.md` and a short note under `cristea/week_3/` (or the sync PR description).
 2. Anything that failed: tell Ionut with the time it happened (the server logs are by time).
-3. When Ionut's `feat/w3-auth-logout` has merged, open a new branch and PR: regenerate the client (`npm run generate:api` in `app/`), call logout best-effort in `endSession()`.
+3. After the logout PR merges, check on a phone that signing out and back in works: the old refresh token is rejected by the server after sign-out (a 401 on `POST /v1/auth/refresh` with it).
 4. Update the README status row "App, week 3" from "Code done" to done, with the date. Update the PR descriptions that said "tested against the Prism mock only".
 
 ## If something goes wrong
