@@ -51,6 +51,7 @@ class FloorSensorsService :
 
     // Main thread only. The latest check-in; null when not detecting.
     private var checkin: ActiveCheckin? = null
+    private var registeredLatencyUs: Int? = null
 
     // Set on the main thread when detection starts. Segment times and the history share one clock:
     // elapsedRealtime plus this offset, so a wall-clock change cannot move a climb across a swap.
@@ -183,20 +184,33 @@ class FloorSensorsService :
 
     // Called on every mode change: sensors and the wake lock run while either mode is on.
     private fun updateSensorsAndWakeLock() {
-        sensorManager.unregisterListener(this)
         val active = checkin
         if (label == null && active == null) {
+            sensorManager.unregisterListener(this)
+            registeredLatencyUs = null
             wakeLock?.takeIf { it.isHeld }?.release()
             return
         }
         // Batching saves battery while detecting; the logger keeps it off so a stop loses no events.
         val latencyUs = if (label != null) 0 else MAX_REPORT_LATENCY_US
-        val registered = SENSOR_TYPES.mapNotNull { type ->
-            sensorManager.getDefaultSensor(type)?.also {
-                sensorManager.registerListener(this, it, SAMPLING_PERIOD, latencyUs, sensorHandler)
+        // Unregistering can drop the events still batched in the sensor hub, so a check-in swap
+        // mid-climb keeps the registration as it is.
+        if (latencyUs != registeredLatencyUs) {
+            sensorManager.unregisterListener(this)
+            val registered = SENSOR_TYPES.mapNotNull { type ->
+                sensorManager.getDefaultSensor(type)?.also {
+                    sensorManager.registerListener(
+                        this,
+                        it,
+                        SAMPLING_PERIOD,
+                        latencyUs,
+                        sensorHandler
+                    )
+                }
             }
+            registeredLatencyUs = latencyUs
+            Log.i(TAG, "sensors=${registered.map { it.name }} latencyUs=$latencyUs")
         }
-        Log.i(TAG, "sensors=${registered.map { it.name }} latencyUs=$latencyUs")
 
         // Non-wakeup sensors stop delivering when the CPU sleeps, so a partial wake lock keeps it
         // awake with the screen off. While only detecting, it times out when detection ends
