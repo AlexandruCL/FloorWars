@@ -12,7 +12,7 @@ Week 3 in the plan: *walk up real stairs with the phone in a pocket; the segment
 | W3-3 attribution to the active check-in | Done | `feat/w3-engine` |
 | W3-4 sync worker, WorkManager job, timeouts | Done, tested against a fake and a proxy, not the real server | `feat/w3-sync` |
 | W3-5 status screen | Done, clicked through on the emulator | `feat/w3-sync` |
-| W3-6 sign out | Done, clicked through on the emulator | `feat/w3-signout` |
+| W3-6 sign out | Done, clicked through on the emulator; the server revoke call is on its own branch | `feat/w3-signout`, `feat/w3-logout-call` |
 | W3-7 gap metric | Counter done; phone checks are Cristea's | `feat/w3-engine` |
 | W3-8 QR phone tests | Not run, needs printed codes | `finish_week_3.md` |
 | W3-9 integration | Merge proven on a throwaway branch; Wednesday check and exit climb pending | `finish_week_3.md` |
@@ -54,7 +54,7 @@ Made during the work by the agents and the coordinating session. Cristea has not
 - **Prism is not enough for the whole path.** Its `/checkins` answers a `valid_until` in the past (the native side correctly ignores an expired check-in, so detection never starts), the "Skip sign-in (dev)" token is rejected with 401, and `POST /segments` returns random ids, so a real drain never matches. A small proxy fixed the first and the last for the emulator pass.
 - **The emulator has no step detector**, so it cannot produce a verified climb. The emulator proves the plumbing, not the detection.
 - **One unexplained Gradle failure** on the signout branch: the test task failed with 35 of 39 tests reported and none failing. Six clean re-runs passed. The test JVM probably died on this machine; if it shows up in CI, look at the worker log first.
-- **Ionut's server moved while this week ran:** contract 0.6.0 to 0.6.2 and a 0.7.0 branch. The generated client was rebased twice and the worker already handles the new 503 with `Retry-After`.
+- **Ionut's server moved while this week ran:** contract 0.6.0 to 0.7.0 (the steps bound 10 and `POST /auth/logout`, both merged). The branches were rebased twice and the worker already handles the new 503 with `Retry-After`.
 
 ## Not done, and why
 
@@ -62,7 +62,7 @@ Made during the work by the agents and the coordinating session. Cristea has not
 - **The service is `START_NOT_STICKY`:** after a process kill, detection resumes when the app is opened again. If the phone checks show the service dying, try `START_STICKY` with a restart from the stored check-in, and handle the background-start restriction on Android 12 and later.
 - **WorkManager job:** starts a plain service from the background, which Android may refuse on some versions. Not run on a phone.
 - **A late permission grant:** if the user denies at check-in and grants later in Android Settings, detection waits for the next check-in or app start.
-- **Revoke on sign-out:** Ionut's `POST /auth/logout` is on a branch. When it merges the app should call it best-effort in `endSession()`.
+- **Revoke on sign-out:** the app call is written (`feat/w3-logout-call`, in the Sign out handler, not in `endSession()`, with a 5 s limit and every error swallowed). Not yet run against the real server.
 - **Kill-survival of the outbox** was tested with a clean close and reopen, and with a force-stop on the emulator; a kill during a write is not tested.
 - **`attempts`** in the outbox is never incremented.
 - **The Wednesday check and the exit climb** wait for the deployed server and a real phone.
