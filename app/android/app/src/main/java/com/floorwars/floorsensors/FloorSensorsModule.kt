@@ -12,6 +12,7 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableArray
+import com.floorwars.floorsensors.outbox.RoomSegmentOutbox
 import java.io.File
 import java.io.IOException
 
@@ -115,17 +116,19 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
 
     override fun getActiveCheckin(promise: Promise) = notImplemented(promise) // w3-engine
 
-    override fun getPending(limit: Double, promise: Promise) = notImplemented(promise) // w3-outbox
+    override fun getPending(limit: Double, promise: Promise) = withOutbox(promise) {
+        Arguments.makeNativeArray(it.pending(limit.toInt()))
+    }
 
     override fun markSynced(ids: ReadableArray, promise: Promise) =
-        notImplemented(promise) // w3-outbox
+        withOutbox(promise) { it.markSynced(ids.strings()) }
 
     override fun markRejected(ids: ReadableArray, reason: String, promise: Promise) =
-        notImplemented(promise) // w3-outbox
+        withOutbox(promise) { it.markRejected(ids.strings(), reason) }
 
-    override fun getPendingCount(promise: Promise) = notImplemented(promise) // w3-outbox
+    override fun getPendingCount(promise: Promise) = withOutbox(promise) { it.pendingCount() }
 
-    override fun clearPending(promise: Promise) = notImplemented(promise) // w3-outbox
+    override fun clearPending(promise: Promise) = withOutbox(promise) { it.clearPending() }
 
     override fun isIgnoringBatteryOptimizations(promise: Promise) =
         notImplemented(promise) // w3-sync
@@ -134,6 +137,18 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
 
     private fun notImplemented(promise: Promise) =
         promise.reject("E_NOT_IMPLEMENTED", "Not implemented yet")
+
+    private fun withOutbox(promise: Promise, call: (RoomSegmentOutbox) -> Any?) {
+        try {
+            val result = call(RoomSegmentOutbox.get(reactApplicationContext))
+            promise.resolve(if (result == Unit) null else result)
+        } catch (e: RuntimeException) {
+            promise.reject("E_OUTBOX", e)
+        }
+    }
+
+    // Ids come from JS; anything that is not a string cannot match a row.
+    private fun ReadableArray.strings() = toArrayList().filterIsInstance<String>()
 
     override fun invalidate() {
         if (FloorSensorsService.statusListener === statusListener) {

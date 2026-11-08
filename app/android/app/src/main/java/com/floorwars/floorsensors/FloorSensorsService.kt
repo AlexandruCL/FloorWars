@@ -18,6 +18,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import com.floorwars.R
+import com.floorwars.floorsensors.outbox.RoomSegmentOutbox
 
 class FloorSensorsService :
     Service(),
@@ -29,6 +30,14 @@ class FloorSensorsService :
     override fun onCreate() {
         super.onCreate()
         sensorManager = getSystemService(SensorManager::class.java)
+        // Off the main thread: a retention sweep can touch thousands of rows.
+        Thread {
+            try {
+                RoomSegmentOutbox.get(this).pruneOld()
+            } catch (e: RuntimeException) {
+                Log.w(TAG, "outbox retention failed", e)
+            }
+        }.start()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
