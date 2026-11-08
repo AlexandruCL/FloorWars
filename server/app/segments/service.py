@@ -127,6 +127,22 @@ def enforce_upload_limit(limiter: RateLimiter | None, user_id: uuid.UUID) -> Non
         raise too_many_requests("Too many uploads.", decision.retry_after_s)
 
 
+def _may_store_rejection(limiter: RateLimiter | None, user_id: uuid.UUID) -> bool:
+    """One token from the user's rejection bucket. False means: answer the rejection but write
+    nothing. Also false when Valkey fails (fail closed on storage; a 503 would drop the verified
+    items of the same batch). ``None`` (direct callers; the route always passes one) is uncapped."""
+    if limiter is None:
+        return True
+    try:
+        decision = limiter.hit("seg:rej", str(user_id), rules.REJECTED_STORED_PER_HOUR, HOUR_S)
+    except ValkeyError:
+        logger.error("rejection limiter unavailable")
+        return False
+    if not decision.allowed:
+        logger.warning("rejection cap reached", extra={"limit": "seg:rej"})
+    return decision.allowed
+
+
 def _from_receipt(receipt: Receipt, user_id: uuid.UUID, result: SegmentBatchResult) -> None:
     """Answer a repeat from its stored outcome. A receipt of another user is not shown."""
     if receipt.user_id != user_id:
@@ -179,8 +195,12 @@ def _id_taken(
     device_id: uuid.UUID,
     user_id: uuid.UUID,
     result: SegmentBatchResult,
+    store: bool = True,
 ) -> None:
-    repository.insert_receipt(db, device_id, item.id, user_id, STATUS_REJECTED, ID_TAKEN_REASON, 0)
+    if store:
+        repository.insert_receipt(
+            db, device_id, item.id, user_id, STATUS_REJECTED, ID_TAKEN_REASON, 0
+        )
     result.rejected.append(RejectedSegment(id=item.id, reason=ID_TAKEN_REASON))
 
 
@@ -234,7 +254,11 @@ def _reject(
     reason: rules.RejectReason,
     ctx: ItemContext | None,
     result: SegmentBatchResult,
+    limiter: RateLimiter | None,
 ) -> None:
+    if not _may_store_rejection(limiter, user_id):
+        result.rejected.append(RejectedSegment(id=item.id, reason=reason))
+        return
     if ctx is not None and reason not in rules.RECEIPT_ONLY:
         row = _row(item, device_id, user_id, ctx, reason, 0)
         if not repository.insert_segment(db, row):  # a concurrent upload stored this id first
@@ -308,8 +332,10 @@ def upload_batch(
     batch: SegmentBatch,
     board: Leaderboards | None = None,
     now: datetime | None = None,
+    limiter: RateLimiter | None = None,
 ) -> SegmentBatchResult:
-    """Process one batch in one transaction and answer per item."""
+    """Process one batch in one transaction and answer per item. ``limiter`` caps how many
+    rejections are stored per user and hour; verified items never touch it."""
     now = now or datetime.now(UTC)
     if not repository.lock_user(db, user_id):
         raise unauthorized("Invalid or expired access token.")
@@ -327,11 +353,12 @@ def upload_batch(
         # Before the rules: a resend of a stored segment is not a new climb, so it must not be
         # judged, flagged or counted against itself.
         if repository.segment_exists(db, item.id, item.started_at):
-            _id_taken(db, item, batch.device_id, user_id, result)
+            store = _may_store_rejection(limiter, user_id)
+            _id_taken(db, item, batch.device_id, user_id, result, store)
             continue
         reason, ctx = _check(db, item, user_id, now)
         if reason is not None:
-            _reject(db, item, batch.device_id, user_id, reason, ctx, result)
+            _reject(db, item, batch.device_id, user_id, reason, ctx, result, limiter)
             continue
         if ctx is None:
             raise RuntimeError("verified segment without a context")

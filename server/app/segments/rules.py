@@ -38,6 +38,9 @@ RATE_WINDOW: Final = timedelta(minutes=10)
 # Climbs that only touch at an end do not overlap: a stored ``real`` duration is rounded.
 OVERLAP_TOLERANCE: Final = timedelta(milliseconds=1)
 UPLOADS_PER_HOUR: Final = 60
+# Rejected items per user and hour that are stored (receipt, flag, row). Beyond it the answer is the
+# same but nothing is written, so a user cannot grow the tables without a verified climb.
+REJECTED_STORED_PER_HOUR: Final = 200
 FULL_POINT_STEPS_PER_HOUR: Final = 300
 REDUCED_POINT_PER_STEP: Final = 0.5
 OWNERSHIP_WINDOW: Final = timedelta(days=7)

@@ -62,9 +62,10 @@ def upload_segments(
     user: CurrentUser,
     db: DbSession,
     board: Annotated[service.Leaderboards, Depends(_leaderboards)],
+    limiter: Limiter,
 ) -> SegmentBatchResult:
     """Upload a batch of climb segments. Each item is judged on its own; a repeat is success."""
-    result = service.upload_batch(db, user.id, batch, board)
+    result = service.upload_batch(db, user.id, batch, board, limiter=limiter)
     logger.info(
         "segment batch",
         extra={
