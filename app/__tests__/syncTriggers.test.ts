@@ -36,7 +36,7 @@ test('stopping the triggers (a sign-out) clears a stuck sync state', async () =>
   );
   const stop = startSyncTriggers();
   await jest.requireActual('react').act(async () => {});
-  await new Promise(resolve => setImmediate(resolve));
+  await new Promise<void>(resolve => setImmediate(() => resolve()));
   expect(getSyncState().stuck).not.toBeNull();
   stop();
   expect(getSyncState().stuck).toBeNull();
