@@ -70,6 +70,7 @@ cd android
 - [ ] `app-release.apk` built
 - [ ] Installed on the SM-S918B
 - [ ] Installed on the SM-G985F
+- [ ] Sent to testers with `cristea/week_3/tester_guide.md` and the test window (needs the printed codes from step 2)
 
 ## Step 4. W3-7: service survival and the gap metric (both phones)
 
