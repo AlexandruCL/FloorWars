@@ -176,10 +176,17 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
             Log.w(TAG, "ACTIVITY_RECOGNITION not granted, not detecting")
             return
         }
-        ContextCompat.startForegroundService(
-            reactApplicationContext,
-            serviceIntent().setAction(FloorSensorsService.ACTION_DETECT)
-        )
+        try {
+            ContextCompat.startForegroundService(
+                reactApplicationContext,
+                serviceIntent().setAction(FloorSensorsService.ACTION_DETECT)
+            )
+        } catch (e: IllegalStateException) {
+            // The WorkManager sync job loads this module in a background process, where Android 12
+            // and later refuse a foreground service start (ForegroundServiceStartNotAllowedException).
+            // Detection resumes the next time the app opens in the foreground.
+            Log.w(TAG, "detect: foreground start refused in the background", e)
+        }
     }
 
     // startService, not startForegroundService: these paths may not call startForeground.
