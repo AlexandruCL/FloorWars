@@ -314,7 +314,7 @@ PDF-defined: `POST /v1/segments`, `GET /v1/buildings/{id}/standings` (was `/floo
 | `GET /v1/me/events` | Game events for the player's team after a given id | Notification fallback and WebSocket replay (7.2.1); ordered by id, paged |
 | `POST /v1/landing-scans` | Barometer-less fallback scan on a stair landing | Strict rate limit |
 | `GET /v1/config` | Classifier thresholds (versioned) | Revert in seconds without a deploy |
-| `GET /v1/me/export`, `DELETE /v1/me` | GDPR export and delete | Delete cascades |
+| `GET /v1/me/export`, `DELETE /v1/me` | GDPR export and delete | Delete cascades; it must also delete the leaderboard markers `fw:lb:s{season}:built`, or the user stays on the boards for up to 1 h |
 | `WS /v1/ws` | Live events | Authenticated on connect |
 
 WebSocket events (ours): `building_flipped {building_id, from_team, to_team, at}`, `season_state {paused, ends_at}`.
