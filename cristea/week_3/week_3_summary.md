@@ -6,18 +6,18 @@ Week 3 in the plan: *walk up real stairs with the phone in a pocket; the segment
 
 | Item | State | Where |
 |---|---|---|
-| W3-0 seam and preflight | Done | `feat/w3-outbox` |
-| W3-1 live segmenter in the service | Done, tested on traces, not on a phone | `feat/w3-engine` |
-| W3-2 native outbox (Room) | Done | `feat/w3-outbox` |
-| W3-3 attribution to the active check-in | Done | `feat/w3-engine` |
-| W3-4 sync worker, WorkManager job, timeouts | Done, tested against a fake and a proxy, not the real server | `feat/w3-sync` |
-| W3-5 status screen | Done, clicked through on the emulator | `feat/w3-sync` |
-| W3-6 sign out | Done, clicked through on the emulator; the server revoke call is on its own branch | `feat/w3-signout`, `feat/w3-logout-call` |
-| W3-7 gap metric | Counter done; phone checks are Cristea's | `feat/w3-engine` |
+| W3-0 seam and preflight | Done | `feat/w3-outbox-v2` |
+| W3-1 live segmenter in the service | Done, tested on traces, not on a phone | `feat/w3-engine-v2` |
+| W3-2 native outbox (Room) | Done | `feat/w3-outbox-v2` |
+| W3-3 attribution to the active check-in | Done | `feat/w3-engine-v2` |
+| W3-4 sync worker, WorkManager job, timeouts | Done, tested against a fake and a proxy, not the real server | `feat/w3-sync-v2` |
+| W3-5 status screen | Done, clicked through on the emulator | `feat/w3-sync-v2` |
+| W3-6 sign out | Done, clicked through on the emulator; the server revoke call is on its own branch | `feat/w3-signout-v2`, `feat/w3-logout-call-v2` |
+| W3-7 gap metric | Counter done; phone checks are Cristea's | `feat/w3-engine-v2` |
 | W3-8 QR phone tests | Not run, needs printed codes | `finish_week_3.md` |
 | W3-9 integration | Merge proven on a throwaway branch; Wednesday check and exit climb pending | `finish_week_3.md` |
 
-Branch heads when the PRs were pushed: outbox `932ee79`, engine `8b13451`, sync `da3f845`, signout `956f9d0`. The PRs must merge in that order.
+Branch heads when the PRs were pushed (the `-v2` branches, split into small commits): outbox `80a9c35`, engine `4dc2233`, sync `25b7811`, signout `d66b87d`, logout call `bc26712`. The PRs must merge in that order.
 
 ## What was verified, and how
 
@@ -62,7 +62,7 @@ Made during the work by the agents and the coordinating session. Cristea has not
 - **The service is `START_NOT_STICKY`:** after a process kill, detection resumes when the app is opened again. If the phone checks show the service dying, try `START_STICKY` with a restart from the stored check-in, and handle the background-start restriction on Android 12 and later.
 - **WorkManager job:** starts a plain service from the background, which Android may refuse on some versions. Not run on a phone.
 - **A late permission grant:** if the user denies at check-in and grants later in Android Settings, detection waits for the next check-in or app start.
-- **Revoke on sign-out:** the app call is written (`feat/w3-logout-call`, in the Sign out handler, not in `endSession()`, with a 5 s limit and every error swallowed). Not yet run against the real server.
+- **Revoke on sign-out:** the app call is written (`feat/w3-logout-call-v2`, in the Sign out handler, not in `endSession()`, with a 5 s limit and every error swallowed). Not yet run against the real server.
 - **Kill-survival of the outbox** was tested with a clean close and reopen, and with a force-stop on the emulator; a kill during a write is not tested.
 - **`attempts`** in the outbox is never incremented.
 - **The Wednesday check and the exit climb** wait for the deployed server and a real phone.
