@@ -7,6 +7,7 @@ Keys (score = season points, always an integer):
 - ``fw:lb:s{season}:b{building}:teams``: member = team id
 - ``fw:lb:s{season}:built``: set by ``rebuild`` (expires after ``BUILT_TTL_S``). Missing means
   "needs rebuild": reads rebuild first, uploads skip the season.
+- ``fw:lb:s{season}:lock``: held by a running rebuild (``SET NX``, random token).
 
 Events are published on the channel ``fw:events`` as JSON.
 
@@ -17,6 +18,7 @@ caused by a failed incremental update is repaired by running it again.
 """
 
 import json
+import secrets
 from contextlib import suppress
 from datetime import datetime
 from typing import Any, Protocol
@@ -30,6 +32,9 @@ EVENTS_CHANNEL = "fw:events"
 # Expiry of the built marker: an hourly rebuild bounds the drift of an update that failed while
 # Valkey was unreachable (the marker could not be deleted then).
 BUILT_TTL_S = 3600
+# Rebuild lock expiry: far above a rebuild's duration, short enough that a crashed rebuild only
+# sends reads to the database for a while.
+LOCK_TTL_MS = 30_000
 
 
 class Commands(Protocol):
@@ -73,18 +78,42 @@ def is_built(vk: Commands, season_id: int) -> bool:
     return int(vk.execute("EXISTS", built_key(season_id))) == 1
 
 
+def lock_key(season_id: int) -> str:
+    return f"fw:lb:s{season_id}:lock"
+
+
 def mark_stale(vk: Commands, season_id: int) -> None:
     """The next read rebuilds the season."""
     vk.execute("DEL", built_key(season_id))
 
 
-# KEYS: built, users, teams, building. ARGV: points, user, team. Atomic: all three or none.
+# KEYS: lock, built, users, teams, building. ARGV: points, user, team. Atomic: all three or none.
+# During a rebuild the update is skipped and the lock marked dirty: whether the rebuild's snapshot
+# holds this segment is unknown, so the rebuild must not set the marker (the next read rebuilds).
 _RECORD = """
-if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
-redis.call('ZINCRBY', KEYS[2], ARGV[1], ARGV[2])
-redis.call('ZINCRBY', KEYS[3], ARGV[1], ARGV[3])
+if redis.call('EXISTS', KEYS[1]) == 1 then
+  redis.call('APPEND', KEYS[1], ':dirty')
+  return 0
+end
+if redis.call('EXISTS', KEYS[2]) == 0 then return 0 end
+redis.call('ZINCRBY', KEYS[3], ARGV[1], ARGV[2])
 redis.call('ZINCRBY', KEYS[4], ARGV[1], ARGV[3])
+redis.call('ZINCRBY', KEYS[5], ARGV[1], ARGV[3])
 return 1
+"""
+
+# KEYS: lock, built. ARGV: token, marker expiry (0: the rebuild failed). Releases the lock only if
+# this rebuild still owns it; sets the marker only if no upload overlapped (lock not dirty).
+_FINISH = """
+local v = redis.call('GET', KEYS[1])
+if not v or string.sub(v, 1, #ARGV[1]) ~= ARGV[1] then return 0 end
+redis.call('DEL', KEYS[1])
+if v == ARGV[1] and ARGV[2] ~= '0' then
+  redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])
+  return 1
+end
+redis.call('DEL', KEYS[2])
+return 0
 """
 
 
@@ -98,13 +127,13 @@ def record_verified(
     """
     if points <= 0:
         return False
-    keys = (built_key(season_id), users_key(season_id), teams_key(season_id))
+    keys = (lock_key(season_id), built_key(season_id), users_key(season_id), teams_key(season_id))
     try:
         return bool(
             vk.execute(
                 "EVAL",
                 _RECORD,
-                4,
+                5,
                 *keys,
                 building_key(season_id, building_id),
                 points,
@@ -191,7 +220,24 @@ def _replace(vk: Commands, key: str, scores: dict[str, int]) -> None:
 
 def rebuild(db: Session, vk: Commands, season_id: int) -> bool:
     """Recompute the three board families of a season from verified segments (season totals),
-    then set the built marker. True when the season is marked built."""
+    then set the built marker. True when the season is marked built; False when another rebuild
+    holds the lock or an upload overlapped this one (the marker stays missing)."""
+    token = secrets.token_hex(16)
+    if not vk.execute("SET", lock_key(season_id), token, "NX", "PX", LOCK_TTL_MS):
+        return False
+    ok = False
+    try:
+        _rebuild_keys(db, vk, season_id)
+        ok = True
+    finally:
+        expiry = BUILT_TTL_S if ok else 0
+        built = vk.execute(
+            "EVAL", _FINISH, 2, lock_key(season_id), built_key(season_id), token, expiry
+        )
+    return bool(built)
+
+
+def _rebuild_keys(db: Session, vk: Commands, season_id: int) -> None:
     params = {"s": season_id}
     users = {r.member: r.points for r in db.execute(_USER_TOTALS, params)}
     teams = {r.member: r.points for r in db.execute(_TEAM_TOTALS, params)}
@@ -202,8 +248,6 @@ def rebuild(db: Session, vk: Commands, season_id: int) -> bool:
     _replace(vk, teams_key(season_id), teams)
     for building_id, scores in buildings.items():  # every building: stale keys go too
         _replace(vk, building_key(season_id, building_id), scores)
-    vk.execute("SET", built_key(season_id), 1, "EX", BUILT_TTL_S)
-    return True
 
 
 __all__ = [
@@ -214,6 +258,7 @@ __all__ = [
     "built_key",
     "flip_message",
     "is_built",
+    "lock_key",
     "mark_stale",
     "publish_flip",
     "rebuild",

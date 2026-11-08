@@ -283,6 +283,32 @@ def test_a_rebuild_drops_keys_without_points(
     assert valkey_client.execute("TTL", lb.built_key(world.season_id)) > 0
 
 
+def test_a_read_during_a_rebuild_is_answered_from_the_database(
+    client: TestClient, valkey_client: ValkeyClient
+) -> None:
+    world = _populate(client)
+    lock = lb.lock_key(world.season_id)
+    valkey_client.execute("SET", lock, "other-rebuild")
+    assert _rows(_board(client, world, scope="team"))[0] == (1, "ETC", 150)
+    assert valkey_client.execute("GET", lock) == b"other-rebuild"  # not ours: left alone
+    assert valkey_client.execute("EXISTS", lb.built_key(world.season_id)) == 0
+
+
+def test_a_failed_rebuild_releases_the_lock(
+    client: TestClient, valkey_client: ValkeyClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = _populate(client)
+
+    def boom(*args: object) -> None:
+        raise RuntimeError("bug")
+
+    monkeypatch.setattr(lb, "_replace", boom)
+    with client.app.state.sessionmaker() as db, pytest.raises(RuntimeError):  # type: ignore[attr-defined]
+        lb.rebuild(db, valkey_client, world.season_id)
+    assert valkey_client.execute("EXISTS", lb.lock_key(world.season_id)) == 0
+    assert valkey_client.execute("EXISTS", lb.built_key(world.season_id)) == 0
+
+
 def test_valkey_down_falls_back_to_the_database(client: TestClient) -> None:
     world = _populate(client)
     client.app.state.valkey = ValkeyClient("redis://127.0.0.1:1/0", timeout_s=0.2)  # type: ignore[attr-defined]

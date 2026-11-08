@@ -129,6 +129,33 @@ def test_a_failed_update_is_repaired_by_the_next_read(
     assert real.execute("EXISTS", leaderboards.built_key(world.season_id)) == 1
 
 
+@pytest.mark.parametrize("upload_at", ["before_snapshot", "after_snapshot"])
+def test_a_rebuild_racing_an_upload_keeps_correct_totals(
+    world: World, monkeypatch: pytest.MonkeyPatch, upload_at: str
+) -> None:
+    ac, etc = world.climber("AC"), world.climber("ETC")
+    ac.ok(climb(minutes_ago=5))
+    hook = "_rebuild_keys" if upload_at == "before_snapshot" else "_replace"
+    real = getattr(leaderboards, hook)
+    raced: list[bool] = []
+
+    def racing(*args: Any) -> None:
+        if not raced:  # one upload, committed and notified while the rebuild holds the lock
+            raced.append(True)
+            etc.ok(climb(minutes_ago=2))
+        real(*args)
+
+    monkeypatch.setattr(leaderboards, hook, racing)
+    with _state(world).sessionmaker() as db:
+        assert not leaderboards.rebuild(db, _state(world).valkey, world.season_id)
+    monkeypatch.setattr(leaderboards, hook, real)
+    vk = _state(world).valkey
+    assert vk.execute("EXISTS", leaderboards.lock_key(world.season_id)) == 0
+    assert vk.execute("EXISTS", leaderboards.built_key(world.season_id)) == 0
+    assert _team_board(world, ac) == [("AC", 60), ("ETC", 60)]  # rebuilt by the read
+    assert vk.execute("EXISTS", leaderboards.built_key(world.season_id)) == 1
+
+
 def test_incremental_boards_equal_a_rebuild(world: World) -> None:
     _build(world)
     ac, etc = world.climber("AC"), world.climber("ETC")
