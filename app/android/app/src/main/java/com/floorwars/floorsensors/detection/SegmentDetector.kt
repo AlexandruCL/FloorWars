@@ -18,7 +18,9 @@ data class ActiveCheckin(
     val buildingId: Int,
     val buildingName: String?,
     val validUntilMs: Long
-)
+) {
+    fun isValidAt(nowMs: Long) = id.isNotEmpty() && buildingId >= 1 && validUntilMs > nowMs
+}
 
 // The server's bounds (contracts/openapi.yaml, SegmentFields). Kept apart from ScoringThresholds,
 // which tune; these change only with the contract.
@@ -42,10 +44,16 @@ class SegmentDetector(
     private val classifier: Classifier = Classifier(),
     private val newId: () -> String = { UUID.randomUUID().toString() }
 ) {
+    // Written on the sensor thread, read by getStatus on another.
+    @Volatile
     var rejectedCount = 0
         private set
+
+    @Volatile
     var noCheckinCount = 0
         private set
+
+    @Volatile
     var lastSegmentMs: Long? = null
         private set
 
