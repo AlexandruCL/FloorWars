@@ -142,7 +142,7 @@ PostgreSQL 18 + PostGIS       Valkey: ZINCRBY leaderboards, PUBLISH building_fli
 7. One transaction: lock the user row, check `device_id` belongs to the user, then per item in ascending `started_at` insert a `segment_receipt` (`ON CONFLICT DO NOTHING`; a known receipt is answered from it, and a stored segment sent from another device is rejected as `no_checkin`), run the rules and insert the segment.
 8. Upsert `team_building_score` once per (season, building, team) in ascending order (+points).
 9. For each affected (season, building) in ascending order: insert the `building_claim` row if missing, `SELECT ... FOR UPDATE` it, recompute the owner from verified segments of the rolling 7 days (tie rule in section 2), write `game_event` on a flip. Commit.
-10. After the commit, best effort: `ZINCRBY` season leaderboards, `PUBLISH building_flipped`. A Valkey error is logged and ignored; leaderboards are rebuildable.
+10. After the commit, best effort: `ZINCRBY` season leaderboards, `PUBLISH building_flipped`. A Valkey error is logged and ignored; leaderboards are rebuildable. The three `ZINCRBY` of a segment run in one atomic script, only on a season marked built (`fw:lb:s{season}:built`, set by the rebuild) and never during a rebuild (`fw:lb:s{season}:lock`); a failed or overlapping update deletes the marker, and the next read rebuilds the season.
 11. Response `200 {accepted, rejected, flips}`.
 12. The WebSocket hub pushes `"AC took the Politehnica building"` to connected phones; the event is stored in `game_event`, so phones that were offline get it on reconnect or at their next poll and show a local notification (7.2.1).
 
@@ -314,7 +314,7 @@ PDF-defined: `POST /v1/segments`, `GET /v1/buildings/{id}/standings` (was `/floo
 | `GET /v1/me/events` | Game events for the player's team after a given id | Notification fallback and WebSocket replay (7.2.1); ordered by id, paged |
 | `POST /v1/landing-scans` | Barometer-less fallback scan on a stair landing | Strict rate limit |
 | `GET /v1/config` | Classifier thresholds (versioned) | Revert in seconds without a deploy |
-| `GET /v1/me/export`, `DELETE /v1/me` | GDPR export and delete | Delete cascades |
+| `GET /v1/me/export`, `DELETE /v1/me` | GDPR export and delete | Delete cascades; it must also delete the leaderboard markers `fw:lb:s{season}:built`, or the user stays on the boards for up to 1 h |
 | `WS /v1/ws` | Live events | Authenticated on connect |
 
 WebSocket events (ours): `building_flipped {building_id, from_team, to_team, at}`, `season_state {paused, ends_at}`.

@@ -13,6 +13,7 @@ Problem types: ``urn:floorwars:problem:device-unknown`` (403).
 import logging
 import uuid
 from collections import defaultdict
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
@@ -71,6 +72,8 @@ class Leaderboards(Protocol):
 
     def publish_flip(self, flip: Flip) -> None: ...
 
+    def mark_stale(self, season_id: int) -> None: ...
+
 
 class NoLeaderboards:
     """Default when Valkey is not configured."""
@@ -79,6 +82,9 @@ class NoLeaderboards:
         pass
 
     def publish_flip(self, flip: Flip) -> None:
+        pass
+
+    def mark_stale(self, season_id: int) -> None:
         pass
 
 
@@ -100,6 +106,9 @@ class ValkeyLeaderboards:
 
     def publish_flip(self, flip: Flip) -> None:
         leaderboards.publish_flip(self._valkey, flip)
+
+    def mark_stale(self, season_id: int) -> None:
+        leaderboards.mark_stale(self._valkey, season_id)
 
 
 def enforce_upload_limit(limiter: RateLimiter | None, user_id: uuid.UUID) -> None:
@@ -275,14 +284,22 @@ def _add_scores(db: Session, scored: list[ScoredSegment]) -> None:
 
 
 def _notify(board: Leaderboards, scored: list[ScoredSegment], flips: list[Flip]) -> None:
-    """Best effort: stop at the first error, so a dead Valkey costs one timeout, not a hundred."""
+    """Best effort: each loop stops at its first error, so a dead Valkey costs a few timeouts, not
+    a hundred. A failed board update marks every season of the batch stale, so the next read
+    rebuilds them."""
     try:
         for segment in scored:
             board.record_verified(segment)
+    except Exception:
+        logger.exception("leaderboard update failed", extra={"flips": len(flips)})
+        for season_id in sorted({s.season_id for s in scored}):
+            with suppress(Exception):  # unreachable: the marker's expiry bounds the drift
+                board.mark_stale(season_id)
+    try:
         for flip in flips:
             board.publish_flip(flip)
     except Exception:
-        logger.exception("leaderboard update failed", extra={"flips": len(flips)})
+        logger.exception("flip publish failed", extra={"flips": len(flips)})
 
 
 def upload_batch(

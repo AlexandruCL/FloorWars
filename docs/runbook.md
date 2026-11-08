@@ -328,7 +328,7 @@ upkeep for a team of two with no users yet. Consequences to keep in mind:
 - `btree_gist` already exists (created in the superuser setup, `infra/sql/roles.sql`); the migration does not create extensions.
 - New partitions are created by the migrator, not the app role. Run it monthly until Celery beat does it (Week 5):
   `docker compose ... run --rm migrate python -m app.segments.partitions`
-- After a Valkey restart or data loss the leaderboard keys are gone. A read that finds a board's key missing rebuilds the season once from the database (`rebuild`, `server/app/leaderboards.py`) if that board has points; without points it answers an empty board and rebuilds nothing. While Valkey is unreachable, reads are computed from the database.
+- Leaderboards (`server/app/leaderboards.py`): a season's boards are trusted only while its marker `fw:lb:s{season}:built` exists (1 h expiry). After a Valkey restart or data loss, a failed board update, or an upload that overlapped a rebuild, the marker is missing and the next read rebuilds the season from the database; uploads skip a season without the marker. A rebuild holds `fw:lb:s{season}:lock` (30 s expiry); reads that find it held are computed from the database. While Valkey is unreachable, reads are computed from the database. To force a rebuild: `DEL fw:lb:s{season}:built` in `valkey-cli`. Keep Valkey at `maxmemory-policy noeviction` (the default; `CONFIG GET maxmemory-policy`): an evicted board key with a live marker reads as an empty board.
 
 **Wednesday check (Ionut):**
 
