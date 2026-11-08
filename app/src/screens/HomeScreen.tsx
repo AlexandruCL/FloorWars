@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, Platform, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  AppState,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { endSession } from '../auth/session';
 import { FloorSensors } from '../native/floorSensors';
 import type {
   ActiveCheckin,
@@ -31,6 +39,22 @@ type Snapshot = {
   ignoringBattery: boolean | null;
 };
 const TICK_MS = 30_000;
+
+async function confirmSignOut() {
+  const n = await FloorSensors.getPendingCount().catch(() => 0);
+  Alert.alert(
+    'Sign out?',
+    n > 0
+      ? `${n} ${
+          n === 1 ? 'segment is' : 'segments are'
+        } not uploaded yet and will be deleted.`
+      : 'You will need to sign in again.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => endSession() },
+    ],
+  );
+}
 
 async function read(): Promise<Snapshot> {
   const [status, checkin, pending, battery] = await Promise.allSettled([
@@ -209,7 +233,7 @@ export function HomeScreen({
         secondary
         onPress={() => navigation.navigate('SensorLogger')}
       />
-      {/* w3-signout: put its Sign out button here, last. */}
+      <Button title="Sign out" onPress={confirmSignOut} secondary />
     </Screen>
   );
 }

@@ -1,5 +1,6 @@
 import * as Keychain from 'react-native-keychain';
 import type { components } from '../api/schema';
+import { FloorSensors } from '../native/floorSensors';
 
 type TokenPair = components['schemas']['TokenPair'];
 
@@ -68,7 +69,17 @@ export function setOnSessionEnded(fn: (() => void) | undefined): void {
 }
 
 // Clears the stored tokens and team flag (the device id stays) and tells the app.
+// Unsent segments and the active check-in belong to the leaving user, so they go too;
+// a native failure must not keep the user signed in.
 export async function endSession(): Promise<void> {
+  for (const clear of [
+    () => FloorSensors.clearPending(),
+    () => FloorSensors.clearActiveCheckin(),
+  ]) {
+    try {
+      await clear();
+    } catch {}
+  }
   await Keychain.resetGenericPassword({ service: TOKENS });
   await Keychain.resetGenericPassword({ service: TEAM });
   onSessionEnded?.();
