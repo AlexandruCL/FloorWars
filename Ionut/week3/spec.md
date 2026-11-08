@@ -87,7 +87,7 @@ Reads that may be done once per batch, after `lock_user` and `device_belongs`, a
 
 Why this is safe: only the user's own batches write the user's verified rows, check-ins and receipts, and they are serialised by the user lock. Not under the user lock, so read once at the start instead of per item (races with no fixed order; the window is now the batch instead of one item):
 
-- Another user committing the same `(id, started_at)` during the batch. An item that stores a row still loses on the `ON CONFLICT` of `insert_segment` and is answered `no_checkin`. An item rejected by a receipt-only rule that is flagged (`steps_range`, `ascent_range`, `duration`, `stair_prob_range`, `building_mismatch`), or past the rejection cap, keeps its real reason and gets its flag where the per-item check might have answered `no_checkin`. No points are lost or doubled. Open: for Ionut to accept or reject (finding 9).
+- Another user committing the same `(id, started_at)` during the batch. An item that stores a row still loses on the `ON CONFLICT` of `insert_segment` and is answered `no_checkin`. An item rejected by a receipt-only rule that is flagged (`steps_range`, `ascent_range`, `duration`, `stair_prob_range`, `building_mismatch`), or past the rejection cap, keeps its real reason and gets its flag where the per-item check might have answered `no_checkin`. No points are lost or doubled. Accepted (Ionut, 2026-11-08, finding 9).
 - A team join during the batch: the batch sees the team state of its start; before, items after the join could see the new team.
 
 ## 6. Repository interface (owned by A, `app/segments/repository.py`; sync SQLAlchemy `Session`)
