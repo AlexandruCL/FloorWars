@@ -1,5 +1,5 @@
 """Finding 9: SQL statements run by one 100-item ``POST /v1/segments`` (60 new verified, 25 new
-rejected, 15 resends). Lower BASELINE_MAX when the batch gets cheaper."""
+rejected, 15 resends). A budget, not a timing: a query per item again fails it."""
 
 from collections.abc import Callable, Iterator
 from datetime import timedelta
@@ -15,7 +15,7 @@ from tests.segments.api_world import World, climb_at, clock_hour, make_world, ut
 
 pytestmark = pytest.mark.skipif(not TEST_VALKEY_URL, reason="FLOORWARS_TEST_VALKEY_URL not set")
 
-BASELINE_MAX = 120  # measured 658 before finding 9, 109 after (spec 5a)
+STATEMENTS_MAX = 120  # measured 658 before finding 9, 109 after (spec 5a)
 
 
 @pytest.fixture(autouse=True)
@@ -74,4 +74,4 @@ def test_a_mixed_batch_of_100_stays_within_the_statement_budget(world: World) ->
     )
     assert len(result["accepted"]) == 60 + 15, result["rejected"][:3]
     assert len(reasons) == 25, reasons
-    assert count <= BASELINE_MAX
+    assert count <= STATEMENTS_MAX

@@ -296,17 +296,17 @@ def _merged(ranges: list[tuple[datetime, datetime]]) -> list[tuple[datetime, dat
     return merged
 
 
-Check = tuple[rules.RejectReason | None, ItemContext | None]
+_Check = tuple[rules.RejectReason | None, ItemContext | None]
 
 
 def _check_rules(
     db: Session, items: dict[int, Segment], user_id: uuid.UUID, now: datetime
-) -> dict[int, Check]:
+) -> dict[int, _Check]:
     """Rules 1 to 7 of each new item, with one context query. Bounds first: ``started_at`` is
     unsafe for date arithmetic until then. A reason of None means the item passed rules 1 to 7 (its
-    context is then set); rules 8 and 9 need the user's climbs and run in the loop. Contexts do not
-    change during the batch: check-ins are written under the user lock."""
-    checks: dict[int, Check] = {
+    context is then set); rules 8 and 9 need the user's climbs and run in the loop. Check-ins do not
+    change during the batch (written under the user lock); a team join can (spec 5a)."""
+    checks: dict[int, _Check] = {
         n: (rules.check_bounds(item, now), None) for n, item in items.items()
     }
     in_bounds = [n for n, (reason, _) in checks.items() if reason is None]
