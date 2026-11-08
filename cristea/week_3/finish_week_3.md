@@ -39,10 +39,10 @@ The state of each was checked against his merges on 2026-11-08 and his message t
 
 | # | Item | State | App default until it is done |
 |---|---|---|---|
-| 1 | The server is up and deployed: `healthz` answers, and `POST /v1/segments` and `GET /v1/buildings` exist | `curl.exe https://api.floorwars.me/healthz` timed out on 2026-11-08 (no answer, not a 404). Ionut says it is a VM problem on his side and he will check it (runbook section 8, merged in #60). The README still says "not yet deployed". | Build and test against the Prism mock |
-| 2 | Steps per metre upper bound 10 (instead of 8) | **Merged** to `main` (#59, contract 0.6.2-draft); Ionut confirms pocket climbs of 6.7 to 8.7 now pass. Waits for the deploy. | A pocket climb rejected as `pressure_steps_mismatch` means the fix is not deployed, not that the app is wrong |
+| 1 | The server is up and deployed: `healthz` answers, and `POST /v1/segments` and `GET /v1/buildings` exist | **Solved.** Ionut deployed `fbe9c18`. Checked on 2026-11-08: `healthz` 200, `POST /v1/segments` and `GET /v1/buildings` without a token answer 401 (the routes exist), `POST /v1/auth/logout` with an empty body answers 422. The README may still say "not yet deployed": update it after the Wednesday check. | The Wednesday check can run |
+| 2 | Steps per metre upper bound 10 (instead of 8) | **Solved.** Merged (#59, contract 0.6.2-draft) and in the deployed release; Ionut confirms pocket climbs of 6.7 to 8.7 now pass. | A pocket climb rejected as `pressure_steps_mismatch` means the fix is not deployed, not that the app is wrong |
 | 3 | `overlap` rejection reason | **Solved**: in the contract since 0.6.0-draft | The app stores any reason string |
-| 4 | Revoke on sign-out | **Solved on the server**: `POST /v1/auth/logout` with `{refresh_token}`, 204 for any token, is on `main` (#61, contract 0.7.0-draft). The app calls it from the Sign out handler, not from `endSession()`, as he asked: branch `feat/w3-logout-call-v2` | Merge that PR; until then sign-out is local only |
+| 4 | Revoke on sign-out | **Solved on the server**: `POST /v1/auth/logout` with `{refresh_token}`, 204 for any token, is on `main` (#61, contract 0.7.0-draft). The app calls it from the Sign out handler, not from `endSession()`, as he asked: branch `feat/w3-logout-call-v2` | Merge that PR (the endpoint is live); until then sign-out is local only |
 | 5 | Printed entrance codes for both buildings | **Open.** The generator is `tools/qr/make_entrance_qr.py`; codes must be valid on the test day (`--days` at most 31). Ask for an expired code and a code of another building too. | W3-8 rows wait |
 | 6 | A gap-metric endpoint before the pilot | **Open**, not urgent | The metric stays on the phone |
 
@@ -50,6 +50,19 @@ The state of each was checked against his merges on 2026-11-08 and his message t
 - [ ] `healthz` answers: `curl.exe -i https://api.floorwars.me/healthz`
 - [ ] `POST /v1/segments` exists on the server. A request without a token must answer 401, not 404: `curl.exe -i -X POST https://api.floorwars.me/v1/segments`
 - [ ] The running release is the Week 3 one. Ionut can tell you (`cat /srv/floorwars/current` on the VM).
+
+## Step 2b. Season 2 starts on Monday 2026-11-09 at 00:00 UTC
+
+From Ionut: season 2 exists on the server and starts on **Monday 2026-11-09 at 00:00 UTC (02:00 Romania time)**. Season 1 ends at that moment. Every season rollover leaves existing users without a membership in the new season, so the climb test needs this order:
+
+1. After 00:00 UTC, sign out in the app, then sign in again (the Sign out button also calls `POST /v1/auth/logout` once the logout PR is merged and in your build).
+2. Pick your team on the screen that appears. That joins season 2. Before 00:00 UTC the join answers 409 `season-not-active`, so do not try earlier.
+3. Then check in and do the climb. If an upload comes back `no_team`, you have not joined season 2 yet.
+
+The gap behind this (an existing user is not asked to join again) has a fix in PR "Show the team picker again when a new season starts" (branch `feat/w3-season-check`): the app remembers the season it joined and shows the team picker at start when `/seasons/active` has a different id. With that build, step 1 is not needed: just open the app after the rollover. It checks only at app start, so a user who keeps the app open across 00:00 UTC sees the picker after the next start. Without that PR, use the sign-out workaround above.
+
+- [ ] Season 2 has started (after 00:00 UTC on 2026-11-09)
+- [ ] Both phones joined season 2 (sign out and in, or the build with the season check)
 
 ## Step 3. Build the tester app
 
