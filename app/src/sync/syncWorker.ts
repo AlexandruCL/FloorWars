@@ -119,9 +119,13 @@ async function run(): Promise<SyncState> {
   let synced = 0;
   let rejected = 0;
   const finish = (outcome: SyncOutcome) => {
+    // A run with nothing to upload keeps the last real result on show (it is only the follow-up
+    // to markSynced and onPendingChanged).
+    const keep =
+      outcome === 'idle' && state.last && state.last.outcome !== 'idle';
     setState({
       running: false,
-      last: { at: deps.now(), outcome, synced, rejected },
+      ...(keep ? {} : { last: { at: deps.now(), outcome, synced, rejected } }),
     });
     return state;
   };

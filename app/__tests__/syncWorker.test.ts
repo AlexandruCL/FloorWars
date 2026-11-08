@@ -270,3 +270,33 @@ test('nothing pending is idle and sends nothing', async () => {
   expect((await syncNow()).last?.outcome).toBe('idle');
   expect(api).not.toHaveBeenCalled();
 });
+
+test.each([
+  ['uploaded', () => api.mockResolvedValue(ok([acc(seg(1))])), 'synced'],
+  [
+    'rejected',
+    () => api.mockResolvedValue(ok([], [{ id: seg(1).id, reason: 'speed' }])),
+    'synced',
+  ],
+  ['failed', () => api.mockRejectedValue(new ApiError(500, {})), 'offline'],
+  ['no connection', () => api.mockRejectedValue(new TypeError('x')), 'offline'],
+])('an idle run does not replace a %s result', async (_n, arrange, outcome) => {
+  outbox([seg(1)]);
+  arrange();
+  const first = (await syncNow()).last;
+  expect(first?.outcome).toBe(outcome);
+  if (outcome === 'offline') {
+    native.getPending.mockResolvedValue([]); // later the outbox is empty
+  }
+  deps.now = () => 2_000_000;
+  const after = (await syncNow()).last;
+  expect(after).toEqual(first);
+});
+
+test('a failure after an idle run still shows', async () => {
+  outbox([]);
+  expect((await syncNow()).last?.outcome).toBe('idle');
+  outbox([seg(1)]);
+  api.mockRejectedValue(new ApiError(500, {}));
+  expect((await syncNow()).last?.outcome).toBe('offline');
+});
