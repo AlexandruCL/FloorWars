@@ -16,6 +16,7 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableArray
+import com.floorwars.floorsensors.detection.ActiveCheckin
 import com.floorwars.floorsensors.outbox.RoomSegmentOutbox
 import java.io.File
 import java.io.IOException
@@ -24,6 +25,7 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
     NativeFloorSensorsSpec(reactContext) {
 
     private val statusListener = { emitStatus() }
+    private val pendingListener = { emitPending() }
 
     private val hasBarometer by lazy {
         reactApplicationContext.getSystemService(SensorManager::class.java)
@@ -32,6 +34,11 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
 
     init {
         FloorSensorsService.statusListener = statusListener
+        FloorSensorsService.pendingListener = pendingListener
+        // After an app restart: resume detection for a check-in that is still valid.
+        if (!FloorSensorsService.detecting) {
+            ActiveCheckinStore.load(reactApplicationContext)?.let { startDetecting() }
+        }
     }
 
     override fun startLogging(label: String) {
@@ -50,8 +57,12 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
 
     override fun stopLogging() {
         Log.i(TAG, "stopLogging label=${FloorSensorsService.label}")
-        // The service reports idle from onDestroy; a service that was not running never does.
-        if (!reactApplicationContext.stopService(serviceIntent())) emitStatus()
+        // An action rather than stopService, so detection keeps running. The service reports idle.
+        if (FloorSensorsService.label == null) {
+            emitStatus()
+            return
+        }
+        sendToService(FloorSensorsService.ACTION_STOP_LOGGING)
     }
 
     override fun getStatus(promise: Promise) {
@@ -61,13 +72,20 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
             putString("label", label.orEmpty())
             putBoolean("has_barometer", hasBarometer)
             putInt("buffered", FloorSensorsService.buffer.size())
-            // Seam placeholders; w3-engine fills them.
-            putBoolean("detecting", false)
-            putNull("last_segment_ms")
-            putInt("rejected_count", 0)
-            putInt("no_checkin_count", 0)
-            putDouble("longest_gap_s", 0.0)
-            putInt("gaps_over_threshold", 0)
+            val detector = FloorSensorsService.lastDetector
+            putBoolean("detecting", FloorSensorsService.detecting)
+            val lastSegmentMs = detector?.lastSegmentMs
+            if (lastSegmentMs == null) {
+                putNull("last_segment_ms")
+            } else {
+                putDouble("last_segment_ms", lastSegmentMs.toDouble())
+            }
+            putInt("rejected_count", detector?.rejectedCount ?: 0)
+            putInt("no_checkin_count", detector?.noCheckinCount ?: 0)
+            // Gap metric (W3-7), local only.
+            val gaps = FloorSensorsService.lastGaps
+            putDouble("longest_gap_s", gaps?.longestGapS ?: 0.0)
+            putInt("gaps_over_threshold", gaps?.gapsOverThreshold ?: 0)
         }
         Log.i(TAG, "getStatus $status")
         promise.resolve(status)
@@ -108,31 +126,94 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    // Seam stubs (W3-0). Each owner replaces its own; the others keep rejecting until then.
+    // Replaces any earlier check-in, as the server does, and starts or moves detection.
     override fun setActiveCheckin(
         checkinId: String,
         buildingId: Double,
         buildingName: String?,
         validUntilMs: Double
-    ) = Unit // w3-engine
+    ) {
+        // From JS: a fractional or out-of-range number must not become a building id or expiry.
+        val okBuilding = buildingId % 1.0 == 0.0 && buildingId in 1.0..Int.MAX_VALUE.toDouble()
+        val okUntil = validUntilMs % 1.0 == 0.0 && validUntilMs in 0.0..Long.MAX_VALUE.toDouble()
+        val checkin = ActiveCheckin(
+            id = checkinId,
+            buildingId = if (okBuilding) buildingId.toInt() else 0,
+            buildingName = buildingName,
+            validUntilMs = if (okUntil) validUntilMs.toLong() else 0
+        )
+        if (!checkin.isValidAt(System.currentTimeMillis())) {
+            Log.w(TAG, "setActiveCheckin: invalid or expired, ignored")
+            return
+        }
+        ActiveCheckinStore.save(reactApplicationContext, checkin)
+        startDetecting()
+    }
 
-    override fun clearActiveCheckin() = Unit // w3-engine
+    override fun clearActiveCheckin() {
+        ActiveCheckinStore.clear(reactApplicationContext)
+        if (FloorSensorsService.detecting) sendToService(FloorSensorsService.ACTION_STOP_DETECT)
+    }
 
-    override fun getActiveCheckin(promise: Promise) = notImplemented(promise) // w3-engine
+    override fun getActiveCheckin(promise: Promise) {
+        val c = ActiveCheckinStore.load(reactApplicationContext)
+        promise.resolve(
+            c?.let {
+                Arguments.createMap().apply {
+                    putString("checkin_id", it.id)
+                    putInt("building_id", it.buildingId)
+                    putString("building_name", it.buildingName)
+                    putDouble("valid_until_ms", it.validUntilMs.toDouble())
+                }
+            }
+        )
+    }
+
+    // The service reads the check-in from ActiveCheckinStore.
+    private fun startDetecting() {
+        // A health foreground service without this permission throws SecurityException on API 34+.
+        if (!hasActivityRecognition()) {
+            Log.w(TAG, "ACTIVITY_RECOGNITION not granted, not detecting")
+            return
+        }
+        ContextCompat.startForegroundService(
+            reactApplicationContext,
+            serviceIntent().setAction(FloorSensorsService.ACTION_DETECT)
+        )
+    }
+
+    // startService, not startForegroundService: these paths may not call startForeground.
+    private fun sendToService(action: String) {
+        try {
+            reactApplicationContext.startService(serviceIntent().setAction(action))
+        } catch (e: IllegalStateException) {
+            // Background start refused; only possible if the service already stopped.
+            Log.w(TAG, "could not send $action", e)
+        }
+    }
 
     override fun getPending(limit: Double, promise: Promise) = withOutbox(promise) {
         Arguments.makeNativeArray(it.pending(limit.toInt()))
     }
 
-    override fun markSynced(ids: ReadableArray, promise: Promise) =
-        withOutbox(promise) { it.markSynced(ids.strings()) }
+    // The three writes below change the pending count, so each emits onPendingChanged.
+    override fun markSynced(ids: ReadableArray, promise: Promise) = withOutbox(promise) {
+        it.markSynced(ids.strings())
+        emitPending()
+    }
 
     override fun markRejected(ids: ReadableArray, reason: String, promise: Promise) =
-        withOutbox(promise) { it.markRejected(ids.strings(), reason) }
+        withOutbox(promise) {
+            it.markRejected(ids.strings(), reason)
+            emitPending()
+        }
 
     override fun getPendingCount(promise: Promise) = withOutbox(promise) { it.pendingCount() }
 
-    override fun clearPending(promise: Promise) = withOutbox(promise) { it.clearPending() }
+    override fun clearPending(promise: Promise) = withOutbox(promise) {
+        it.clearPending()
+        emitPending()
+    }
 
     override fun isIgnoringBatteryOptimizations(promise: Promise) {
         val power = reactApplicationContext.getSystemService(PowerManager::class.java)
@@ -173,6 +254,9 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
         if (FloorSensorsService.statusListener === statusListener) {
             FloorSensorsService.statusListener = null
         }
+        if (FloorSensorsService.pendingListener === pendingListener) {
+            FloorSensorsService.pendingListener = null
+        }
         super.invalidate()
     }
 
@@ -198,6 +282,15 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
                 putString("label", label.orEmpty())
             }
         )
+    }
+
+    private fun emitPending() {
+        try {
+            val pending = RoomSegmentOutbox.get(reactApplicationContext).pendingCount()
+            emitOnPendingChanged(Arguments.createMap().apply { putInt("pending", pending) })
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "pending count failed", e)
+        }
     }
 
     private companion object {
