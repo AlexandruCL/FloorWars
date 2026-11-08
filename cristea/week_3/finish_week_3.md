@@ -13,6 +13,7 @@ Commands are for PowerShell on Windows, run from the repository root unless a st
 | `feat/w3-sync-v2` | sync worker, WorkManager job, status screen | `25b7811` | pushed, PR #64, includes the outbox commits |
 | `feat/w3-signout-v2` | sign out | `d66b87d` | pushed, PR #65, conflicts with the sync PR on Home (see step 1) |
 | `feat/w3-logout-call-v2` | Sign out calls Ionut's `POST /v1/auth/logout` | `bc26712` | pushed, PR #66, stacked on `feat/w3-signout-v2` |
+| `feat/w3-season-check` | team picker again when a new season starts | `c0cd8a3` | pushed, PR page opened in the browser (create it), independent of the others, branches from `main` |
 | `docs/w3-finish` | this file, the summary, the tester guide, README and plan updates | n/a | pushed with the PR for it |
 
 All four branches are green on Android tests, ktlint, lint, typecheck, Jest and the generated-client check, against the contract on `main` (now 0.7.0-draft, with `/auth/logout`). They have only been tested against the Prism mock and an emulator, never the real server.
@@ -29,6 +30,7 @@ The PRs are open (#62 outbox, #63 engine, #64 sync, #65 signout, #66 logout call
   - in `app/src/screens/HomeScreen.tsx` add the imports `Alert` (from `react-native`) and `endSession` (from `../auth/session`), the `confirmSignOut` function from the old `PlaceholderScreens.tsx`, and `<Button title="Sign out" onPress={confirmSignOut} secondary />` as the last child of `<Screen>`;
   - in `app/__tests__/signout.test.tsx` wait for `Status` instead of `Home`, and use `mockResolvedValue` (not `Once`) for `getPendingCount`, because Home reads it too.
   - The resolved version is on a local throwaway branch (`tmp/w3-integ`) if you want to compare; the Jest run on it had 121 tests green.
+- [ ] `feat/w3-season-check`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-season-check. Body: `06_season_check.md`. It is independent: it can merge at any time, and it must be in the build before season 2 for the picker to reappear on its own.
 - [ ] `feat/w3-logout-call-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-logout-call-v2, **after the signout PR** (it is stacked on it). Body: `05_logout.md`. When the sync PR has merged first, this PR conflicts in the same `confirmSignOut` place as the signout PR: keep the `async onPress` that awaits `revokeRefreshToken()` and then `endSession()`.
 - [ ] CI is green on each: `android unit tests and trace replay` and `lint, typecheck, test, API client`. If the Android test task fails with a dead test worker and no failing test (it happened once locally), re-run it once and look at the worker log before changing code.
 - [ ] After each merge, bring your main up to date: `git switch main; git pull`.
@@ -47,8 +49,8 @@ The state of each was checked against his merges on 2026-11-08 and his message t
 | 6 | A gap-metric endpoint before the pilot | **Open**, not urgent | The metric stays on the phone |
 
 - [x] Message sent to Ionut (he answered on 2026-11-08: logout merged, steps bound 10, `overlap` already in 0.6.0, healthz is his to fix).
-- [ ] `healthz` answers: `curl.exe -i https://api.floorwars.me/healthz`
-- [ ] `POST /v1/segments` exists on the server. A request without a token must answer 401, not 404: `curl.exe -i -X POST https://api.floorwars.me/v1/segments`
+- [x] `healthz` answers (200 on 2026-11-08): `curl.exe -i https://api.floorwars.me/healthz`
+- [x] `POST /v1/segments` exists on the server (401 without a token on 2026-11-08, not 404): `curl.exe -i -X POST https://api.floorwars.me/v1/segments`
 - [ ] The running release is the Week 3 one. Ionut can tell you (`cat /srv/floorwars/current` on the VM).
 
 ## Step 2b. Season 2 starts on Monday 2026-11-09 at 00:00 UTC
@@ -154,6 +156,7 @@ Write down anything that surprised you (field names, time zones, auth edges, rou
 | **Status** says Detection "Not running" right after a check-in | The sensor permission was denied. Phone settings, Apps, FloorWars, Permissions: allow Physical activity and Notifications, then check in again |
 | Check-in works but the notification does not appear | Notifications are off for the app (Android 13 and later). Turn them on in the app settings |
 | **Waiting to upload** keeps growing, red text on Status | Read the text. "No connection" retries by itself. "The server refused an upload" (422) or "This phone is not registered" (403) means an app or server bug: the rows stay pending, nothing is lost, send the screenshot and the time |
+| An upload is rejected as `no_team` | You have not joined the running season. Season 2 starts 2026-11-09 at 00:00 UTC: sign out and in and pick your team, or use the build with the season check (step 2b) |
 | A climb in the pocket is rejected as `pressure_steps_mismatch` | The server still has the old 8 steps-per-metre limit. Ask Ionut to deploy 0.6.2 |
 | A climb never appears as pending | Check the **Status** screen: a climb under 2 m, without steps, or not matching the stair rule is not stored. Elevators are dropped on purpose |
 | The service dies with the screen off | Write the state and the logcat line in `docs/devices.md`, then tell Claude. Also try the **Open battery settings** button on Status and set the app to unrestricted |
