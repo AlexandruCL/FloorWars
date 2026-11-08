@@ -36,6 +36,21 @@ Status: tested. 15 traces recorded.
 | Step detector | Yes. Step rows in the stairs and walk traces |
 | Manufacturer-specific behaviour seen while recording | Service kept logging with the screen locked for 60 s. Share sheet and CSV export work. Pressure arrives at only 10 Hz, and the step detector can lag pressure by up to 240 ms (trace_format.md section 7). |
 
+## Week 3 service survival
+
+W3-7 phone checks, filled in by Cristea on the two test phones (not the emulator). Procedure: `cristea/week_3/finish_week_3.md`, step 4. Each row: check-in active, phone in a pocket for 10 minutes (20 for the last state), one stair climb, then read the gap metric, the pending count and the battery percentage (note it before the run too). If the service dies, write the state and the logcat line instead of the numbers.
+
+| Device | State | Longest gap (s) | Gaps over 5 s | Segment found | Pending | Battery used |
+|---|---|---|---|---|---|---|
+| SM-S918B | Screen off | pending | pending | pending | pending | pending |
+| SM-S918B | App swiped away | pending | pending | pending | pending | pending |
+| SM-S918B | Battery saver on | pending | pending | pending | pending | pending |
+| SM-S918B | Not exempt from battery optimisation, screen off 20 min | pending | pending | pending | pending | pending |
+| SM-G985F | Screen off | pending | pending | pending | pending | pending |
+| SM-G985F | App swiped away | pending | pending | pending | pending | pending |
+| SM-G985F | Battery saver on | pending | pending | pending | pending | pending |
+| SM-G985F | Not exempt from battery optimisation, screen off 20 min | pending | pending | pending | pending | pending |
+
 ## Emulator (not a test device)
 
 Used for development checks in T2 to T4 only. Results from it do not count as test-device results, and it must not be listed as one of the two phones. It has no real pressure changes and no step detector, and its power management is not a phone's (no manufacturer battery killers, no real Doze).
