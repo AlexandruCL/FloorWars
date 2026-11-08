@@ -33,6 +33,9 @@ export function describeError(e: unknown, where: Where): string {
       ? 'Check the e-mail address and try again.'
       : 'Check the code and try again.';
   }
+  if (status === 409 && where === 'join') {
+    return 'The season is not running right now. Try again when it starts.';
+  }
   if (status === 404 && where === 'teams') {
     return 'No season is running right now. Check back soon.';
   }
