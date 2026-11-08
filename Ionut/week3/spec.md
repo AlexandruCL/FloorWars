@@ -74,6 +74,19 @@ Rules 1 to 2 and 5 to 7 are pure (no database). Rules 3, 4, 8 and 9 need `ctx` (
 4. Commit. **After** the commit, best effort (never fail the request): `leaderboards.record_verified(...)` per verified segment and `leaderboards.publish_flip(...)` per flip. A Valkey error is logged and ignored (leaderboards are rebuildable from the database).
 5. Response 200 `SegmentBatchResult {accepted:[{id, steps_scored, points?}], rejected:[{id, reason}], flips:[{building_id, from_team, to_team, at}]}` (team codes in `from_team`/`to_team`, as the contract says).
 
+### 5a. Batch cost (review finding 9; 2026-11-08)
+
+The user lock is held for the whole batch, so the batch must not cost one set of queries per item. Target for a 100-item batch: at most about 10 reads for the whole batch plus the writes (one `insert_segment` per stored row, one `add_fraud_flag` per flag), one multi-row receipt insert, and the claim step. Results stay identical (statuses, reasons, points, flips, flags, receipts, rows).
+
+Reads that may be done once per batch, after `lock_user` and `device_belongs`, and then kept in memory:
+
+- **Receipts** of the device for all item ids (`id = ANY`). The batch adds its own answers to the map as it goes (first answer wins, like `ON CONFLICT DO NOTHING`), so a repeated id in one batch is answered as before. The receipts are written once, in one multi-row insert after the item loop (`created_at` is the transaction time either way).
+- **Stored segments** `(id, started_at)` for those items (any user), plus the rows the batch inserts.
+- **Check-ins** of the batch (`id = ANY`) and the **seasons** overlapping the batch span with the user's team in each; the season of an item is the one whose range contains `started_at` (the exclusion constraint allows at most one).
+- **The user's verified climbs** (`started_at`, stored end, `steps_scored`, `device_id`) in the time ranges the items can read: for each item that passes rules 1 and 2, from `min(started_at - 10 min, its clock hour)` to `max(started_at + 10 min, its clock hour + 1 h)`. Every step count and overlap test of sections 4 and 5 is answered from this list with the same bounds as the SQL. An accepted item is appended with the end the database stored (`insert_segment` returns it), because `duration_s` is a `real`.
+
+Why this is safe: only the user's own batches write the user's verified rows, check-ins and receipts, and they are serialised by the user lock. Not under the user lock: another user storing the same segment id (caught by the `ON CONFLICT` of `insert_segment`, as before) and a team join during the batch (the batch now sees the team state of its start; before, items after the join could see the new team). Both are races with no fixed order anyway.
+
 ## 6. Repository interface (owned by A, `app/segments/repository.py`; sync SQLAlchemy `Session`)
 
 ```python
