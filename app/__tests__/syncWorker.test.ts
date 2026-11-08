@@ -9,6 +9,7 @@ import {
   deps,
   getSyncState,
   idempotencyKey,
+  resetSync,
   resetSyncForTests,
   setFlipHandler,
   syncNow,
@@ -299,4 +300,18 @@ test('a failure after an idle run still shows', async () => {
   outbox([seg(1)]);
   api.mockRejectedValue(new ApiError(500, {}));
   expect((await syncNow()).last?.outcome).toBe('offline');
+});
+
+test('resetSync clears a stuck state and a wait-until time', async () => {
+  const left = outbox([seg(1)]);
+  api.mockRejectedValueOnce(
+    new ApiError(403, { type: 'urn:floorwars:problem:device-unknown' }),
+  );
+  expect((await syncNow()).stuck).not.toBeNull();
+  resetSync();
+  expect(getSyncState().stuck).toBeNull();
+  expect(getSyncState().notBeforeMs).toBeNull();
+  api.mockImplementation(echoAll);
+  expect((await syncNow()).last?.outcome).toBe('synced');
+  expect(left()).toBe(0);
 });

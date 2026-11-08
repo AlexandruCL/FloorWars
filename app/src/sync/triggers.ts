@@ -1,6 +1,6 @@
 import { AppState } from 'react-native';
 import { FloorSensors } from '../native/floorSensors';
-import { syncNow } from './syncWorker';
+import { resetSync, syncNow } from './syncWorker';
 
 export const DEBOUNCE_MS = 3_000;
 
@@ -22,6 +22,7 @@ export function startSyncTriggers(): () => void {
     clearTimeout(timer);
     pendingSub.remove();
     appSub.remove();
+    resetSync();
   };
 }
 
