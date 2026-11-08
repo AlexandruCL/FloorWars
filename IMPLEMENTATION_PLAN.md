@@ -97,7 +97,7 @@ Out of scope (PDF): indoor positioning of individual staircases, payments, chat,
 | Floor-equivalent (display only) | 20 verified steps = 1 floor-equivalent, so a team with 200 steps in a building shows "10 floors". An estimate, about 6 steps per metre times a 3.3 m storey, tuned from real data. Never a real storey number, and no building floor data is used. Every screen that shows it says "floors (estimate)". | Ours |
 | Check-in validity | 90 minutes from check-in. Segments are attributed to the building of the active check-in. | PDF |
 | Segment attribution | A segment needs an active check-in to count. It belongs to the check-in active when the climb started, even if it ends after `valid_until` or uploads after a new check-in. | PDF, edge cases ours |
-| Per-user limits | At most 60 segment uploads per hour and at most 600 verified steps per 10 minutes, counted on both sides of `started_at` so upload order cannot bypass the cap. An honest late upload can still be rejected as `rate_limit`, and two phones recording one climb under different ids get `overlap`; neither is flagged (interim, README decisions, 2026-11-07). These double as anti-cheat signals. | PDF, adapted (ours) |
+| Per-user limits | At most 60 segment uploads per hour and at most 600 verified steps per 10 minutes, counted on both sides of `started_at` so upload order cannot bypass the cap. At most 200 rejected items per user and hour are stored (`REJECTED_STORED_PER_HOUR`); past that an item is still answered with its real reason but nothing is written. An honest late upload can still be rejected as `rate_limit`, and two phones recording one climb under different ids get `overlap`; neither is flagged (interim, README decisions, 2026-11-07). These double as anti-cheat signals. | PDF, adapted (ours) |
 | Segment bounds | `steps` between 1 and 2000; `ascent_m` between 2.0 and 120.0; a segment counts only if its pressure change matches its steps (section 3.2). Rejected segments are stored with a reason. Besides the plausibility reasons, an item is rejected as `started_at_range` (older than 7 days or more than 5 minutes ahead), `season_inactive` (no season contains `started_at`), `no_team` (the user has no team in that season) or `overlap` (its time range overlaps a verified segment of the same user). | PDF, adapted (ours) |
 | Age | Users under 18 are not accepted. | PDF |
 | Accessibility | An accessible contribution mode (points for walking steps or for supporting actions). Copy never shames elevator use. | PDF mitigation, rules ours |
@@ -180,7 +180,7 @@ Two more rules make a segment Other: a rise with no steps that lasts under 5 s i
 
 1. On-device: classifier rejects non-stair patterns before upload.
 2. Server plausibility: speed, cadence, steps per metre, pressure-steps match, overlap with a verified segment, rate limits (600 verified steps/10 minutes, counted in the database on both sides of `started_at`).
-3. Valkey token bucket per user (60 uploads/hour).
+3. Valkey token bucket per user (60 uploads/hour), and a second per-user bucket that caps stored rejections at 200/hour (`REJECTED_STORED_PER_HOUR`; past it the answer is unchanged but nothing is stored).
 4. Per-device limits and `fraud_flag` rows reviewed in the admin panel.
 5. Signed expiring QR tokens so photographed codes cannot be reused remotely.
 6. Stretch: Play Integrity attestation against emulators and modified clients.
@@ -505,7 +505,7 @@ Input validation at the API boundary (Pydantic v2 strict). Parameterised SQL onl
 - Data minimisation: raw sensor streams never leave the phone. Only per-segment features (ascent, duration, steps, vertical speed, classifier score) are uploaded. Location is used only at check-in, never tracked continuously.
 - Encryption: TLS 1.3 in transit; LUKS-encrypted database volume; encrypted pgBackRest repository; tokens in the Android Keystore.
 - Input validation: Pydantic strict models with bounded numeric ranges. Server-side plausibility rules mirror the client rules. Signed, expiring QR tokens prevent photographed codes from being reused remotely.
-- Rate limiting: Caddy per-IP limits; a Valkey token bucket per user (at most 60 segment uploads per hour); at most 600 verified steps per 10 minutes, counted in the database on both sides of `started_at`.
+- Rate limiting: Caddy per-IP limits; a Valkey token bucket per user (at most 60 segment uploads per hour, and 200 stored rejections per hour); at most 600 verified steps per 10 minutes, counted in the database on both sides of `started_at`.
 - Health-adjacent data: activity data is personal data under GDPR. The privacy notice states purpose. Raw segments are kept for 12 months. Users can export or delete everything. Users under 18 are not accepted.
 - Safety by design: points never reward speed, only verified stair steps with a matching pressure change, with diminishing returns per hour, so the game never encourages running on stairs.
 - Admin panel: team IPs only plus admin role in the JWT.
@@ -682,7 +682,7 @@ Goal: feature complete and operable.
 - Versioned classifier-threshold `config` table and `GET /v1/config`.
 - Battery measurement runs (moved from Cristea): drain per hour over 3 hours, service on vs off, on both devices, using Cristea's build with the service toggle. Record in `/docs/evaluation.md`.
 - Season close transaction with results snapshot. Celery scheduled jobs: season rollover, partition creation, digests.
-- `GET /v1/me/export` and `DELETE /v1/me` (cascade). Retention job that drops partitions older than 12 months.
+- `GET /v1/me/export` and `DELETE /v1/me` (cascade). Retention job that drops partitions older than 12 months and calls `segments.repository.purge_rejected` (rejected `segment_receipt` rows and resolved `fraud_flag` rows older than 30 days, unresolved flags older than 365 days; verified receipts stay).
 - Caddy rate limits. Security review: CORS, validation bounds, secrets, dependency scan, Trivy gate.
 - Monitoring: Prometheus, Grafana, Loki + Alloy, Alertmanager to Discord, the custom metrics in 7.8, and one Grafana dashboard for the demo.
 - pgBackRest to the off-site target and one restore drill. `deploy.sh rollback` rehearsal. `docs/runbook.md`.

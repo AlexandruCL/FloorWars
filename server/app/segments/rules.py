@@ -38,6 +38,9 @@ RATE_WINDOW: Final = timedelta(minutes=10)
 # Climbs that only touch at an end do not overlap: a stored ``real`` duration is rounded.
 OVERLAP_TOLERANCE: Final = timedelta(milliseconds=1)
 UPLOADS_PER_HOUR: Final = 60
+# Rejected items stored per user: a bucket of this size that refills over one hour (a burst, then
+# about 200 an hour). Beyond it the answer is the same but no receipt, flag or row is written.
+REJECTED_STORED_PER_HOUR: Final = 200
 FULL_POINT_STEPS_PER_HOUR: Final = 300
 REDUCED_POINT_PER_STEP: Final = 0.5
 OWNERSHIP_WINDOW: Final = timedelta(days=7)
