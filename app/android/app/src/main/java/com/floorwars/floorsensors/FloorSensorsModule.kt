@@ -1,11 +1,15 @@
 package com.floorwars.floorsensors
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorManager
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.Arguments
@@ -211,10 +215,25 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
         emitPending()
     }
 
-    override fun isIgnoringBatteryOptimizations(promise: Promise) =
-        notImplemented(promise) // w3-sync
+    override fun isIgnoringBatteryOptimizations(promise: Promise) {
+        val power = reactApplicationContext.getSystemService(PowerManager::class.java)
+        promise.resolve(power.isIgnoringBatteryOptimizations(reactApplicationContext.packageName))
+    }
 
-    override fun openBatteryOptimizationSettings() = Unit // w3-sync
+    // The list of apps, which needs no extra permission (the direct exemption dialog does).
+    override fun openBatteryOptimizationSettings() {
+        val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            reactApplicationContext.startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            reactApplicationContext.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(Uri.fromParts("package", reactApplicationContext.packageName, null))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
 
     private fun notImplemented(promise: Promise) =
         promise.reject("E_NOT_IMPLEMENTED", "Not implemented yet")

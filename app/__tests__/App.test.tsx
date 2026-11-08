@@ -11,19 +11,19 @@ beforeEach(async () => {
 test('App starts on the Auth stack', async () => {
   await render(<App />);
   expect(await screen.findByText('Send code')).toBeTruthy();
-  expect(screen.queryByText('Home')).toBeNull();
+  expect(screen.queryByText('Status')).toBeNull();
 });
 
 test('signed-in users get the Main stack', async () => {
   await render(<RootNavigator isSignedIn />);
-  expect(screen.getAllByText('Home').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Status').length).toBeGreaterThan(0);
   expect(screen.queryByText('Send code')).toBeNull();
 });
 
 test('dev skip sign-in opens the Main stack', async () => {
   await render(<App />);
   await fireEvent.press(await screen.findByText('Skip sign-in (dev)'));
-  expect(screen.getAllByText('Home').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Status').length).toBeGreaterThan(0);
 });
 
 test('stored tokens and a chosen team restore straight into Main', async () => {
@@ -32,5 +32,5 @@ test('stored tokens and a chosen team restore straight into Main', async () => {
   });
   await Keychain.setGenericPassword('team', '1', { service: 'floorwars.team' });
   await render(<App />);
-  expect((await screen.findAllByText('Home')).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText('Status')).length).toBeGreaterThan(0);
 });
