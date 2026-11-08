@@ -60,7 +60,7 @@ def _enforce_limits(limiter: RateLimiter | None, checks: list[tuple[str, str, in
     """Take one token from each ``(name, subject, per_hour)`` bucket, in order; 429 on the first
     empty one. Fails closed: no limiter, or Valkey unavailable, gives 503."""
     if limiter is None:
-        raise service_unavailable("Sign-in is temporarily unavailable.")
+        raise service_unavailable("Authentication is temporarily unavailable.")
     try:
         for name, subject, capacity in checks:
             decision = limiter.hit(name, subject, capacity, HOUR_S)
@@ -69,7 +69,7 @@ def _enforce_limits(limiter: RateLimiter | None, checks: list[tuple[str, str, in
                 raise too_many_requests("Too many requests.", decision.retry_after_s)
     except ValkeyError:
         logger.error("rate limiter unavailable")
-        raise service_unavailable("Sign-in is temporarily unavailable.") from None
+        raise service_unavailable("Authentication is temporarily unavailable.") from None
 
 
 def _store_pending_challenge(db: Session, settings: Settings, email: str, code: str) -> uuid.UUID:
@@ -252,7 +252,9 @@ def refresh(
             raise _bad_refresh()
         revoked = repository.revoke_family(db, row.family_id)
         db.commit()
-        logger.warning(
+        # Nothing left to revoke: the family was signed out (logout), not stolen.
+        log = logger.warning if revoked else logger.info
+        log(
             "refresh token reuse, family revoked",
             extra={"user_id": str(row.user_id), "family_id": str(row.family_id), "n": revoked},
         )

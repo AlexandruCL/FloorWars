@@ -297,6 +297,32 @@ def test_logout_revokes_the_whole_family(client: TestClient) -> None:
     assert _scalar(client, "SELECT count(*) FROM refresh_token WHERE revoked_at IS NULL") == 0
 
 
+def test_logout_with_an_older_token_still_revokes_the_newest(client: TestClient) -> None:
+    first = sign_in(client, new_email())
+    newer = client.post("/v1/auth/refresh", json={"refresh_token": first["refresh_token"]}).json()
+    assert (
+        client.post("/v1/auth/logout", json={"refresh_token": first["refresh_token"]}).status_code
+        == 204
+    )
+    assert (
+        client.post("/v1/auth/refresh", json={"refresh_token": newer["refresh_token"]}).status_code
+        == 401
+    )
+
+
+def test_refresh_after_logout_is_401_without_a_theft_warning(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    pair = sign_in(client, new_email())
+    body = {"refresh_token": pair["refresh_token"]}
+    client.post("/v1/auth/logout", json=body)
+    caplog.set_level(logging.INFO)
+    assert client.post("/v1/auth/refresh", json=body).status_code == 401
+    reuse = [r for r in caplog.records if "token reuse" in r.getMessage()]
+    assert reuse
+    assert all(r.levelno < logging.WARNING for r in reuse)
+
+
 def test_logout_leaves_other_sessions_alone(client: TestClient) -> None:
     mine = sign_in(client, new_email())
     other = sign_in(client, new_email())

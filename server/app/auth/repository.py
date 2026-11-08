@@ -122,7 +122,18 @@ def lock_refresh_token(db: Session, token_hash: bytes) -> RefreshToken | None:
 
 
 def revoke_family(db: Session, family_id: uuid.UUID) -> int:
-    """Revoke every still-valid token of the family; returns how many were revoked."""
+    """Revoke every still-valid token of the family; returns how many were revoked.
+
+    Locks all of the family's rows first, in id order: concurrent revokes (reuse detection,
+    logout) cannot deadlock, and a refresh that committed a new token meanwhile is seen by the
+    UPDATE below.
+    """
+    db.execute(
+        select(RefreshToken.id)
+        .where(RefreshToken.family_id == family_id)
+        .order_by(RefreshToken.id)
+        .with_for_update()
+    )
     result = db.execute(
         update(RefreshToken)
         .where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
