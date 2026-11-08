@@ -58,6 +58,10 @@ Made during the work by the agents and the coordinating session. Cristea has not
 - **One Gradle failure that was a JVM crash:** on the signout branch the test task failed with 35 of 39 tests reported and none failing. Five clean re-runs passed. A crash dump (`hs_err_pid*.log`) was left in `app/android/app`: `EXCEPTION_ACCESS_VIOLATION` in `jvm.dll`, JDK 17.0.12 on Windows, at the time of that run. So it was a Java crash on this laptop, not a test or code failure. If it shows up in CI, re-run the job.
 - **Ionut's server moved while this week ran:** contract 0.6.0 to 0.7.0 (the steps bound 10 and `POST /auth/logout`, both merged). The branches were rebased twice and the worker already handles the new 503 with `Retry-After`.
 
+## Audit of the PRs against the plan
+
+After the PRs were open, an audit found nine issues; eight are fixed in `fix/w3-audit` and one was left on purpose. Fixed: a stuck sync state that survived a sign-out; a foreground-service start in the background sync process that could crash it on Android 12+; a climb open at sign-out landing in the next user's outbox; the season checked only at app start; the 15-minute job starting the whole JS runtime with nothing to send; no test for the stored check-in; the check-in waiting for permission dialogs; a hand-written hash for a header the server ignores. Left on purpose: the outbox `attempts` column, which will be used later. One question for Ionut stays open (re-sending a `no_team` segment after joining). Details and the tests that fail without each fix are in `pr_descriptions/07_audit_fixes.md`.
+
 ## Not done, and why
 
 - **Season check:** `feat/w3-season-check` is written and tested in Jest (5 new tests) but not run on a phone or the emulator, and not against the real server.
