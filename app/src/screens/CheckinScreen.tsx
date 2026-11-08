@@ -55,7 +55,7 @@ export function CheckinScreen({ navigation, deps = deviceLibs }: Props) {
     try {
       const checkin: Checkin = await api('post', '/checkins', { body });
       const name = await buildingName(checkin.building_id);
-      setActiveCheckin(checkin, name);
+      await setActiveCheckin(checkin, name);
       busy.current = false;
       setPhase({
         name: 'success',
