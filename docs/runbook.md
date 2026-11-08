@@ -186,6 +186,19 @@ tail -n 30 /srv/floorwars/deploy.log
 If the certificate fails: DNS (`nslookup <DOMAIN>`), NSG and `ufw` rules for 80/443, and Let's
 Encrypt rate limits (use a staging CA while experimenting).
 
+**`/healthz` times out (curl exit 28, no HTTP status).** A timeout means nothing answered; a 404 or 502 would mean
+the server is up. Check in this order:
+
+1. VM state in the portal. A deallocated VM (see Cost hygiene) answers nothing. Start it. With a dynamic public IP the
+   address changes on start: compare it with the DNS A record (`nslookup <DOMAIN>`) and update the record if they differ.
+2. `ssh` in. If it fails but the VM runs: NSG inbound rules for 22, 80, 443, then `sudo ufw status`.
+3. After a start or reboot the containers can be down (section 10): `docker compose ps`, then
+   `sudo /srv/floorwars/deploy.sh "$(cat /srv/floorwars/current)"`.
+4. From the VM: `curl -i https://localhost/healthz --resolve <DOMAIN>:443:127.0.0.1`. Works here but not from outside:
+   NSG or DNS. Fails here too: `docker compose logs --tail=50 caddy api`.
+5. Once it answers, check that the running tag is the Week 3 release (`cat /srv/floorwars/current`) and that
+   `GET /v1/buildings` answers 401 without a token (the route exists).
+
 ## 9. Rollback
 
 ```sh
