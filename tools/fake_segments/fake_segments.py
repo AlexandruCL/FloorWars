@@ -6,12 +6,12 @@ batch-level device_id plus the segments. All kinds except out_of_range stay insi
 bounds, so a server rejects the bad kinds per item, never with 422.
 
 Kinds (the first failed rule of the server, spec section 4, is in brackets):
-  stairs        pass the scoring rule (plan 3.3): 4-8 steps per metre, 0.1-0.9 m/s, 5 s to 3 min.
+  stairs        pass the scoring rule (plan 3.3): 4-10 steps per metre, 0.1-0.9 m/s, 5 s to 3 min.
   elevator      fast ascent (> 1.0 m/s) with fewer than 1 step per metre. Scores 0.
-  shake         a small ascent (>= 2.0 m) with far more than 8 steps per metre. Scores 0.
+  shake         a small ascent (>= 2.0 m) with far more than 10 steps per metre. Scores 0.
   bad_speed     stairs-like steps per metre but above 0.9 m/s [speed].
   bad_cadence   valid speed and steps per metre, but more than 3 steps per second [cadence].
-  bad_ratio     valid speed, but under 4 or over 8 steps per metre [pressure_steps_mismatch].
+  bad_ratio     valid speed, but under 4 or over 10 steps per metre [pressure_steps_mismatch].
   out_of_range  ascent_m or steps outside the server bounds [ascent_range or steps_range]. The
                 contract schema bounds both, so a strict request model may answer 422 instead of
                 rejecting the item (spec section 1, decision 4).
@@ -64,7 +64,7 @@ SEEDED_START = datetime(2026, 11, 2, 10, 0, 0, tzinfo=UTC)
 # the server is the authority.
 ASCENT_MIN_M, ASCENT_MAX_M = 2.0, 120.0
 STEPS_MIN, STEPS_MAX = 1, 2000
-STEPS_PER_M_MIN, STEPS_PER_M_MAX = 4.0, 8.0
+STEPS_PER_M_MIN, STEPS_PER_M_MAX = 4.0, 10.0
 SPEED_MIN_MPS, SPEED_MAX_MPS = 0.1, 0.9
 DURATION_MIN_S, DURATION_MAX_S = 5.0, 180.0
 # Cadence limit (spec week 3 section 3, tunable). Generated stairs stay under STAIRS_MAX_CADENCE_HZ,
@@ -107,7 +107,7 @@ def _elevator_values(rng):
 def _shake_values(rng):
     ascent = round(rng.uniform(ASCENT_MIN_M, 2.6), 1)  # schema minimum, so not a 422
     duration = round(rng.uniform(30.0, 120.0), 1)
-    steps = round(ascent * rng.uniform(20.0, 60.0))  # far above 8 steps per metre
+    steps = round(ascent * rng.uniform(20.0, 60.0))  # far above 10 steps per metre
     return ascent, duration, steps, round(rng.uniform(0.05, 0.4), 2)
 
 
@@ -130,11 +130,11 @@ def _bad_cadence_values(rng):
 
 
 def _bad_ratio_values(rng):
-    """Valid speed; steps per metre about 1 to 3 (few steps) or 10 to 15 (many steps)."""
+    """Valid speed; steps per metre about 1 to 3 (few steps) or 11 to 15 (many steps)."""
     ascent = round(rng.uniform(3.0, 20.0), 1)
     speed = rng.uniform(0.3, 0.6)
     duration = round(ascent / speed, 1)
-    per_m = rng.uniform(1.0, 3.0) if rng.random() < 0.5 else rng.uniform(10.0, 15.0)
+    per_m = rng.uniform(1.0, 3.0) if rng.random() < 0.5 else rng.uniform(11.0, 15.0)
     return ascent, duration, max(STEPS_MIN, round(ascent * per_m)), round(rng.uniform(0.1, 0.5), 2)
 
 

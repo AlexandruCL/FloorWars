@@ -136,12 +136,12 @@ def test_range_bounds(field: str, value: float, reason: str | None) -> None:
         ({"vert_speed_mps": 0.319}, "speed"),
         ({"vert_speed_mps": math.nan}, "speed"),
         ({"vert_speed_mps": math.inf}, "speed"),
-        # Steps per metre on 12 m: 48 is 4.0, 96 is 8.0.
+        # Steps per metre on 12 m: 48 is 4.0, 120 is 10.0.
         ({"steps": 48}, None),
         ({"steps": 47}, "pressure_steps_mismatch"),
         ({"steps": 90}, None),
-        ({"steps": 96, "duration_s": 40.0, "vert_speed_mps": 0.3}, None),
-        ({"steps": 97, "duration_s": 40.0, "vert_speed_mps": 0.3}, "pressure_steps_mismatch"),
+        ({"steps": 120, "duration_s": 40.0, "vert_speed_mps": 0.3}, None),
+        ({"steps": 121, "duration_s": 45.0, "vert_speed_mps": 0.267}, "pressure_steps_mismatch"),
         # Cadence on 20 s, 8 m (0.4 m/s): 60 steps is 3.0 per second and 7.5 per metre.
         ({"ascent_m": 8.0, "duration_s": 20.0, "steps": 60}, None),
         ({"ascent_m": 8.0, "duration_s": 20.0, "steps": 61}, "cadence"),

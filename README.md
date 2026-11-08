@@ -27,7 +27,7 @@ The full project reference and six-week plan is [`IMPLEMENTATION_PLAN.md`](IMPLE
 ## How the game works
 
 - **Territory is per building.** A building is the claimed object. The team with the most points in a building over the rolling 7-day window owns it.
-- **Points come from verified stair steps.** A segment scores only if its step count matches its pressure change: stairs need about 4 to 8 steps per metre of ascent. Elevator rides, flat walking and shaking score nothing.
+- **Points come from verified stair steps.** A segment scores only if its step count matches its pressure change: stairs need about 4 to 10 steps per metre of ascent. Elevator rides, flat walking and shaking score nothing.
 - **Floors are a display estimate.** 20 verified steps is shown as one "floor (estimate)". It is never a real storey number.
 - **No building data is required.** Ascent is measured in metres from the barometer. The app does not know floor counts, heights or room positions.
 - **Anti-cheat:** on-device classifier, server-side plausibility checks, per-user rate limits, signed expiring QR codes at the entrance.
