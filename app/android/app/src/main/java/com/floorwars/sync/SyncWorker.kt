@@ -9,13 +9,17 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
+import com.floorwars.floorsensors.outbox.RoomSegmentOutbox
 import java.util.concurrent.TimeUnit
 
 // Wakes the JS sync worker through Headless JS. It never uploads by itself: the sync logic lives
 // in app/src/sync.
 class SyncWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result = try {
-        applicationContext.startService(Intent(applicationContext, SyncTaskService::class.java))
+        // Starting the React Native runtime costs seconds and battery: only do it with rows to send.
+        if (RoomSegmentOutbox.get(applicationContext).pendingCount() > 0) {
+            applicationContext.startService(Intent(applicationContext, SyncTaskService::class.java))
+        }
         Result.success()
     } catch (e: IllegalStateException) {
         // Android refused a background service start; try again on the next backoff.
