@@ -8,18 +8,18 @@ Commands are for PowerShell on Windows, run from the repository root unless a st
 
 | Branch | Items | Head | State |
 |---|---|---|---|
-| `feat/w3-outbox-v2` | seam, Room outbox | `80a9c35` | pushed, PR to be created from the web page (no GitHub CLI on the laptop) |
-| `feat/w3-engine-v2` | live segmenter, check-in attribution, gap counter | `4dc2233` | pushed, PR to be created, includes the outbox commits until that PR merges |
-| `feat/w3-sync-v2` | sync worker, WorkManager job, status screen | `25b7811` | pushed, PR to be created, includes the outbox commits |
-| `feat/w3-signout-v2` | sign out | `d66b87d` | pushed, PR to be created, conflicts with the sync PR on Home (see step 1) |
-| `feat/w3-logout-call-v2` | Sign out calls Ionut's `POST /v1/auth/logout` | `bc26712` | pushed, PR to be created, stacked on `feat/w3-signout-v2` |
+| `feat/w3-outbox-v2` | seam, Room outbox | `80a9c35` | pushed, PR #62 |
+| `feat/w3-engine-v2` | live segmenter, check-in attribution, gap counter | `4dc2233` | pushed, PR #63, includes the outbox commits until that PR merges |
+| `feat/w3-sync-v2` | sync worker, WorkManager job, status screen | `25b7811` | pushed, PR #64, includes the outbox commits |
+| `feat/w3-signout-v2` | sign out | `d66b87d` | pushed, PR #65, conflicts with the sync PR on Home (see step 1) |
+| `feat/w3-logout-call-v2` | Sign out calls Ionut's `POST /v1/auth/logout` | `bc26712` | pushed, PR #66, stacked on `feat/w3-signout-v2` |
 | `docs/w3-finish` | this file, the summary, the tester guide, README and plan updates | n/a | pushed with the PR for it |
 
 All four branches are green on Android tests, ktlint, lint, typecheck, Jest and the generated-client check, against the contract on `main` (now 0.7.0-draft, with `/auth/logout`). They have only been tested against the Prism mock and an emulator, never the real server.
 
 ## Step 1. Open and merge the pull requests, in this order
 
-Open each PR on GitHub with the compare link, base `main`, and paste the body from `cristea/week_3/pr_descriptions/`. Ask Ionut for review on the parts that touch the contract (`/segments`, `/checkins`).
+The PRs are open (#62 outbox, #63 engine, #64 sync, #65 signout, #66 logout call, #67 these docs), base `main`. The links below are only for reference. Ask Ionut for review on the parts that touch the contract (`/segments`, `/checkins`).
 
 - [ ] `feat/w3-outbox-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-outbox-v2. Body: `pr_descriptions/01_outbox.md`.
 - [ ] `feat/w3-engine-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-engine-v2, after the outbox PR is merged. Body: `02_engine.md`. Update the branch from `main` first (**Update branch** on the PR page, or a rebase).
