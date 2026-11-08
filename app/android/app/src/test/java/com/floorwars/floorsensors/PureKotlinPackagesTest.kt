@@ -9,7 +9,7 @@ class PureKotlinPackagesTest {
     @Test
     fun segmenterAndClassifierHaveNoAndroidImports() {
         val forbidden = listOf("import android.", "import androidx.", "import com.facebook.")
-        for (pkg in listOf("segmenter", "classifier")) {
+        for (pkg in listOf("segmenter", "classifier", "detection")) {
             val sources = File("src/main/java/com/floorwars/floorsensors/$pkg")
                 .walk()
                 .filter { it.extension == "kt" }

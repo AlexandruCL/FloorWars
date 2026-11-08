@@ -3,4 +3,7 @@
     <string name="sensor_channel_name">Sensor logging</string>
     <string name="sensor_notification_title">Logging sensors</string>
     <string name="sensor_notification_text">Label: %1$s</string>
+    <string name="detect_notification_title">Counting stair climbs</string>
+    <string name="detect_notification_text">Climbs count for %1$s until %2$s</string>
+    <string name="detect_notification_building">Building %1$d</string>
 </resources>

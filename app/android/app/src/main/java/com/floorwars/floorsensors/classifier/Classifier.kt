@@ -34,6 +34,12 @@ object ClassifierThresholds {
     const val MIN_SHAKE_FREE_ASCENT_M = ScoringThresholds.MIN_ASCENT_M
 }
 
+// Sent as classifier_version; the thresholds above are compiled in, so they share one version.
+const val CLASSIFIER_VERSION = "rules-1"
+
+// The rules give no probability and only STAIRS segments are stored, so stair_prob is fixed.
+const val RULES_STAIR_PROB = 1.0
+
 class Classifier {
     fun classify(segment: Segment): SegmentClass = verdict(segment).segmentClass
 

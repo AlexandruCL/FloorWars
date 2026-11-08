@@ -9,23 +9,58 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.text.format.DateFormat
 import android.util.Log
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import com.floorwars.R
+import com.floorwars.floorsensors.detection.ActiveCheckin
+import com.floorwars.floorsensors.detection.CheckinHistory
+import com.floorwars.floorsensors.detection.GAP_THRESHOLD_S
+import com.floorwars.floorsensors.detection.GapCounter
+import com.floorwars.floorsensors.detection.SegmentDetector
+import com.floorwars.floorsensors.detection.detectionEndMs
+import com.floorwars.floorsensors.outbox.OutboxSegment
 import com.floorwars.floorsensors.outbox.RoomSegmentOutbox
+import com.floorwars.floorsensors.outbox.SegmentOutbox
+import java.util.Date
 
+// Two modes, which can overlap: logging records a trace for the logger screen; detecting runs the
+// live segmenter during an active check-in and writes STAIRS segments to the outbox, no trace.
 class FloorSensorsService :
     Service(),
     SensorEventListener {
 
     private lateinit var sensorManager: SensorManager
     private var wakeLock: PowerManager.WakeLock? = null
+
+    // Sensor callbacks, segmenting and outbox writes run here: Room refuses the main thread, and a
+    // pass over the 4-minute window should not hold up the UI.
+    private val sensorThread = HandlerThread("FloorSensors").apply { start() }
+    private val sensorHandler = Handler(sensorThread.looper)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val expire = Runnable { stopDetecting() }
+
+    // Main thread only. The latest check-in; null when not detecting.
+    private var checkin: ActiveCheckin? = null
+    private var registeredLatencyUs: Int? = null
+
+    // Set on the main thread when detection starts. Segment times and the history share one clock:
+    // elapsedRealtime plus this offset, so a wall-clock change cannot move a climb across a swap.
+    private var offsetMs = 0L
+    private var history = CheckinHistory()
+
+    // Sensor thread only.
+    private var detector: SegmentDetector? = null
+    private var gaps: GapCounter? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -43,43 +78,166 @@ class FloorSensorsService :
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val newLabel = intent?.getStringExtra(EXTRA_LABEL).orEmpty()
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            buildNotification(newLabel),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
-        )
-
-        sensorManager.unregisterListener(this)
-        buffer.clear()
-        val registered = SENSOR_TYPES.mapNotNull { type ->
-            sensorManager.getDefaultSensor(type)?.also {
-                sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
-            }
+        when (intent?.action) {
+            ACTION_DETECT -> startDetecting(ActiveCheckinStore.load(this))
+            ACTION_STOP_DETECT -> stopDetecting()
+            ACTION_STOP_LOGGING -> stopLogging()
+            else -> startLogging(intent?.getStringExtra(EXTRA_LABEL).orEmpty())
         }
-        Log.i(TAG, "logging label=$newLabel sensors=${registered.map { it.name }}")
-
-        // Keeps the CPU awake with the screen off so non-wakeup sensors keep delivering events.
-        if (wakeLock == null) {
-            wakeLock = getSystemService(PowerManager::class.java)
-                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FloorWars:sensors")
-                .apply { acquire() }
-        }
-
-        session =
-            TraceSession(newLabel, System.currentTimeMillis(), SystemClock.elapsedRealtimeNanos())
-        label = newLabel
-        statusListener?.invoke()
         return START_NOT_STICKY
     }
 
+    private fun startLogging(newLabel: String) {
+        label = newLabel
+        startForeground()
+        buffer.clear()
+        session =
+            TraceSession(newLabel, System.currentTimeMillis(), SystemClock.elapsedRealtimeNanos())
+        updateSensorsAndWakeLock()
+        Log.i(TAG, "logging label=$newLabel")
+        statusListener?.invoke()
+    }
+
+    // Ends the logger's session; detection, if on, keeps running.
+    private fun stopLogging() {
+        if (label != null) {
+            session = session?.copy(stoppedAtMillis = System.currentTimeMillis())
+            label = null
+            Log.i(TAG, "logging stopped buffered=${buffer.size()}")
+        }
+        updateSensorsAndWakeLock()
+        if (checkin == null) stopSelf() else startForeground()
+        statusListener?.invoke()
+    }
+
+    // Starts detection, or moves it to a new check-in. One detector runs across a swap, so a climb
+    // in progress is not split; each segment takes the check-in active at its start.
+    private fun startDetecting(newCheckin: ActiveCheckin?) {
+        if (newCheckin == null || !newCheckin.isValidAt(System.currentTimeMillis())) {
+            // Started with startForegroundService, so this must run even with nothing to do.
+            startForeground()
+            Log.w(TAG, "detect: no valid check-in stored")
+            if (checkin == null) stopDetecting()
+            return
+        }
+        if (checkin == null) {
+            offsetMs = System.currentTimeMillis() - SystemClock.elapsedRealtime()
+            val newHistory = CheckinHistory().also { history = it }
+            val sessionOffsetMs = offsetMs
+            val hasBarometer = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE) != null
+            sensorHandler.post {
+                detector = SegmentDetector(
+                    outboxNotifying,
+                    sessionOffsetMs,
+                    hasBarometer,
+                    newHistory::at
+                ).also { lastDetector = it }
+            }
+        }
+        // A new check-in starts a new gap session (W3-7).
+        if (newCheckin.id != checkin?.id) {
+            sensorHandler.post {
+                logGaps()
+                gaps = GapCounter().also { lastGaps = it }
+            }
+        }
+        history.set(newCheckin, SystemClock.elapsedRealtime() + offsetMs)
+        checkin = newCheckin
+        detecting = true
+        startForeground()
+        val stopInMs = detectionEndMs(newCheckin.validUntilMs) - System.currentTimeMillis()
+        mainHandler.removeCallbacks(expire)
+        mainHandler.postDelayed(expire, stopInMs)
+        updateSensorsAndWakeLock()
+        Log.i(TAG, "detecting building=${newCheckin.buildingId} for ${stopInMs / 1000} s")
+        statusListener?.invoke()
+    }
+
+    private fun stopDetecting() {
+        mainHandler.removeCallbacks(expire)
+        // A climb that started before now keeps its check-in; the flush below still finds it.
+        history.end(SystemClock.elapsedRealtime() + offsetMs)
+        checkin = null
+        detecting = false
+        flushDetector()
+        updateSensorsAndWakeLock()
+        if (label == null) stopSelf() else startForeground()
+        statusListener?.invoke()
+    }
+
+    // Flushes an open climb into the outbox before the detector goes.
+    private fun flushDetector() = sensorHandler.post {
+        detector?.stop()
+        detector = null
+        logGaps()
+        gaps = null
+    }
+
+    // Sensor thread. Local only, never uploaded.
+    private fun logGaps() {
+        val g = gaps ?: return
+        Log.i(
+            TAG,
+            "gap session: longest=${g.longestGapS} s over${GAP_THRESHOLD_S}s=${g.gapsOverThreshold}"
+        )
+    }
+
+    // Called on every mode change: sensors and the wake lock run while either mode is on.
+    private fun updateSensorsAndWakeLock() {
+        val active = checkin
+        if (label == null && active == null) {
+            sensorManager.unregisterListener(this)
+            registeredLatencyUs = null
+            wakeLock?.takeIf { it.isHeld }?.release()
+            return
+        }
+        // Batching saves battery while detecting; the logger keeps it off so a stop loses no events.
+        val latencyUs = if (label != null) 0 else MAX_REPORT_LATENCY_US
+        // Unregistering can drop the events still batched in the sensor hub, so a check-in swap
+        // mid-climb keeps the registration as it is.
+        if (latencyUs != registeredLatencyUs) {
+            sensorManager.unregisterListener(this)
+            val registered = SENSOR_TYPES.mapNotNull { type ->
+                sensorManager.getDefaultSensor(type)?.also {
+                    sensorManager.registerListener(
+                        this,
+                        it,
+                        SAMPLING_PERIOD,
+                        latencyUs,
+                        sensorHandler
+                    )
+                }
+            }
+            registeredLatencyUs = latencyUs
+            Log.i(TAG, "sensors=${registered.map { it.name }} latencyUs=$latencyUs")
+        }
+
+        // Non-wakeup sensors stop delivering when the CPU sleeps, so a partial wake lock keeps it
+        // awake with the screen off. While only detecting, it times out when detection ends
+        // (expiry plus the grace), so a missed stop cannot drain the battery (Cristea, 2026-11-06).
+        val lock = wakeLock ?: getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FloorWars:sensors")
+            .apply { setReferenceCounted(false) }
+            .also { wakeLock = it }
+        if (label != null || active == null) {
+            lock.acquire()
+        } else {
+            lock.acquire(detectionEndMs(active.validUntilMs) - System.currentTimeMillis())
+        }
+    }
+
     override fun onDestroy() {
+        mainHandler.removeCallbacks(expire)
         sensorManager.unregisterListener(this)
-        wakeLock?.release()
+        flushDetector()
+        // Runs the flush above, then ends the thread.
+        sensorThread.quitSafely()
+        wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
+        checkin = null
+        detecting = false
         Log.i(TAG, "stopped label=$label buffered=${buffer.size()} byType=${buffer.countByType()}")
-        session = session?.copy(stoppedAtMillis = System.currentTimeMillis())
+        if (label != null) session = session?.copy(stoppedAtMillis = System.currentTimeMillis())
         label = null
         statusListener?.invoke()
         super.onDestroy()
@@ -87,12 +245,55 @@ class FloorSensorsService :
 
     override fun onSensorChanged(event: SensorEvent) {
         // The framework reuses event.values, so copy it.
-        buffer.add(RawSensorEvent(event.sensor.type, event.timestamp, event.values.copyOf()))
+        val raw = RawSensorEvent(event.sensor.type, event.timestamp, event.values.copyOf())
+        if (label != null) buffer.add(raw)
+        detector?.let {
+            if (raw.sensorType == Sensor.TYPE_PRESSURE) {
+                gaps?.onPressure(raw.timestampNanos)
+                it.add(listOf(raw), emptyList())
+            } else {
+                it.add(emptyList(), listOf(raw))
+            }
+        }
     }
 
     override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) = Unit
 
-    private fun buildNotification(label: String): Notification {
+    private val outboxNotifying = object : SegmentOutbox {
+        override fun insert(segment: OutboxSegment) {
+            RoomSegmentOutbox.get(this@FloorSensorsService).insert(segment)
+            pendingListener?.invoke()
+        }
+    }
+
+    private fun startForeground() {
+        val logging = label
+        val active = checkin
+        val notification = when {
+            logging != null -> buildNotification(
+                getString(R.string.sensor_notification_title),
+                getString(R.string.sensor_notification_text, logging)
+            )
+            active != null -> buildNotification(
+                getString(R.string.detect_notification_title),
+                getString(
+                    R.string.detect_notification_text,
+                    active.buildingName
+                        ?: getString(R.string.detect_notification_building, active.buildingId),
+                    DateFormat.getTimeFormat(this).format(Date(active.validUntilMs))
+                )
+            )
+            else -> buildNotification(getString(R.string.detect_notification_title), "")
+        }
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
+        )
+    }
+
+    private fun buildNotification(title: String, text: String): Notification {
         val channel = NotificationChannelCompat
             .Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
             .setName(getString(R.string.sensor_channel_name))
@@ -107,8 +308,8 @@ class FloorSensorsService :
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_sensors)
-            .setContentTitle(getString(R.string.sensor_notification_title))
-            .setContentText(getString(R.string.sensor_notification_text, label))
+            .setContentTitle(title)
+            .setContentText(text)
             .setContentIntent(openApp)
             .setOngoing(true)
             .build()
@@ -116,17 +317,46 @@ class FloorSensorsService :
 
     companion object {
         const val EXTRA_LABEL = "label"
+
+        // Reads the check-in from ActiveCheckinStore. Send with startForegroundService.
+        const val ACTION_DETECT = "com.floorwars.floorsensors.DETECT"
+
+        // Send with startService: these paths may not call startForeground.
+        const val ACTION_STOP_DETECT = "com.floorwars.floorsensors.STOP_DETECT"
+        const val ACTION_STOP_LOGGING = "com.floorwars.floorsensors.STOP_LOGGING"
         private const val TAG = "FloorSensors"
         private const val CHANNEL_ID = "sensor_logging"
         private const val NOTIFICATION_ID = 1
         private val SENSOR_TYPES = listOf(Sensor.TYPE_PRESSURE, Sensor.TYPE_STEP_DETECTOR)
 
+        // About 25 Hz on the SM-S918B and 10 Hz on the SM-G985F (plan 3.3), plenty for an 8 s median.
+        private const val SAMPLING_PERIOD = SensorManager.SENSOR_DELAY_GAME
+
+        // The sensor hub may hold events up to 5 s and hand them over in one burst, fewer callbacks
+        // than one per event. The segmenter runs every 5 s anyway (LiveSegmenterParams.EVAL_INTERVAL_S).
+        private const val MAX_REPORT_LATENCY_US = 5_000_000
+
         // Bounded so a forgotten session cannot exhaust memory.
         val buffer = SensorEventBuffer(capacity = 100_000)
 
-        // Non-null while the service is in the foreground and sensors are registered.
+        // Non-null while logging: the logger screen's session is running.
         @Volatile
         var label: String? = null
+            private set
+
+        // True while detection runs (a check-in is active, or in its grace after expiry).
+        @Volatile
+        var detecting = false
+            private set
+
+        // The current or last gap session, kept for getStatus after detection stops.
+        @Volatile
+        var lastGaps: GapCounter? = null
+            private set
+
+        // The current or last detector, for its counters; it outlives the session for getStatus.
+        @Volatile
+        var lastDetector: SegmentDetector? = null
             private set
 
         // The latest session; stoppedAtMillis is set once it has stopped.
@@ -136,5 +366,9 @@ class FloorSensorsService :
 
         @Volatile
         var statusListener: (() -> Unit)? = null
+
+        // Called on the sensor thread after each outbox insert.
+        @Volatile
+        var pendingListener: (() -> Unit)? = null
     }
 }
