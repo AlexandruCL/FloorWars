@@ -81,7 +81,7 @@ export async function submitLandingScan(
         return { kind: 'invalid', text: INVALID };
       }
       if (e.status === 429) {
-        // shortcut: no Retry-After header falls back to the full cooldown; the contract marks the header "Inferred".
+        // No Retry-After header: the full cooldown (Cristea's decision, 2026-11-17).
         const ms =
           e.retryAfterS == null
             ? LANDING_SCAN_COOLDOWN_MS

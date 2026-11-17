@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Linking, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { CheckinDeps } from '../checkin/deps';
 import { deviceLibs } from '../checkin/deviceLibs';
@@ -36,7 +36,7 @@ export function LandingScanScreen({ navigation, deps = deviceLibs }: Props) {
   if (checkin === undefined) {
     return (
       <Screen>
-        <Body>Loading...</Body>
+        <ActivityIndicator accessibilityLabel="Loading" color={colors.accent} />
       </Screen>
     );
   }

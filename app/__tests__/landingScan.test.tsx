@@ -213,6 +213,12 @@ describe('LandingScanScreen', () => {
   const open = () =>
     render(<LandingScanScreen {...({ navigation, deps } as any)} />);
 
+  test('while reading the check-in: a spinner and no text', async () => {
+    native.getActiveCheckin.mockReturnValue(new Promise(() => {}));
+    await open();
+    screen.getByLabelText('Loading');
+    expect(screen.queryByText('Loading...')).toBeNull();
+  });
   test('no check-in: message, no scan button', async () => {
     native.getActiveCheckin.mockResolvedValue(null);
     await open();
