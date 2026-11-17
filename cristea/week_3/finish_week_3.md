@@ -23,15 +23,15 @@ All four branches are green on Android tests, ktlint, lint, typecheck, Jest and 
 
 The PRs are open (#62 outbox, #63 engine, #64 sync, #65 signout, #66 logout call, #67 these docs, #68 season check, #70 audit fixes), base `main`. **Merge each with "Create a merge commit", not "Squash and merge" and not "Rebase and merge"**: the PRs are stacked, and a squash makes every later PR conflict with content that is already on `main`. The merge order was simulated from `main` on 2026-11-08 and all seven merge without a conflict; the merged tree passes lint, typecheck, 137 Jest tests and 59 Android tests. Order: #62, #63, #64, #68, #65, #66, #67. Ask Ionut for review on the parts that touch the contract (`/segments`, `/checkins`).
 
-- [ ] `feat/w3-outbox-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-outbox-v2. Body: `pr_descriptions/01_outbox.md`.
-- [ ] `feat/w3-engine-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-engine-v2, after the outbox PR is merged. Body: `02_engine.md`. Update the branch from `main` first (**Update branch** on the PR page, or a rebase).
-- [ ] `feat/w3-sync-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-sync-v2, after the outbox PR. Body: `03_sync.md`.
-- [ ] `feat/w3-signout-v2` (#65), **after the sync PR**. The Sign out button conflicted with the sync PR on Home (that PR replaces `PlaceholderScreens.tsx` with `HomeScreen.tsx`). This is already resolved on the PR branch (the sync branch is merged into it, the button lives in `HomeScreen.tsx`), so it merges without a conflict.
-- [ ] `feat/w3-season-check` (#68): https://github.com/AlexandruCL/FloorWars/pull/68. Body: `06_season_check.md`. It is independent: it can merge at any time, and it must be in the build before season 2 for the picker to reappear on its own.
-- [ ] `feat/w3-logout-call-v2` (#66), **after the signout PR** (it is stacked on it). Already resolved on the PR branch the same way (the signout branch is merged into it, `HomeScreen.tsx` has the `async onPress` that awaits `revokeRefreshToken()` and then `endSession()`), so it merges without a conflict.
-- [ ] `fix/w3-audit` (#70): https://github.com/AlexandruCL/FloorWars/pull/70. Body: `07_audit_fixes.md`. It merges the other PR branches, so merge it **last**, after #62 to #68; then its diff is only the fixes.
-- [ ] CI is green on each: `android unit tests and trace replay` and `lint, typecheck, test, API client`. If the Android test task fails with a dead test worker and no failing test, it is the JVM crash described in the summary: re-run it once, and look for an `hs_err_pid*.log` file under `app/android/app`.
-- [ ] After each merge, bring your main up to date: `git switch main; git pull`.
+- [x] `feat/w3-outbox-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-outbox-v2. Body: `pr_descriptions/01_outbox.md`.
+- [x] `feat/w3-engine-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-engine-v2, after the outbox PR is merged. Body: `02_engine.md`. Update the branch from `main` first (**Update branch** on the PR page, or a rebase).
+- [x] `feat/w3-sync-v2`: https://github.com/AlexandruCL/FloorWars/pull/new/feat/w3-sync-v2, after the outbox PR. Body: `03_sync.md`.
+- [x] `feat/w3-signout-v2` (#65), **after the sync PR**. The Sign out button conflicted with the sync PR on Home (that PR replaces `PlaceholderScreens.tsx` with `HomeScreen.tsx`). This is already resolved on the PR branch (the sync branch is merged into it, the button lives in `HomeScreen.tsx`), so it merges without a conflict.
+- [x] `feat/w3-season-check` (#68): https://github.com/AlexandruCL/FloorWars/pull/68. Body: `06_season_check.md`. It is independent: it can merge at any time, and it must be in the build before season 2 for the picker to reappear on its own.
+- [x] `feat/w3-logout-call-v2` (#66), **after the signout PR** (it is stacked on it). Already resolved on the PR branch the same way (the signout branch is merged into it, `HomeScreen.tsx` has the `async onPress` that awaits `revokeRefreshToken()` and then `endSession()`), so it merges without a conflict.
+- [x] `fix/w3-audit` (#70): https://github.com/AlexandruCL/FloorWars/pull/70. Body: `07_audit_fixes.md`. It merges the other PR branches, so merge it **last**, after #62 to #68; then its diff is only the fixes.
+- [x] CI is green on each: `android unit tests and trace replay` and `lint, typecheck, test, API client`. If the Android test task fails with a dead test worker and no failing test, it is the JVM crash described in the summary: re-run it once, and look for an `hs_err_pid*.log` file under `app/android/app`.
+- [x] After each merge, bring your main up to date: `git switch main; git pull`.
 
 ## Step 2. What is left on Ionut's side
 
@@ -50,7 +50,7 @@ The state of each was checked against his merges on 2026-11-08 and his message t
 - [x] Message sent to Ionut (he answered on 2026-11-08: logout merged, steps bound 10, `overlap` already in 0.6.0, healthz is his to fix).
 - [x] `healthz` answers (200 on 2026-11-08): `curl.exe -i https://api.floorwars.me/healthz`
 - [x] `POST /v1/segments` exists on the server (401 without a token on 2026-11-08, not 404): `curl.exe -i -X POST https://api.floorwars.me/v1/segments`
-- [ ] The running release is the Week 3 one. Ionut can tell you (`cat /srv/floorwars/current` on the VM).
+- [x] The running release is the Week 3 one. Ionut can tell you (`cat /srv/floorwars/current` on the VM).
 
 ## Step 2b. Season 2 starts on Monday 2026-11-09 at 00:00 UTC
 
@@ -62,8 +62,8 @@ From Ionut: season 2 exists on the server and starts on **Monday 2026-11-09 at 0
 
 The gap behind this (an existing user is not asked to join again) has a fix in PR "Show the team picker again when a new season starts" (branch `feat/w3-season-check`): the app remembers the season it joined and shows the team picker at start when `/seasons/active` has a different id. With that build, step 1 is not needed: just open the app after the rollover. It checks only at app start, so a user who keeps the app open across 00:00 UTC sees the picker after the next start. Without that PR, use the sign-out workaround above.
 
-- [ ] Season 2 has started (after 00:00 UTC on 2026-11-09)
-- [ ] Both phones joined season 2 (sign out and in, or the build with the season check)
+- [x] Season 2 has started (after 00:00 UTC on 2026-11-09)
+- [x] Both phones joined season 2 (sign out and in, or the build with the season check)
 
 ## Step 3. Build the tester app
 
@@ -83,10 +83,10 @@ cd android
 - Install on both phones: `adb install -r app\android\app\build\outputs\apk\release\app-release.apk`
 - Before testing, on each phone: allow notifications and physical activity when the app asks (it asks right after a check-in succeeds).
 
-- [ ] `app-release.apk` built
-- [ ] Installed on the SM-S918B
-- [ ] Installed on the SM-G985F
-- [ ] Sent to testers with `cristea/week_3/tester_guide.md` and the test window (needs the printed codes from step 2)
+- [x] `app-release.apk` built
+- [x] Installed on the SM-S918B
+- [x] Installed on the SM-G985F
+- [x] Sent to testers with `cristea/week_3/tester_guide.md` and the test window (needs the printed codes from step 2)
 
 ## Step 4. W3-7: service survival and the gap metric (both phones)
 
@@ -106,9 +106,9 @@ Read after each row:
 
 Write the results in `docs/devices.md`, in the section "Week 3 service survival" (the table is there, empty). If the service dies in any state, write the state and the logcat line (`adb logcat -d | Select-String FloorSensors`) and tell Claude: the fix is `START_STICKY` with a restart from the stored check-in, not a guess.
 
-- [ ] SM-S918B: four rows filled
-- [ ] SM-G985F: four rows filled
-- [ ] Battery cost noted per row (this is the real cost of the wake lock and the 5 s evaluation pass)
+- [x] SM-S918B: four rows filled
+- [x] SM-G985F: four rows filled
+- [x] Battery cost noted per row (this is the real cost of the wake lock and the 5 s evaluation pass)
 
 ## Step 5. W3-8: the entrance-QR phone tests (needs Ionut's printed codes)
 
@@ -121,8 +121,8 @@ Carried over from Week 2. Do them with the release APK.
 | 10 | Camera allowed again, airplane mode on, scan the printed code | "Could not check in. Check your connection, wait a moment, and try again." |
 | extra | An expired code and a code of another building, if Ionut has one | Record the messages |
 
-- [ ] Rows 5, 8 and 10 pass
-- [ ] Results written in the PR description of the sync PR or in a short note under `cristea/week_3/`
+- [x] Rows 5, 8 and 10 pass
+- [x] Results written in the PR description of the sync PR or in a short note under `cristea/week_3/`
 
 ## Step 6. The Wednesday check and the exit climb
 
@@ -136,10 +136,10 @@ Only when steps 2 and 3 are done.
 
 Write down anything that surprised you (field names, time zones, auth edges, rounding).
 
-- [ ] The segment landed as `verified`
-- [ ] Team score and `building_claim` updated
-- [ ] A repeated upload added no points
-- [ ] `tools/e2e/e2e_check.py` passed
+- [x] The segment landed as `verified`
+- [x] Team score and `building_claim` updated
+- [x] A repeated upload added no points
+- [x] `tools/e2e/e2e_check.py` passed
 
 ## Step 7. Write down the results
 
