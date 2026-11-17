@@ -27,7 +27,7 @@ A new session that is told "continue cristea/week_4/week_4_prompt.md" starts her
 
 | Branch | Head | Verified | Left to do |
 |---|---|---|---|
-| `feat/w4-contract` | `19cf2b9` | contract tests 3/3; full Jest green except nothing (the App test fix `c2e4eb4` is cherry-picked as `19cf2b9`) | PR, Ionut reviews |
+| `feat/w4-contract` | `19cf2b9` | contract tests 3/3 at `91c6ea8`; the App test fix `c2e4eb4` cherry-picked as `19cf2b9` (full Jest not re-run after the cherry-pick) | PR, Ionut reviews |
 | `feat/w4-seam` | `c2e4eb4` | Android 64/0, Jest 141/141, lint, tsc | PR |
 | `feat/w4-realtime` | `9b7a16e` | at `16d421f`: Android 89/0, Jest 152/152 cold; break checks: dedupe removed → 5 fail, 10-min limit removed → 1 fails; emulator deep link cold and warm passed (agent's run) | **the catch-up fix below**, then re-verify `9b7a16e`+fix |
 | `feat/w4-screens` | `861238c` | Android 64/0 forced, Jest 182/182, lint, tsc; break check: counting pending/rejected → 2 fail; packages `react-native-svg` 15.16.0, Reanimated 4.7.1, worklets 0.13.1 (all MIT) | click-through; cold-Jest slowness (below) |
