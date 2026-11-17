@@ -13,6 +13,9 @@ interface LastEventIdStore {
 
 // One path for socket messages and polled pages (plan 7.2.1). Delivery is at least once, so each
 // event_id passes once; ids only grow, so anything at or below the stored one has been handled.
+// Silent catch-up (Cristea, 2026-11-17): a delivery (one socket message or one polled page) that
+// starts with no id stored (sign-in, reinstall) is the backlog. It advances the id and reaches JS,
+// but notifies nothing. Once an id is stored, flips go to the notifier.
 class GameEventPipeline(
     private val store: LastEventIdStore,
     private val emit: (json: String) -> Unit,
@@ -26,7 +29,7 @@ class GameEventPipeline(
         } catch (e: JSONException) {
             return
         }
-        handle(event)
+        handle(event, notify = store.lastEventId > 0)
     }
 
     // A GameEventPage from GET /me/events, items oldest first.
@@ -37,10 +40,11 @@ class GameEventPipeline(
         } catch (e: JSONException) {
             return
         }
-        for (i in 0 until items.length()) items.optJSONObject(i)?.let(::handle)
+        val notify = store.lastEventId > 0
+        for (i in 0 until items.length()) items.optJSONObject(i)?.let { handle(it, notify) }
     }
 
-    private fun handle(event: JSONObject) {
+    private fun handle(event: JSONObject, notify: Boolean) {
         // Without an id an event cannot be deduplicated, so it is dropped.
         val id = event.optLong("event_id", 0)
         if (id <= 0 || id <= store.lastEventId) return
@@ -48,7 +52,7 @@ class GameEventPipeline(
         when (event.optString("type")) {
             "building_flipped" -> {
                 emit(event.toString())
-                flipOf(event)?.let(onFlip)
+                if (notify) flipOf(event)?.let(onFlip)
             }
             "season_state" -> emit(event.toString())
             // An unknown type is skipped; its id still counts as handled.

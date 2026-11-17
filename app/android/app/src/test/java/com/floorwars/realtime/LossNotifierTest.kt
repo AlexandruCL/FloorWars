@@ -25,7 +25,12 @@ class LossNotifierTest {
     private var nextId = 1
 
     @Before
-    fun context() = prefs.setContext("AC", """[{"id":7,"name":"Politehnica"}]""")
+    fun context() {
+        prefs.setContext("AC", """[{"id":7,"name":"Politehnica"}]""")
+        // Past the silent catch-up: an id is stored, so losses notify.
+        prefs.lastEventId = 100
+        nextId = 101
+    }
 
     @After
     fun clear() {
@@ -77,7 +82,7 @@ class LossNotifierTest {
     @Test
     fun seasonStateDoesNotNotify() {
         pipeline.onMessage(
-            """{"type":"season_state","event_id":1,"paused":true,"ends_at":"2026-12-01T00:00:00Z"}"""
+            """{"type":"season_state","event_id":${nextId++},"paused":true,"ends_at":"2026-12-01T00:00:00Z"}"""
         )
         assertEquals(0, posted().size)
     }
@@ -116,6 +121,7 @@ class LossNotifierTest {
     @Test
     fun noTeamCodeNoNotification() {
         prefs.clear()
+        prefs.lastEventId = 100
         flip(7, from = "AC", to = "ETC")
         assertEquals(0, posted().size)
     }

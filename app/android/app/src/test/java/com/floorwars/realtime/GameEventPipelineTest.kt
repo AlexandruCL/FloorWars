@@ -27,12 +27,13 @@ class GameEventPipelineTest {
 
     @Test
     fun aDuplicateEventIdIsDropped() {
+        prefs.lastEventId = 10
         val p = pipeline()
-        p.onMessage(flipped(1))
-        p.onMessage(flipped(1))
-        assertEquals(listOf(1L), emitted)
+        p.onMessage(flipped(11))
+        p.onMessage(flipped(11))
+        assertEquals(listOf(11L), emitted)
         assertEquals(1, flips.size)
-        assertEquals(1L, prefs.lastEventId)
+        assertEquals(11L, prefs.lastEventId)
     }
 
     @Test
@@ -80,6 +81,7 @@ class GameEventPipelineTest {
 
     @Test
     fun aPolledPageRunsEachItemThroughTheSamePipeline() {
+        prefs.lastEventId = 1
         val p = pipeline()
         p.onMessage(flipped(2))
         p.onPage("""{"items":[${flipped(1)},${flipped(2)},${flipped(3)}],"last_event_id":3}""")
@@ -89,10 +91,45 @@ class GameEventPipelineTest {
 
     @Test
     fun aFlipFromNobodyHasANullFromTeam() {
+        prefs.lastEventId = 1
         pipeline().onMessage(
-            """{"type":"building_flipped","event_id":1,"building_id":4,"from_team":null,"to_team":"AC","at":"2026-11-17T10:00:00Z"}"""
+            """{"type":"building_flipped","event_id":2,"building_id":4,"from_team":null,"to_team":"AC","at":"2026-11-17T10:00:00Z"}"""
         )
         assertEquals(listOf(BuildingFlip(4, null, "AC")), flips)
+    }
+
+    @Test
+    fun theFirstMessageWithNoStoredIdDoesNotNotify() {
+        pipeline().onMessage(flipped(1))
+        assertEquals(listOf(1L), emitted)
+        assertEquals(emptyList<BuildingFlip>(), flips)
+        assertEquals(1L, prefs.lastEventId)
+    }
+
+    @Test
+    fun theNextLaterEventNotifies() {
+        val p = pipeline()
+        p.onMessage(flipped(1))
+        p.onMessage(flipped(2))
+        assertEquals(listOf(2), flips.map { it.buildingId })
+    }
+
+    @Test
+    fun aFirstPolledPageIsSilentAsAWholeAndTheNextPageNotifies() {
+        val p = pipeline()
+        p.onPage("""{"items":[${flipped(1)},${flipped(2)},${flipped(3)}],"last_event_id":3}""")
+        assertEquals(listOf(1L, 2L, 3L), emitted)
+        assertEquals(emptyList<BuildingFlip>(), flips)
+        p.onPage("""{"items":[${flipped(4)}],"last_event_id":4}""")
+        assertEquals(listOf(4), flips.map { it.buildingId })
+    }
+
+    @Test
+    fun aProcessRestartAfterTheCatchUpStillNotifiesNewEvents() {
+        pipeline().onMessage(flipped(1))
+        // A new pipeline over the same preferences, as after a restart.
+        pipeline().onMessage(flipped(2))
+        assertEquals(listOf(2), flips.map { it.buildingId })
     }
 
     companion object {
