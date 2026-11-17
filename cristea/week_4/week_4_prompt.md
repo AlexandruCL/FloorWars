@@ -19,7 +19,7 @@ A new session that is told "continue cristea/week_4/week_4_prompt.md" starts her
    git worktree add <root>-w4/tuning   feat/w4-tuning
    ```
    Then in each: copy `.claude/` as in section 3.1 and `cd app && npm ci`.
-3. `.claude/` is gitignored. The five agent files are kept in `cristea/week_4/agents/`; copy them to `.claude/agents/` in the main checkout and every worktree, then **restart the session** so the agents load.
+3. `.claude/` is gitignored. Cristea copies the `.claude` folder (with the five `w4-*` agents) to the new machine by hand; copy it into the main checkout and every worktree, then **restart the session** so the agents load.
 4. Agents read this prompt by absolute path, because it is not on their branches: give them `<main checkout>/cristea/week_4/week_4_prompt.md`.
 5. On this laptop: the emulator `cityconquest` (emulator-5554) and a Metro bundler on port 8081 (the realtime agent's) were left running. Stop Metro before starting your own.
 
