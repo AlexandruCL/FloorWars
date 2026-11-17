@@ -1,6 +1,61 @@
 # Prompt: Cristea's Week 4 implementation (FloorWars)
 
-**Status: prompt completed and checked against `IMPLEMENTATION_PLAN.md` on 2026-11-17. Implementation not started.**
+**Status: implementation in progress. Stopped on 2026-11-17 for a handoff. A new session continues from "Handoff" below, then follows the rest of this prompt.**
+
+## Handoff (2026-11-17, read this first)
+
+A new session that is told "continue cristea/week_4/week_4_prompt.md" starts here. Everything below was verified by the coordinating session (forced Gradle with `--rerun-tasks`, cold Jest with `--no-cache`) unless it says otherwise. Section 4 "Decisions" holds every answer Cristea gave on 2026-11-17; they are binding.
+
+### Restore on a new machine
+
+1. `git fetch origin` and check out `docs/w4-prompt` in the main checkout (it holds this file and the plan updates; it is not on `main` yet).
+2. Recreate the worktrees from the pushed branches (no `-b`, the branches exist):
+   ```
+   git worktree add <root>-w4/contract feat/w4-contract
+   git worktree add <root>-w4/seam     feat/w4-seam
+   git worktree add <root>-w4/realtime feat/w4-realtime
+   git worktree add <root>-w4/screens  feat/w4-screens
+   git worktree add <root>-w4/fallback feat/w4-fallback
+   git worktree add <root>-w4/tuning   feat/w4-tuning
+   ```
+   Then in each: copy `.claude/` as in section 3.1 and `cd app && npm ci`.
+3. `.claude/` is gitignored. The five agent files are kept in `cristea/week_4/agents/`; copy them to `.claude/agents/` in the main checkout and every worktree, then **restart the session** so the agents load.
+4. Agents read this prompt by absolute path, because it is not on their branches: give them `<main checkout>/cristea/week_4/week_4_prompt.md`.
+5. On this laptop: the emulator `cityconquest` (emulator-5554) and a Metro bundler on port 8081 (the realtime agent's) were left running. Stop Metro before starting your own.
+
+### State per branch
+
+| Branch | Head | Verified | Left to do |
+|---|---|---|---|
+| `feat/w4-contract` | `19cf2b9` | contract tests 3/3; full Jest green except nothing (the App test fix `c2e4eb4` is cherry-picked as `19cf2b9`) | PR, Ionut reviews |
+| `feat/w4-seam` | `c2e4eb4` | Android 64/0, Jest 141/141, lint, tsc | PR |
+| `feat/w4-realtime` | `9b7a16e` | at `16d421f`: Android 89/0, Jest 152/152 cold; break checks: dedupe removed → 5 fail, 10-min limit removed → 1 fails; emulator deep link cold and warm passed (agent's run) | **the catch-up fix below**, then re-verify `9b7a16e`+fix |
+| `feat/w4-screens` | `861238c` | Android 64/0 forced, Jest 182/182, lint, tsc; break check: counting pending/rejected → 2 fail; packages `react-native-svg` 15.16.0, Reanimated 4.7.1, worklets 0.13.1 (all MIT) | click-through; cold-Jest slowness (below) |
+| `feat/w4-fallback` | `911ca82` | Jest 174/174, lint, tsc; break check: cooldown removed → 3 fail | click-through |
+| `feat/w4-tuning` | `866a409` | Android 64/0 forced, replay gate green; real 21 traces: precision and recall 1.00 per class; no threshold changed | plan-line conflict (below) |
+
+Items: W4-0 done. W4-1 open (catch-up fix). W4-2, W4-3, W4-4, W4-5: code and tests done, emulator click-through not done. W4-6 done. W4-7 not done by Cristea's decision. W4-8 not started.
+
+### Open work, in order
+
+1. **W4-1 catch-up fix (send to `w4-realtime`, in its worktree).** `9b7a16e` makes only one *delivery* silent when no last event id is stored, but the backlog spans many: with `since=0` the server replays it as separate socket messages, so the 2nd..Nth old losses notify, and poll pages 2 to 5 of a `since=0` run notify too. Fix in `GameEventPipeline`: when an event arrives while no id is stored, record once a catch-up mark `catchUpBeforeMs = now` (injectable clock) in the realtime prefs, never overwriting an existing mark. A `building_flipped` whose `at` is before the mark is silent; at or after it, it notifies; a missing or unparseable `at` while a mark exists is silent. `clearRealtime` wipes the mark. Tests: socket replay of 3 old losses from `since=0` notifies none; a later live loss notifies; a 2-page poll from id 0 notifies none; a process restart keeps the mark. Then re-run both verify commands and the two break checks.
+2. **W4-8 integration branch:** merge contract, seam, realtime, screens, fallback, tuning into a throwaway branch and run both verify commands. Expect: `RootNavigator.tsx`, `navigation/types.ts` and `HomeScreen.tsx` conflicts (merge order realtime, screens, fallback); screens tests that build `WsEvent` objects may need `event_id` (required since `91c6ea8`, after screens merged the contract at `acbb5b0`).
+3. **Cold Jest on screens:** full cold run took 91 s against 34 s on the seam, and under load some first tests per file hit the 30 s timeout (seen in history, HomeScreen, leaderboards, checkin, AuthScreens). Turning off the worklets Babel plugin in Jest did not help. Cause not found. Measure again on the integration branch with nothing else running; CI runs cold.
+4. **Click-throughs** on the emulator against Prism (`npm run mock:api`, `API_BASE_URL` pointed at `http://10.0.2.2:4010` locally, not committed), from one debug build of the integration branch: Home (today's figures, buttons), Standings, Leaderboards (3 tabs, season chips, building picker), History, Landing scan with `DEV_FORCE_NO_BAROMETER = true` (steps in the fallback agent's list: no check-in message, check in, heading and body, scan, `Scan counted`, cooldown, camera denied), Onboarding (first run after the team choice, not again after restart, "How it works"). Record element by element for the PR descriptions.
+5. **PR order:** open `docs/w4-prompt` first (prompt, plan updates of `3619e35`, and the decisions). `feat/w4-tuning` edits the same plan line ("Classifier tuning pass 1 …"); when it rebases, keep the wording "pass 1 runs on the 21 existing real traces; no new traces were recorded this week" and drop the "20 traces" sentence. Then the section 0 order: contract, seam, realtime, screens, fallback, tuning, `docs/w4-finish`. `gh` is not installed: give Cristea branch, title and body.
+6. W4-8 docs and the phone checks as in section 3.
+
+### Blocked (waiting on others)
+
+- Ionut: review of `feat/w4-contract` (0.8.0-draft: `reason`, `GET /seasons`, `event_id` required, WS 401 on a bad token) and `feat/w4-realtime`; deploy of the WS hub, `game_event`, `GET /me/events`, `POST /landing-scans` and contract 0.8.0; the landing sticker token format and printed stickers; the per-scan points value (15.3 accessible mode); agreement on "no third person for the pilot".
+- Server: every probe to `api.floorwars.me` timed out from this laptop on 2026-11-17 (`/healthz`, `/v1/me/events`, `/v1/landing-scans`, `/v1/seasons`, `/v1/me/segments`, `/v1/ws`). Cause unknown (VM firewall allows team IPs only).
+- No `impeccable` plugin on this project: screens were built with the `parts.tsx` look (Cristea's decision); a design pass needs the plugin.
+
+### Notes the agents found
+
+- `MainActivity.onNewIntent` now calls `setIntent(intent)` (`16d421f`): without it a notification tap after Android killed the process opened Home instead of Standings. No unit test (ReactActivity does not load under Robolectric); emulator only.
+- Realtime build changes: `testOptions.unitTests.includeAndroidResources = true`; `src/test/resources/robolectric.properties` with `application=android.app.Application`; a debug-only `DebugGameEventReceiver` posts test events through the real pipeline.
+- `DEV_FORCE_NO_BAROMETER` is committed `false`; set it `true` locally for the click-through only.
 
 You are implementing Cristea's part of Week 4 in `D:\FloorWars`. Work in one session, on feature branches from `main`. Follow the checklist in section 3 in order, except where a step says it can run in parallel. Tick each box only after its verification command has run and passed.
 
@@ -159,7 +214,7 @@ Rules for this session:
 - Re-run each item's verify command yourself, forced and not cached (`./gradlew test --rerun-tasks`, `npx jest --no-cache`), before you tick its box, and check that the tests fail when the rule they guard is broken. Agent reports are evidence, not proof.
 - Agents cannot ask Cristea. When an agent lists a Blocked question, ask Cristea with `Skill("grilling")`, record the answer in section 4, and send it back to the agent. The other items carry on meanwhile.
 - Worktrees need the project skills and agents copied in, because `.claude/` is gitignored. They also need `npm ci` in `app/`, because `node_modules` is not shared and the Android build reads it too.
-- UI items (W4-2, W4-3, W4-4, W4-5) must use the impeccable skills (`impeccable:*`, from the plugin enabled in `.claude/settings.json`). Their agent files require it, and a UI agent that cannot load them stops the screen work and reports.
+- UI items (W4-2, W4-3, W4-4, W4-5) are built with the existing `app/src/ui/parts.tsx` look, without the impeccable skills: the plugin is not installed for this project (Cristea's decision, 2026-11-17, replacing the earlier rule that required them).
 - Files that two agents both edit: `RootNavigator.tsx` (realtime adds the linking config, screens adds Standings, Leaderboards and History, fallback adds LandingScan and Onboarding) and `HomeScreen.tsx` (screens adds today's figures and the buttons, fallback adds the landing-scan entry and "How it works"). Merge order realtime, screens, fallback: the later branch rebases on the earlier one and resolves the conflict. `package.json` and `package-lock.json`: only `w4-screens` adds npm packages.
 - If the Agent tool does not list these agents, restart the session. Project agents load when a session starts. The Week 3 agents were removed (Cristea's decision, 2026-11-17).
 - Section 2 applies to the agents too. They read only the documents their agent file names.
@@ -383,6 +438,16 @@ After each checklist item, post one line: `W4-n done | verify: <command> → <su
   - Leaderboards 50, season default active, building default from the check-in; history 50 per page.
   - Exit phone roles: SM-S918B climbs, SM-G985F watches.
   - The w3-* agents are removed once the w4-* agents exist.
+  - 2026-11-17: `feat/w4-contract` is merged into `feat/w4-screens`, so the screens build on the 0.8.0 types (`GET /seasons`, `reason`); the PR order stays.
+  - 2026-11-17: the UI agents build without the impeccable skills (not installed for this project), with the `parts.tsx` look.
+  - 2026-11-17: onboarding section headings `Before you climb`, `Physical activity`, `Notifications`, `Camera`, `Location`, `Battery` approved; landing-scan screen loads with a spinner and no text, button `Scan sticker`; an empty scanned token fails the local checks; a 429 without `Retry-After` uses the full 10-minute cooldown.
+  - 2026-11-17: first replay is a silent catch-up: with no stored last event id, replayed events advance the id and reach the screens but post no notification.
+  - 2026-11-17: contract 0.8.0-draft also makes `event_id` required on both WS events and says `WS /ws` answers 401 on the upgrade for a bad token (on `feat/w4-contract`, Ionut reviews).
+  - 2026-11-17: `SyncWorker` starts the headless task whenever a team code is stored, so the 15-minute event poll runs without pending segments.
+  - 2026-11-17: Leaderboards labels approved as built: tabs `Individual`, `Team`, `Building`; season chips `Season {id}`; the building picker shows building names.
+  - 2026-11-17: W4-6 runs on the 21 existing real traces in `traces/` (plus the synthetic set); no 20 new traces are recorded this week. This replaces the earlier "20 traces, 2 per condition per phone".
+  - 2026-11-17: W4-7 is not done. The service survived on both phones, but the numbers can't be read because adb won't connect to the phones; the survival table in `docs/devices.md` stays as it is.
+  - 2026-11-17: the pre-existing `App.test.tsx` failure (the session-restore test hit the real server through an unstubbed `fetch`) is fixed on `feat/w4-seam`, so every track inherits it.
   You make no entries of your own here.
 - **Phone checks for Cristea:** only items you could not run here (W4-6 traces, W4-8 notification check and exit, the Samsung battery steps).
 - **Surprises from the integration check:** field names, time zones, auth edges.
