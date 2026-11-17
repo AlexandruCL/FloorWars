@@ -8,6 +8,7 @@ import {
   setOnSessionEnded,
 } from './src/auth/session';
 import { startSyncTriggers } from './src/sync/triggers';
+import { startRealtimeLink } from './src/realtime/realtime';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { colors } from './src/ui/parts';
 
@@ -44,6 +45,7 @@ function App() {
   }, []);
 
   useEffect(() => (stage === 'in' ? startSyncTriggers() : undefined), [stage]);
+  useEffect(() => (stage === 'in' ? startRealtimeLink() : undefined), [stage]);
 
   // A season can roll over while the app is open: look again each time it comes back.
   useEffect(() => {
