@@ -60,6 +60,15 @@ jest.mock('./src/native/NativeFloorSensors', () => ({
     clearPending: jest.fn(() => Promise.resolve()),
     isIgnoringBatteryOptimizations: jest.fn(() => Promise.resolve(true)),
     openBatteryOptimizationSettings: jest.fn(),
+    configureRealtime: jest.fn(),
+    setRealtimeContext: jest.fn(),
+    startRealtime: jest.fn(),
+    stopRealtime: jest.fn(),
+    deliverPolledEvents: jest.fn(),
+    getLastEventId: jest.fn(() => Promise.resolve(0)),
+    clearRealtime: jest.fn(),
+    onGameEvent: jest.fn(() => ({ remove: jest.fn() })),
+    onRealtimeState: jest.fn(() => ({ remove: jest.fn() })),
   },
 }));
 
