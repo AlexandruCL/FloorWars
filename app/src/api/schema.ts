@@ -427,6 +427,8 @@ export interface paths {
          *     season_state {paused, ends_at}; see x-websocket-events. Plan 7.2.1: on connect the server first
          *     replays the events after since for the player's team, then streams new ones (at least once;
          *     the client ignores event_id values it has handled).
+         *     A missing, expired or invalid token is rejected with 401 on the upgrade request, never with
+         *     403 and never by closing after accept, so the client stops reconnecting until it has a new token.
          */
         get: operations["openWebSocket"];
         put?: never;
@@ -805,8 +807,8 @@ export interface components {
         BuildingFlippedEvent: {
             /** @constant */
             type: "building_flipped";
-            /** @description Inferred: id of the stored game event (plan 7.2.1); grows over time; used for since. */
-            event_id?: number;
+            /** @description Id of the stored game event (plan 7.2.1); grows over time; used for since. Required: an event without it cannot be deduplicated. */
+            event_id: number;
         } & components["schemas"]["BuildingFlip"] & {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -821,8 +823,8 @@ export interface components {
              * @enum {string}
              */
             type: "season_state";
-            /** @description Inferred: id of the stored game event (plan 7.2.1); grows over time; used for since. */
-            event_id?: number;
+            /** @description Id of the stored game event (plan 7.2.1); grows over time; used for since. Required: an event without it cannot be deduplicated. */
+            event_id: number;
             paused: boolean;
             /** Format: date-time */
             ends_at: string;

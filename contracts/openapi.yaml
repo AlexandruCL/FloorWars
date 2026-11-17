@@ -9,7 +9,8 @@ info:
     - 0.8.0-draft (2026-11-17): new schema RejectionReason (the 14 reasons of RejectedSegment.reason,
       which now refers to it). SegmentRecord gains reason (RejectionReason or null, required; null
       unless status is rejected), for the history screen. New GET /seasons (all seasons, newest
-      starts_at first), for the leaderboard season selector.
+      starts_at first), for the leaderboard season selector. event_id is required on BuildingFlippedEvent
+      and SeasonStateEvent. WS /ws rejects a missing, expired or invalid token with 401 on the upgrade.
     - 0.7.0-draft (2026-11-08): new POST /auth/logout (revokes a refresh token family, 204 for any token).
     - 0.6.2-draft (2026-11-08): the pressure_steps_mismatch upper bound is 10 steps per metre of ascent
       (was 8); real pocket climbs measured 6.7 to 8.7.
@@ -568,6 +569,8 @@ paths:
         season_state {paused, ends_at}; see x-websocket-events. Plan 7.2.1: on connect the server first
         replays the events after since for the player's team, then streams new ones (at least once;
         the client ignores event_id values it has handled).
+        A missing, expired or invalid token is rejected with 401 on the upgrade request, never with
+        403 and never by closing after accept, so the client stops reconnecting until it has a new token.
       parameters:
         - name: since
           in: query
@@ -1231,25 +1234,25 @@ components:
       description: 'WebSocket event: a building changed owner. Inferred: the flat envelope with a type field.'
       allOf:
         - type: object
-          required: [type]
+          required: [type, event_id]
           properties:
             type: { type: string, const: building_flipped }
             event_id:
               type: integer
               minimum: 1
-              description: 'Inferred: id of the stored game event (plan 7.2.1); grows over time; used for since.'
+              description: 'Id of the stored game event (plan 7.2.1); grows over time; used for since. Required: an event without it cannot be deduplicated.'
         - $ref: '#/components/schemas/BuildingFlip'
 
     SeasonStateEvent:
       type: object
       description: 'WebSocket event. Inferred: the flat envelope with a type field.'
-      required: [type, paused, ends_at]
+      required: [type, event_id, paused, ends_at]
       properties:
         type: { type: string, const: season_state }
         event_id:
           type: integer
           minimum: 1
-          description: 'Inferred: id of the stored game event (plan 7.2.1); grows over time; used for since.'
+          description: 'Id of the stored game event (plan 7.2.1); grows over time; used for since. Required: an event without it cannot be deduplicated.'
         paused: { type: boolean }
         ends_at: { type: string, format: date-time }
 
