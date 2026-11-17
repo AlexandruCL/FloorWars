@@ -6,4 +6,8 @@
     <string name="detect_notification_title">Counting stair climbs</string>
     <string name="detect_notification_text">Climbs count for %1$s until %2$s</string>
     <string name="detect_notification_building">Building %1$d</string>
+    <string name="game_events_channel_name">Building alerts</string>
+    <string name="building_lost_title">%1$s took %2$s</string>
+    <string name="building_lost_title_unnamed">%1$s took building %2$d</string>
+    <string name="building_lost_text">Your team lost it. Tap to see the standings.</string>
 </resources>
