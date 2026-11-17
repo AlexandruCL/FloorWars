@@ -2,6 +2,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { EmailScreen, OtpScreen, TeamScreen } from '../screens/AuthScreens';
 import { CheckinScreen } from '../screens/CheckinScreen';
+import { HistoryScreen } from '../screens/HistoryScreen';
 import { HomeScreen } from '../screens/HomeScreen';
 import { LeaderboardsScreen } from '../screens/LeaderboardsScreen';
 import { SensorLoggerScreen } from '../screens/SensorLoggerScreen';
@@ -63,6 +64,11 @@ function MainNavigator() {
       />
       <MainStack.Screen name="Standings" component={StandingsScreen} />
       <MainStack.Screen name="Leaderboards" component={LeaderboardsScreen} />
+      <MainStack.Screen
+        name="History"
+        component={HistoryScreen}
+        options={{ title: 'Climb history' }}
+      />
     </MainStack.Navigator>
   );
 }

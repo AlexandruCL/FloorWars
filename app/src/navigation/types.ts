@@ -11,6 +11,7 @@ export type MainStackParamList = {
   // A deep link delivers the id as a string.
   Standings: { buildingId: number | string };
   Leaderboards: undefined;
+  History: undefined;
 };
 
 export type RootStackParamList = {
