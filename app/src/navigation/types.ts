@@ -8,6 +8,8 @@ export type MainStackParamList = {
   Home: undefined;
   Checkin: undefined;
   SensorLogger: undefined;
+  LandingScan: undefined;
+  Onboarding: undefined;
 };
 
 export type RootStackParamList = {

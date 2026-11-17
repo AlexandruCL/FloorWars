@@ -10,6 +10,7 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { revokeRefreshToken } from '../auth/logout';
 import { endSession } from '../auth/session';
+import { hasBarometer } from '../landing/landingScan';
 import { FloorSensors } from '../native/floorSensors';
 import type {
   ActiveCheckin,
@@ -150,6 +151,7 @@ export function HomeScreen({
   }, [sync.running, refresh]);
 
   const problem = problemKind(sync);
+  const noBarometer = snap !== null && !hasBarometer(snap.status);
   // Every native read failed: nothing on this screen can be trusted.
   const unreadable =
     snap !== null &&
@@ -182,23 +184,29 @@ export function HomeScreen({
       ) : (
         <>
           <View>
-            <Row
-              label="Detection"
-              value={
-                snap.status === null
-                  ? 'Unknown'
-                  : snap.status.detecting
-                  ? 'Running'
-                  : 'Not running'
-              }
-            />
+            {!noBarometer && (
+              <Row
+                label="Detection"
+                value={
+                  snap.status === null
+                    ? 'Unknown'
+                    : snap.status.detecting
+                    ? 'Running'
+                    : 'Not running'
+                }
+              />
+            )}
             <Row label="Check-in" value={checkinText(snap.checkin)} />
-            <Row
-              label="Last segment"
-              value={
-                snap.status ? timeText(snap.status.last_segment_ms) : 'Unknown'
-              }
-            />
+            {!noBarometer && (
+              <Row
+                label="Last segment"
+                value={
+                  snap.status
+                    ? timeText(snap.status.last_segment_ms)
+                    : 'Unknown'
+                }
+              />
+            )}
             <Row
               label="Waiting to upload"
               value={snap.pending === null ? 'Unknown' : String(snap.pending)}
@@ -211,7 +219,7 @@ export function HomeScreen({
               you are about to climb.
             </Body>
           )}
-          {snap.status !== null && !snap.status.detecting && (
+          {!noBarometer && snap.status !== null && !snap.status.detecting && (
             <Body>Detection is not running, so climbs are not recorded.</Body>
           )}
           {problem && <ErrorText message={problemText(problem, sync)} />}
@@ -235,6 +243,17 @@ export function HomeScreen({
         title="Check in"
         secondary
         onPress={() => navigation.navigate('Checkin')}
+      />
+      {noBarometer && (
+        <Button
+          title="Scan at the stairs"
+          onPress={() => navigation.navigate('LandingScan')}
+        />
+      )}
+      <Button
+        title="How it works"
+        secondary
+        onPress={() => navigation.navigate('Onboarding')}
       />
       <Button
         title="Sensor logger"

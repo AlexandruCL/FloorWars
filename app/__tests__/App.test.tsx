@@ -2,11 +2,13 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { AppState } from 'react-native';
 import * as Keychain from 'react-native-keychain';
 import App from '../App';
+import { markOnboardingSeen } from '../src/auth/session';
 import { RootNavigator } from '../src/navigation/RootNavigator';
 
 beforeEach(async () => {
   await Keychain.resetGenericPassword({ service: 'floorwars.auth' });
   await Keychain.resetGenericPassword({ service: 'floorwars.team' });
+  await markOnboardingSeen(); // the onboarding has its own tests
 });
 
 test('App starts on the Auth stack', async () => {

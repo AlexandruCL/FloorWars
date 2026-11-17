@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { hasSeenOnboarding } from '../auth/session';
 import { EmailScreen, OtpScreen, TeamScreen } from '../screens/AuthScreens';
 import { CheckinScreen } from '../screens/CheckinScreen';
+import { LandingScanScreen } from '../screens/LandingScanScreen';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { HomeScreen } from '../screens/HomeScreen';
 import { SensorLoggerScreen } from '../screens/SensorLoggerScreen';
 import type {
@@ -46,8 +50,26 @@ function AuthNavigator({
 }
 
 function MainNavigator() {
+  // Shown once, right after the team choice; null until the stored flag is read.
+  const [seen, setSeen] = useState<boolean | null>(null);
+  useEffect(() => {
+    hasSeenOnboarding().then(setSeen, () => setSeen(true));
+  }, []);
+  if (seen === null) {
+    return null;
+  }
   return (
-    <MainStack.Navigator>
+    <MainStack.Navigator initialRouteName={seen ? 'Home' : 'Onboarding'}>
+      <MainStack.Screen
+        name="Onboarding"
+        component={OnboardingScreen}
+        options={{ title: 'How it works' }}
+      />
+      <MainStack.Screen
+        name="LandingScan"
+        component={LandingScanScreen}
+        options={{ title: 'Scan at the stairs' }}
+      />
       <MainStack.Screen name="Home" component={HomeScreen} />
       <MainStack.Screen
         name="Checkin"
