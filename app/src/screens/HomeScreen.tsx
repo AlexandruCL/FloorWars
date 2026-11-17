@@ -236,6 +236,22 @@ export function HomeScreen({
         secondary
         onPress={() => navigation.navigate('Checkin')}
       />
+      {snap?.checkin && (
+        <Button
+          title="Building standings"
+          secondary
+          onPress={() =>
+            navigation.navigate('Standings', {
+              buildingId: snap.checkin!.building_id,
+            })
+          }
+        />
+      )}
+      <Button
+        title="Leaderboards"
+        secondary
+        onPress={() => navigation.navigate('Leaderboards')}
+      />
       <Button
         title="Sensor logger"
         secondary

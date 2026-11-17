@@ -88,3 +88,15 @@ jest.mock('@react-native-community/geolocation', () => ({
   __esModule: true,
   default: { getCurrentPosition: jest.fn() },
 }));
+
+// Reanimated needs the native worklets runtime; tests only check what is animated, and to what.
+jest.mock('react-native-reanimated', () => {
+  const { View } = require('react-native');
+  return {
+    __esModule: true,
+    default: { View },
+    useSharedValue: init => require('react').useRef({ value: init }).current,
+    useAnimatedStyle: fn => fn(),
+    withTiming: jest.fn(value => value),
+  };
+});
