@@ -654,7 +654,7 @@ Goal: the loop is visible and social.
 - Personal history screen with the reason for each rejected segment.
 - Barometer-less fallback: detect `has_barometer=false`, QR-sticker-on-landing flow ("scan at the stairs of building X") with local rate limit.
 - Onboarding: safety copy (no running), permission explanations, per-manufacturer battery-optimisation guide.
-- Classifier tuning pass 1 with new real-world traces (pocket, bag, hand, going down, flat walking). Record new precision and recall.
+- Classifier tuning pass 1 with new real-world traces (pocket, bag, hand, going down, flat walking). Record new precision and recall. Decided 2026-11-17: pass 1 runs on the 21 existing real traces; no new traces were recorded this week.
 
 **Ionut**
 - WebSocket hub in the API: auth on connect, Valkey pub/sub fan-out so two replicas share events.

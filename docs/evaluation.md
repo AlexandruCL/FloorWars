@@ -46,6 +46,50 @@ ELEVATOR          1.00 (4/4)      1.00 (4/4)
 OTHER           1.00 (16/16)    1.00 (16/16)
 ```
 
+## Tuning pass 1 (2026-11-17)
+
+Pass 1 ran on the existing traces by Cristea's decision (2026-11-17): no new traces were recorded this week, so the set is the 21 real traces in `traces/` plus the 24 synthetic fixtures, the same files as the baseline. Run at `525f002` (`main`) on branch `feat/w4-tuning`, before any change.
+
+Per-label trace counts, real (`traces/`): stairs_up 3, stairs_down 4, elevator_up 2, walk_flat 6, shake 3, blow 3 (21). Synthetic (`fixtures/synthetic/`): 4 per label (24). The split by phone is in the Baseline table below.
+
+`python tools/validate_traces/validate.py traces`: 20 PASS, 1 FAIL (`walk_flat_hand_20261028T215936Z`, check 5, step rate 0.32 Hz, accepted on 2026-10-29), the same as on 2026-11-02.
+
+Real traces (`traces/`):
+
+```
+Trace replay: traces, 21 files
+true label      STAIRS  ELEVATOR     OTHER  expected
+stairs_up            3         0         0  STAIRS
+stairs_down          0         0         4  OTHER
+elevator_up          0         2         0  ELEVATOR
+walk_flat            0         0         6  OTHER
+shake                0         0         3  OTHER
+blow                 0         0         3  OTHER
+class              precision          recall
+STAIRS            1.00 (3/3)      1.00 (3/3)
+ELEVATOR          1.00 (2/2)      1.00 (2/2)
+OTHER           1.00 (16/16)    1.00 (16/16)
+```
+
+Synthetic fixtures (`fixtures/synthetic/`), regression check only:
+
+```
+Trace replay: fixtures/synthetic, 24 files
+true label      STAIRS  ELEVATOR     OTHER  expected
+stairs_up            4         0         0  STAIRS
+stairs_down          0         0         4  OTHER
+elevator_up          0         4         0  ELEVATOR
+walk_flat            0         0         4  OTHER
+shake                0         0         4  OTHER
+blow                 0         0         4  OTHER
+class              precision          recall
+STAIRS            1.00 (4/4)      1.00 (4/4)
+ELEVATOR          1.00 (4/4)      1.00 (4/4)
+OTHER           1.00 (16/16)    1.00 (16/16)
+```
+
+Threshold changes: no change. No trace is misclassified, so no threshold has a trace to motivate it; the before and after numbers are the matrices above. `MIN_STAIRS_PRECISION` stays 0.9 and `realTraces` passes. The thin-set caveat in the Baseline section still holds: 3 `stairs_up` and 2 `elevator_up` traces, both rides on one phone, and no `stairs_up` in a bag.
+
 ## Baseline
 
 The numbers above come from commit `d3e4951` on `feat/w2-segmenter` (segmenter v1, rules classifier v1 with the plan 3.3 thresholds and `MIN_ELEVATOR_SPEED_MPS` at 0.5), run on 2026-11-02. No trace is misclassified, so neither matrix has `miss` lines. At `9e0deca`, with the elevator threshold at 1.0 m/s, both real rides were OTHER (see the Validation log).
