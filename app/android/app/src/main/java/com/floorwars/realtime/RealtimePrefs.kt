@@ -5,8 +5,9 @@ import org.json.JSONArray
 import org.json.JSONException
 
 // Realtime state that must outlive the process: the last event id (the socket's and the poll's
-// since), the player's team code and the building names (the notifier runs without JS), and the
-// time of the last notification per building. Team code and building names only, nothing personal.
+// since), the silent catch-up mark, the player's team code and the building names (the notifier
+// runs without JS), and the time of the last notification per building. Team code and building
+// names only, nothing personal.
 class RealtimePrefs(context: Context) : LastEventIdStore {
     private val prefs =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -15,6 +16,12 @@ class RealtimePrefs(context: Context) : LastEventIdStore {
         get() = prefs.getLong(KEY_LAST_EVENT_ID, 0)
         set(value) {
             prefs.edit().putLong(KEY_LAST_EVENT_ID, value).commit()
+        }
+
+    override var catchUpBeforeMs: Long?
+        get() = prefs.getLong(KEY_CATCH_UP_BEFORE_MS, -1).takeIf { it >= 0 }
+        set(value) {
+            prefs.edit().putLong(KEY_CATCH_UP_BEFORE_MS, value ?: -1).commit()
         }
 
     val teamCode: String? get() = prefs.getString(KEY_TEAM_CODE, null)
@@ -53,6 +60,7 @@ class RealtimePrefs(context: Context) : LastEventIdStore {
     companion object {
         private const val PREFS = "floorwars_realtime"
         const val KEY_LAST_EVENT_ID = "last_event_id"
+        private const val KEY_CATCH_UP_BEFORE_MS = "catch_up_before_ms"
         private const val KEY_TEAM_CODE = "team_code"
         private const val KEY_BUILDING_NAMES = "building_names"
         private const val KEY_NOTIFIED_AT = "notified_at_"

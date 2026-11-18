@@ -28,11 +28,13 @@ class RealtimeClientTest {
     private val states = LinkedBlockingQueue<String>()
     private val emitted = LinkedBlockingQueue<Long>()
     private val scheduled = LinkedBlockingQueue<Pair<Long, () -> Unit>>()
+    private val flips = LinkedBlockingQueue<BuildingFlip>()
     private var now = 0L
     private val pipeline = GameEventPipeline(
         prefs,
         emit = { emitted += JSONObject(it).getLong("event_id") },
-        onFlip = {}
+        onFlip = { flips += it },
+        nowMs = { GameEventPipelineTest.SIGN_IN_MS }
     )
     private val client = RealtimeClient(
         realtimeHttpClient(),
@@ -113,6 +115,23 @@ class RealtimeClientTest {
         assertEquals(listOf(3L), take(1))
         assertNull(emitted.poll(300, TimeUnit.MILLISECONDS))
         assertEquals(3L, prefs.lastEventId)
+    }
+
+    @Test
+    fun aReplayOfOldLossesFromSinceZeroNotifiesNoneAndALaterLiveLossNotifies() {
+        val side = accept(
+            GameEventPipelineTest.flipped(1),
+            GameEventPipelineTest.flipped(2),
+            GameEventPipelineTest.flipped(3)
+        )
+        client.configure(wsUrl, "t")
+        client.hold(Holder.FOREGROUND)
+        val serverSocket = side.opened.poll(5, TimeUnit.SECONDS)!!
+        assertEquals("/ws?since=0", server.takeRequest(5, TimeUnit.SECONDS)!!.path)
+        assertEquals(listOf(1L, 2L, 3L), take(3))
+        assertTrue(flips.isEmpty())
+        serverSocket.send(GameEventPipelineTest.flipped(4, at = "2026-11-17T12:00:05Z"))
+        assertEquals(BuildingFlip(4, "AC", "ETC"), flips.poll(5, TimeUnit.SECONDS))
     }
 
     @Test
