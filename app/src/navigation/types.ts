@@ -11,6 +11,8 @@ export type MainStackParamList = {
   Checkin: undefined;
   SensorLogger: undefined;
   Standings: { buildingId: number };
+  Leaderboards: undefined;
+  History: undefined;
 };
 
 export type RootStackParamList = {
