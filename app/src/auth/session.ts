@@ -8,6 +8,7 @@ type TokenPair = components['schemas']['TokenPair'];
 const TOKENS = 'floorwars.auth';
 const DEVICE = 'floorwars.device';
 const TEAM = 'floorwars.team';
+const ONBOARDING = 'floorwars.onboarding';
 
 type Stored = { access: string; refresh: string };
 
@@ -55,6 +56,15 @@ export async function markTeamChosen(seasonId: number): Promise<void> {
   await Keychain.setGenericPassword('team', String(seasonId), {
     service: TEAM,
   });
+}
+
+// Not cleared by endSession: the explanation is shown once per install, not once per sign-in.
+export async function hasSeenOnboarding(): Promise<boolean> {
+  return (await Keychain.getGenericPassword({ service: ONBOARDING })) !== false;
+}
+
+export async function markOnboardingSeen(): Promise<void> {
+  await Keychain.setGenericPassword('seen', '1', { service: ONBOARDING });
 }
 
 // Random v4 id kept for the install; it is an identifier, not a secret, so Math.random is enough.

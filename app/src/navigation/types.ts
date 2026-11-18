@@ -13,6 +13,8 @@ export type MainStackParamList = {
   Standings: { buildingId: number };
   Leaderboards: undefined;
   History: undefined;
+  LandingScan: undefined;
+  Onboarding: undefined;
 };
 
 export type RootStackParamList = {

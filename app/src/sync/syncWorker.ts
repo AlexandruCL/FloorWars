@@ -68,6 +68,10 @@ export function subscribeSync(fn: () => void): () => void {
 export function setFlipHandler(fn: ((flips: Flip[]) => void) | undefined) {
   flipHandler = fn;
 }
+// Flips from any response (POST /segments, POST /landing-scans) take the same path.
+export function notifyFlips(flips: Flip[]) {
+  flipHandler?.(flips);
+}
 // The stuck and wait-until state belongs to one session: a sign-out must not leave the next
 // session blocked, so the triggers call this when they stop.
 export function resetSync() {
