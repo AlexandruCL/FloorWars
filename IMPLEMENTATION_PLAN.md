@@ -655,7 +655,7 @@ Goal: the loop is visible and social.
 - Personal history screen with the reason for each rejected segment.
 - Barometer-less fallback: detect `has_barometer=false`, QR-sticker-on-landing flow ("scan at the stairs of building X") with local rate limit.
 - Onboarding: safety copy (no running), permission explanations, per-manufacturer battery-optimisation guide.
-- Classifier tuning pass 1 with new real-world traces (pocket, bag, hand, going down, flat walking). Record new precision and recall. Decided 2026-11-17: 20 traces, 2 per condition per phone on both test phones.
+- Classifier tuning pass 1 with new real-world traces (pocket, bag, hand, going down, flat walking). Record new precision and recall. Decided 2026-11-17: pass 1 runs on the 21 existing real traces; no new traces were recorded this week.
 - Contract 0.8.0-draft (added 2026-11-17, Cristea writes it, Ionut reviews): `reason` on `SegmentRecord`, needed by the history screen, and `GET /v1/seasons`, needed by the season selector.
 
 **Ionut**

@@ -447,6 +447,8 @@ After each checklist item, post one line: `W4-n done | verify: <command> → <su
   - 2026-11-17: Leaderboards labels approved as built: tabs `Individual`, `Team`, `Building`; season chips `Season {id}`; the building picker shows building names.
   - 2026-11-17: W4-6 runs on the 21 existing real traces in `traces/` (plus the synthetic set); no 20 new traces are recorded this week. This replaces the earlier "20 traces, 2 per condition per phone".
   - 2026-11-17: W4-7 is not done. The service survived on both phones, but the numbers can't be read because adb won't connect to the phones; the survival table in `docs/devices.md` stays as it is.
+  - 2026-11-18: the catch-up mark is set when a socket connection or a poll starts with `since=0`, before any event arrives, so the backlog stays silent and the first live loss after a sign-in with an empty backlog notifies. Reason: the decision silences the replay, and a live event is not a replay.
+  - 2026-11-18: the `game_events` channel ("Building alerts") uses `IMPORTANCE_HIGH`, so a lost building shows a heads-up banner, not only a status-bar icon. Reason: a loss is the moment the game wants the player back, and the loss-only rule and the 10-minute limit keep it rare.
   - 2026-11-17: the pre-existing `App.test.tsx` failure (the session-restore test hit the real server through an unstubbed `fetch`) is fixed on `feat/w4-seam`, so every track inherits it.
   You make no entries of your own here.
 - **Phone checks for Cristea:** only items you could not run here (W4-6 traces, W4-8 notification check and exit, the Samsung battery steps).
