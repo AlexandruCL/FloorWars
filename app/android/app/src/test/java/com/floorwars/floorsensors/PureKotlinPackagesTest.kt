@@ -21,4 +21,13 @@ class PureKotlinPackagesTest {
             assertEquals("$pkg imports Android or React Native", emptyList<File>(), offenders)
         }
     }
+
+    @Test
+    fun realtimePipelineAndClientHaveNoAndroidImports() {
+        val forbidden = listOf("import android.", "import androidx.", "import com.facebook.")
+        for (name in listOf("GameEventPipeline.kt", "RealtimeClient.kt")) {
+            val lines = File("src/main/java/com/floorwars/realtime/$name").readLines()
+            assertTrue("$name imports Android", lines.none { l -> forbidden.any(l::startsWith) })
+        }
+    }
 }

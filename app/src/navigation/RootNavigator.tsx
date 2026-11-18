@@ -1,18 +1,40 @@
 import { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
+import type { LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { hasSeenOnboarding } from '../auth/session';
 import { EmailScreen, OtpScreen, TeamScreen } from '../screens/AuthScreens';
 import { CheckinScreen } from '../screens/CheckinScreen';
-import { LandingScanScreen } from '../screens/LandingScanScreen';
-import { OnboardingScreen } from '../screens/OnboardingScreen';
+import { HistoryScreen } from '../screens/HistoryScreen';
 import { HomeScreen } from '../screens/HomeScreen';
+import { LandingScanScreen } from '../screens/LandingScanScreen';
+import { LeaderboardsScreen } from '../screens/LeaderboardsScreen';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { SensorLoggerScreen } from '../screens/SensorLoggerScreen';
+import { StandingsScreen } from '../screens/StandingsScreen';
 import type {
   AuthStackParamList,
   MainStackParamList,
   RootStackParamList,
 } from './types';
+
+// The lost-building notification opens floorwars://building/{id} (W4-1). Back from Standings goes Home.
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: ['floorwars://'],
+  config: {
+    screens: {
+      Main: {
+        initialRouteName: 'Home',
+        screens: {
+          Standings: {
+            path: 'building/:buildingId',
+            parse: { buildingId: Number },
+          },
+        },
+      },
+    },
+  },
+};
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -81,6 +103,13 @@ function MainNavigator() {
         component={SensorLoggerScreen}
         options={{ title: 'Sensor logger' }}
       />
+      <MainStack.Screen name="Standings" component={StandingsScreen} />
+      <MainStack.Screen name="Leaderboards" component={LeaderboardsScreen} />
+      <MainStack.Screen
+        name="History"
+        component={HistoryScreen}
+        options={{ title: 'Climb history' }}
+      />
     </MainStack.Navigator>
   );
 }
@@ -92,7 +121,8 @@ export function RootNavigator({
   onDevSkipSignIn,
 }: Props) {
   return (
-    <NavigationContainer>
+    // Off while the Auth stack shows, so a link then is dropped.
+    <NavigationContainer linking={{ ...linking, enabled: isSignedIn }}>
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
         {isSignedIn ? (
           <RootStack.Screen name="Main" component={MainNavigator} />

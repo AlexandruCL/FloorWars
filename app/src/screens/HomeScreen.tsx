@@ -8,6 +8,8 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { clock, useRead } from '../data/useRead';
+import { localMidnight, todayFigures, todayText } from '../history/today';
 import { revokeRefreshToken } from '../auth/logout';
 import { endSession } from '../auth/session';
 import { hasBarometer } from '../landing/landingScan';
@@ -117,6 +119,35 @@ function useSync(): SyncState {
     return subscribeSync(() => setSync(getSyncState()));
   }, []);
   return sync;
+}
+
+// Today's figures: verified climbs since local midnight. The key holds the date, so a new day
+// starts without a cached copy.
+function TodayFigures() {
+  const midnight = localMidnight(Date.now());
+  const today = useRead(`today:${midnight}`, () => todayFigures(midnight));
+  const stale = today.failure && today.data;
+  const text =
+    today.data && !today.failure
+      ? todayText(today.data)
+      : today.failure
+      ? 'Verified today: unavailable'
+      : 'Verified today: loading';
+  return (
+    <View style={styles.today}>
+      <Text style={styles.value} accessibilityLiveRegion="polite">
+        {text}
+      </Text>
+      {stale && today.data && today.cachedAt !== null && (
+        <>
+          <Text style={styles.label}>{todayText(today.data)}</Text>
+          <Text style={styles.label}>
+            {`Last updated ${clock(today.cachedAt)}. Can't reach the server.`}
+          </Text>
+        </>
+      )}
+    </View>
+  );
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -237,6 +268,7 @@ export function HomeScreen({
           )}
         </>
       )}
+      <TodayFigures />
       {/* Buttons stay reachable in every state. */}
       <Button title="Sync now" busy={sync.running} onPress={() => syncNow()} />
       <Button
@@ -250,6 +282,27 @@ export function HomeScreen({
           onPress={() => navigation.navigate('LandingScan')}
         />
       )}
+      {snap?.checkin && (
+        <Button
+          title="Building standings"
+          secondary
+          onPress={() =>
+            navigation.navigate('Standings', {
+              buildingId: snap.checkin!.building_id,
+            })
+          }
+        />
+      )}
+      <Button
+        title="Leaderboards"
+        secondary
+        onPress={() => navigation.navigate('Leaderboards')}
+      />
+      <Button
+        title="Climb history"
+        secondary
+        onPress={() => navigation.navigate('History')}
+      />
       <Button
         title="How it works"
         secondary
@@ -275,4 +328,5 @@ const styles = StyleSheet.create({
   label: { fontSize: 14, color: colors.muted },
   value: { fontSize: 18, fontWeight: '600', color: colors.ink },
   hint: { gap: 12, marginTop: 8 },
+  today: { gap: 2 },
 });
