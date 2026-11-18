@@ -57,7 +57,9 @@ def test_route_matches_contract() -> None:
 def test_reasons_and_limits_match_contract() -> None:
     schemas = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))["components"]["schemas"]
     served = RejectedSegment.model_json_schema()["properties"]["reason"]["enum"]
-    assert set(served) == set(schemas["RejectedSegment"]["properties"]["reason"]["enum"])
+    reason_ref = schemas["RejectedSegment"]["properties"]["reason"]["$ref"]
+    assert reason_ref == "#/components/schemas/RejectionReason"
+    assert set(served) == set(schemas["RejectionReason"]["enum"])
     assert "stair_prob_range" in served
     assert schemas["SegmentBatch"]["properties"]["segments"]["maxItems"] == rules.BATCH_MAX
     version = schemas["SegmentFields"]["properties"]["classifier_version"]
