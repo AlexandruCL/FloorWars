@@ -249,6 +249,21 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    // Seam for w4-realtime: these do nothing until the realtime client lands.
+    override fun configureRealtime(wsUrl: String, accessToken: String?) = Unit
+
+    override fun setRealtimeContext(myTeamCode: String?, buildingNamesJson: String) = Unit
+
+    override fun startRealtime() = Unit
+
+    override fun stopRealtime() = Unit
+
+    override fun deliverPolledEvents(pageJson: String) = Unit
+
+    override fun getLastEventId(promise: Promise) = promise.resolve(0.0)
+
+    override fun clearRealtime() = Unit
+
     private fun notImplemented(promise: Promise) =
         promise.reject("E_NOT_IMPLEMENTED", "Not implemented yet")
 
