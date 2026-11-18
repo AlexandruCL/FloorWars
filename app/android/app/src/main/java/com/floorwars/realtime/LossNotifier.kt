@@ -33,9 +33,11 @@ class LossNotifier(
     private fun post(flip: BuildingFlip): Boolean {
         val manager = NotificationManagerCompat.from(context)
         if (!manager.areNotificationsEnabled()) return false
+        // High: a loss shows a heads-up banner (Cristea, 2026-11-18). Android keeps a channel's
+        // importance once it is created, so changing it later needs a new channel id.
         manager.createNotificationChannel(
             NotificationChannelCompat
-                .Builder(GAME_EVENTS_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_DEFAULT)
+                .Builder(GAME_EVENTS_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
                 .setName(context.getString(R.string.game_events_channel_name))
                 .build()
         )
@@ -56,6 +58,8 @@ class LossNotifier(
             .setSmallIcon(R.drawable.ic_stat_sensors)
             .setContentTitle(title)
             .setContentText(context.getString(R.string.building_lost_text))
+            // API 24-25 (minSdk 24) have no channels; there the priority makes it heads-up.
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()

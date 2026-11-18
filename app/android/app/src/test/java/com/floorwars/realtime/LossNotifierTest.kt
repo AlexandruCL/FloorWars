@@ -67,6 +67,15 @@ class LossNotifierTest {
     }
 
     @Test
+    fun theChannelIsHighImportanceForAHeadsUpBanner() {
+        flip(7, from = "AC", to = "ETC")
+        val channel = manager.getNotificationChannel(GAME_EVENTS_CHANNEL_ID)
+        assertEquals(NotificationManager.IMPORTANCE_HIGH, channel.importance)
+        @Suppress("DEPRECATION")
+        assertEquals(Notification.PRIORITY_HIGH, posted().single().priority)
+    }
+
+    @Test
     fun aWinDoesNotNotify() {
         flip(7, from = "ETC", to = "AC")
         assertEquals(0, posted().size)
