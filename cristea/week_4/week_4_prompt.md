@@ -1,6 +1,6 @@
 # Prompt: Cristea's Week 4 implementation (FloorWars)
 
-**Status: implementation in progress. Stopped on 2026-11-17 for a handoff. A new session continues from "Handoff" below, then follows the rest of this prompt.**
+**Status (2026-11-18): code done, all eight PRs opened. What is left (merges, the real-server switch, the phone checks, the 15.3 records) is in `cristea/week_4/finish_week_4.md`. The handoff below is kept as the record of 2026-11-17.**
 
 ## Handoff (2026-11-17, read this first)
 
