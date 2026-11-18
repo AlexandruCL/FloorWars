@@ -1,5 +1,6 @@
 import { AppState } from 'react-native';
 import { FloorSensors } from '../native/floorSensors';
+import { handOverToken, pollGameEvents } from '../realtime/realtime';
 import { resetSync, syncNow } from './syncWorker';
 
 export const DEBOUNCE_MS = 3_000;
@@ -26,7 +27,12 @@ export function startSyncTriggers(): () => void {
   };
 }
 
-// Registered in index.js as a headless task; the WorkManager job starts it.
+// Registered in index.js as a headless task; the WorkManager job starts it. After the segment
+// sync it polls the game events (plan 7.2.1 fallback); a poll failure never fails the sync.
 export async function backgroundSyncTask(): Promise<void> {
+  await handOverToken().catch(() => {});
   await syncNow();
+  try {
+    await pollGameEvents();
+  } catch {}
 }

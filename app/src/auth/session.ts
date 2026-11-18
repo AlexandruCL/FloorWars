@@ -79,13 +79,14 @@ export function setOnSessionEnded(fn: (() => void) | undefined): void {
 }
 
 // Clears the stored tokens and team flag (the device id stays) and tells the app.
-// Unsent segments and the active check-in belong to the leaving user, so they go too;
+// Unsent segments, the active check-in and the realtime state belong to the leaving user, so they go too;
 // a native failure must not keep the user signed in.
 export async function endSession(): Promise<void> {
   // Detection stops first, and drops its open climb, so nothing is written after clearPending.
   for (const clear of [
     () => FloorSensors.clearActiveCheckin(),
     () => FloorSensors.clearPending(),
+    () => FloorSensors.clearRealtime(),
   ]) {
     try {
       await clear();

@@ -1,4 +1,5 @@
 import { NavigationContainer } from '@react-navigation/native';
+import type { LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { EmailScreen, OtpScreen, TeamScreen } from '../screens/AuthScreens';
 import { CheckinScreen } from '../screens/CheckinScreen';
@@ -9,6 +10,24 @@ import type {
   MainStackParamList,
   RootStackParamList,
 } from './types';
+
+// The lost-building notification opens floorwars://building/{id} (W4-1). Back from Standings goes Home.
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: ['floorwars://'],
+  config: {
+    screens: {
+      Main: {
+        initialRouteName: 'Home',
+        screens: {
+          Standings: {
+            path: 'building/:buildingId',
+            parse: { buildingId: Number },
+          },
+        },
+      },
+    },
+  },
+};
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -70,7 +89,8 @@ export function RootNavigator({
   onDevSkipSignIn,
 }: Props) {
   return (
-    <NavigationContainer>
+    // Off while the Auth stack shows, so a link then is dropped.
+    <NavigationContainer linking={{ ...linking, enabled: isSignedIn }}>
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
         {isSignedIn ? (
           <RootStack.Screen name="Main" component={MainNavigator} />
