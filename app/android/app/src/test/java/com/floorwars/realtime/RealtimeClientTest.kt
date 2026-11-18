@@ -30,15 +30,18 @@ class RealtimeClientTest {
     private val scheduled = LinkedBlockingQueue<Pair<Long, () -> Unit>>()
     private val flips = LinkedBlockingQueue<BuildingFlip>()
     private var now = 0L
+
+    @Volatile
+    private var wallMs = GameEventPipelineTest.SIGN_IN_MS
     private val pipeline = GameEventPipeline(
         prefs,
         emit = { emitted += JSONObject(it).getLong("event_id") },
         onFlip = { flips += it },
-        nowMs = { GameEventPipelineTest.SIGN_IN_MS }
+        nowMs = { wallMs }
     )
     private val client = RealtimeClient(
         realtimeHttpClient(),
-        lastEventId = { prefs.lastEventId },
+        lastEventId = pipeline::startRun,
         onMessage = pipeline::onMessage,
         onState = { states += it },
         nowMs = { now },
@@ -132,6 +135,20 @@ class RealtimeClientTest {
         assertTrue(flips.isEmpty())
         serverSocket.send(GameEventPipelineTest.flipped(4, at = "2026-11-17T12:00:05Z"))
         assertEquals(BuildingFlip(4, "AC", "ETC"), flips.poll(5, TimeUnit.SECONDS))
+    }
+
+    @Test
+    fun anEmptyBacklogFromSinceZeroThenALiveLossNotifies() {
+        val side = accept()
+        client.configure(wsUrl, "t")
+        client.hold(Holder.FOREGROUND)
+        val serverSocket = side.opened.poll(5, TimeUnit.SECONDS)!!
+        assertEquals("/ws?since=0", server.takeRequest(5, TimeUnit.SECONDS)!!.path)
+        // The loss happens 5 s after the connection started and arrives a minute later.
+        wallMs += 60_000
+        serverSocket.send(GameEventPipelineTest.flipped(4, at = "2026-11-17T12:00:05Z"))
+        assertEquals(BuildingFlip(4, "AC", "ETC"), flips.poll(5, TimeUnit.SECONDS))
+        assertEquals(GameEventPipelineTest.SIGN_IN_MS, prefs.catchUpBeforeMs)
     }
 
     @Test

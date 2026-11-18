@@ -105,6 +105,7 @@ class GameEventPipelineTest {
     @Test
     fun aTwoPagePollFromIdZeroNotifiesNone() {
         val p = pipeline()
+        assertEquals(0L, p.startRun())
         p.onPage("""{"items":[${flipped(1)},${flipped(2)}],"last_event_id":2}""")
         p.onPage("""{"items":[${flipped(3)},${flipped(4)}],"last_event_id":4}""")
         assertEquals(listOf(1L, 2L, 3L, 4L), emitted)
@@ -116,6 +117,7 @@ class GameEventPipelineTest {
     @Test
     fun aFlipAtOrAfterTheMarkNotifies() {
         val p = pipeline()
+        p.startRun()
         p.onMessage(flipped(1))
         p.onMessage(flipped(2, at = "2026-11-17T12:00:00Z"))
         p.onMessage(flipped(3, at = "2026-11-17T14:00:00.250+02:00"))
@@ -125,6 +127,7 @@ class GameEventPipelineTest {
     @Test
     fun aMissingOrUnreadableAtIsSilentWhileAMarkExists() {
         val p = pipeline()
+        p.startRun()
         p.onMessage(flipped(1))
         p.onMessage(
             """{"type":"building_flipped","event_id":2,"building_id":2,"from_team":"AC","to_team":"ETC"}"""
@@ -136,11 +139,15 @@ class GameEventPipelineTest {
 
     @Test
     fun aProcessRestartKeepsTheMark() {
-        pipeline().onMessage(flipped(1))
+        pipeline().run {
+            startRun()
+            onMessage(flipped(1))
+        }
         now += 3_600_000
         // A new pipeline over the same preferences, as after a restart: the old backlog stays
         // silent, the mark is not moved, a live flip notifies.
         val restarted = pipeline()
+        assertEquals(1L, restarted.startRun())
         restarted.onPage("""{"items":[${flipped(2)}],"last_event_id":2}""")
         restarted.onMessage(flipped(3, at = "2026-11-17T12:30:00Z"))
         assertEquals(SIGN_IN_MS, prefs.catchUpBeforeMs)
@@ -149,14 +156,31 @@ class GameEventPipelineTest {
 
     @Test
     fun clearRealtimeWipesTheMarkAndTheNextSignInSetsANewOne() {
-        pipeline().onMessage(flipped(1))
+        pipeline().run {
+            startRun()
+            onMessage(flipped(1))
+        }
         // Realtime.clear (clearRealtime from endSession) clears these preferences.
         prefs.clear()
         assertNull(prefs.catchUpBeforeMs)
         now += 3_600_000
-        pipeline().onMessage(flipped(1, at = "2026-11-17T12:30:00Z"))
+        pipeline().run {
+            startRun()
+            onMessage(flipped(1, at = "2026-11-17T12:30:00Z"))
+        }
         assertEquals(SIGN_IN_MS + 3_600_000, prefs.catchUpBeforeMs)
         assertEquals(emptyList<BuildingFlip>(), flips)
+    }
+
+    @Test
+    fun aRunFromAStoredIdOrAnEventOutsideARunSetsNoMark() {
+        val p = pipeline()
+        // The debug receiver hands events to the pipeline with no run started.
+        p.onMessage(flipped(1))
+        prefs.lastEventId = 1
+        assertEquals(1L, p.startRun())
+        assertNull(prefs.catchUpBeforeMs)
+        assertEquals(listOf(1), flips.map { it.buildingId })
     }
 
     @Test

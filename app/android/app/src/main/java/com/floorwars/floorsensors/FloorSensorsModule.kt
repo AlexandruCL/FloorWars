@@ -273,8 +273,9 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
 
     override fun deliverPolledEvents(pageJson: String) = realtime.pipeline.onPage(pageJson)
 
+    // pollGameEvents calls this once, before its first page: the start of a poll run.
     override fun getLastEventId(promise: Promise) =
-        promise.resolve(realtime.prefs.lastEventId.toDouble())
+        promise.resolve(realtime.pipeline.startRun().toDouble())
 
     override fun clearRealtime() = realtime.clear()
 

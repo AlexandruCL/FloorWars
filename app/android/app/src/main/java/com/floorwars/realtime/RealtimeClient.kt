@@ -35,6 +35,7 @@ private val reconnectExecutor by lazy {
 // never refreshes: JS hands every new access token over, and a 401 waits for a different one.
 class RealtimeClient(
     private val http: OkHttpClient,
+    // Read once per connect, as since; the pipeline's startRun.
     private val lastEventId: () -> Long,
     private val onMessage: (String) -> Unit,
     private val onState: (String) -> Unit,

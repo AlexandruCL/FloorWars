@@ -18,16 +18,25 @@ interface LastEventIdStore {
 
 // One path for socket messages and polled pages (plan 7.2.1). Delivery is at least once, so each
 // event_id passes once; ids only grow, so anything at or below the stored one has been handled.
-// Silent catch-up (Cristea, 2026-11-17): the first event that arrives with no id stored (sign-in,
-// reinstall) records the mark "now" once. The backlog spans many socket messages and poll pages,
-// so a flip is judged by its own `at`: before the mark (or no readable `at`) it reaches JS but
-// notifies nothing; at or after the mark it goes to the notifier.
+// Silent catch-up (Cristea, 2026-11-17 and 2026-11-18): a socket connection or a poll that starts
+// from since=0 (sign-in, reinstall) records the mark "now" once, before any event arrives. The
+// backlog spans many socket messages and poll pages, so a flip is judged by its own `at`: before
+// the mark (or no readable `at`) it reaches JS but notifies nothing; at or after the mark it goes
+// to the notifier.
 class GameEventPipeline(
     private val store: LastEventIdStore,
     private val emit: (json: String) -> Unit,
     private val onFlip: (BuildingFlip) -> Unit,
     private val nowMs: () -> Long = System::currentTimeMillis
 ) {
+    // The since of a new socket connection or poll. A run from 0 sets the catch-up mark first.
+    @Synchronized
+    fun startRun(): Long {
+        val since = store.lastEventId
+        if (since <= 0 && store.catchUpBeforeMs == null) store.catchUpBeforeMs = nowMs()
+        return since
+    }
+
     // One socket message: a WsEvent.
     @Synchronized
     fun onMessage(text: String) {
@@ -51,7 +60,6 @@ class GameEventPipeline(
     }
 
     private fun handle(event: JSONObject) {
-        if (store.lastEventId <= 0 && store.catchUpBeforeMs == null) store.catchUpBeforeMs = nowMs()
         // Without an id an event cannot be deduplicated, so it is dropped.
         val id = event.optLong("event_id", 0)
         if (id <= 0 || id <= store.lastEventId) return

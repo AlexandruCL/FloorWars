@@ -15,7 +15,7 @@ class Realtime private constructor(context: Context) {
     )
     val client = RealtimeClient(
         realtimeHttpClient(),
-        lastEventId = { prefs.lastEventId },
+        lastEventId = pipeline::startRun,
         onMessage = pipeline::onMessage,
         onState = { state ->
             Log.i(TAG, "state=$state")
