@@ -1,5 +1,6 @@
 import * as Keychain from 'react-native-keychain';
 import { api, ApiError } from '../src/api/client';
+import { FloorSensors } from '../src/native/floorSensors';
 import {
   getAccessToken,
   getRefreshToken,
@@ -47,6 +48,11 @@ test('a 401 refreshes, stores the rotated pair and retries once', async () => {
     '/teams Bearer access-2',
   ]);
   expect(await getRefreshToken()).toBe('refresh-2');
+  // The native socket gets the new access token; it never refreshes by itself.
+  expect(FloorSensors.configureRealtime).toHaveBeenLastCalledWith(
+    'wss://api.floorwars.me/v1/ws',
+    'access-2',
+  );
 });
 
 test('asks for problem+json so Problem errors can be negotiated', async () => {

@@ -4,10 +4,13 @@ import {
   getRefreshToken,
   saveTokens,
 } from '../auth/session';
+import { FloorSensors } from '../native/floorSensors';
 import type { paths } from './schema';
 
 // The contract's servers entry. For the Prism mock, change it locally and do not commit that.
 export const API_BASE_URL = 'https://api.floorwars.me/v1';
+// WS /v1/ws on the same host (https becomes wss).
+export const WS_URL = `${API_BASE_URL.replace(/^http/, 'ws')}/ws`;
 
 type Method = 'get' | 'post' | 'delete';
 type Operation<P extends keyof paths, M extends Method> = NonNullable<
@@ -111,6 +114,8 @@ function refreshTokens(): Promise<void> {
       throw new ApiError(response.status, data);
     }
     await saveTokens(data);
+    // The native socket never refreshes; it takes each new access token from here.
+    FloorSensors.configureRealtime(WS_URL, data.access_token);
   })().finally(() => {
     refreshing = null;
   });

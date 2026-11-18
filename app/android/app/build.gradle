@@ -94,6 +94,10 @@ android {
             keyPassword 'android'
         }
     }
+    // Robolectric reads the app's strings (the lost-building notification text).
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
@@ -131,10 +135,13 @@ dependencies {
     ksp("androidx.room:room-compiler:2.8.5")
     // Apache 2.0, 2.12.0 released 2026-09-23. Runs the 15-minute background sync job.
     implementation("androidx.work:work-runtime:2.12.0")
+    // Apache 2.0. The realtime WebSocket (W4-1); the version React Native already resolves.
+    implementation("com.squareup.okhttp3:okhttp:4.9.2")
 
     testImplementation("junit:junit:4.13.2")
     // Room needs a Context and the framework SQLite; Robolectric provides both on the JVM.
     testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.9.2")
 
     ktlint("com.pinterest.ktlint:ktlint-cli:1.7.1") {
         attributes {
