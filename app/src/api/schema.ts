@@ -121,6 +121,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/seasons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all seasons
+         * @description Every season, newest starts_at first. The leaderboard season selector reads it.
+         */
+        get: operations["listSeasons"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/seasons/{id}/join": {
         parameters: {
             query?: never;
@@ -407,6 +427,8 @@ export interface paths {
          *     season_state {paused, ends_at}; see x-websocket-events. Plan 7.2.1: on connect the server first
          *     replays the events after since for the player's team, then streams new ones (at least once;
          *     the client ignores event_id values it has handled).
+         *     A missing, expired or invalid token is rejected with 401 on the upgrade request, never with
+         *     403 and never by closing after accept, so the client stops reconnecting until it has a new token.
          */
         get: operations["openWebSocket"];
         put?: never;
@@ -602,24 +624,7 @@ export interface components {
         RejectedSegment: {
             /** Format: uuid */
             id: string;
-            /**
-             * @description Inferred: the rule that failed (plan 2, 3.3, 3.4).
-             *     pressure_steps_mismatch: steps per metre of ascent outside 4 to 10 (elevator, flat walking, shaking).
-             *     ascent_range: ascent_m outside 2.0 to 120.0. steps_range: steps outside 1 to 2000.
-             *     stair_prob_range: stair_prob outside 0 to 1 or not finite.
-             *     speed: vertical speed outside 0.1 to 0.9 m/s. cadence: implausible step rate.
-             *     started_at_range: started_at older than 7 days or more than 5 minutes in the future.
-             *     season_inactive: no season was running at started_at. no_team: the user had no team in that season.
-             *     duration: window outside 5 s to 3 min. rate_limit: the user's verified steps with started_at
-             *     less than 10 minutes before or after this segment's, plus its own steps, are above 600 (over 60
-             *     uploads per hour returns 429 for the whole batch). overlap: [started_at, started_at + duration_s)
-             *     overlaps that of a verified segment of the same user; climbs that only touch at an end do not
-             *     overlap (1 ms tolerance for real rounding). no_checkin: no check-in valid at started_at, or
-             *     the segment is already stored (a resend from another device, or another user's id).
-             *     building_mismatch: building_id differs from the check-in's building.
-             * @enum {string}
-             */
-            reason: "pressure_steps_mismatch" | "ascent_range" | "steps_range" | "speed" | "cadence" | "duration" | "rate_limit" | "no_checkin" | "building_mismatch" | "started_at_range" | "season_inactive" | "no_team" | "stair_prob_range" | "overlap";
+            reason: components["schemas"]["RejectionReason"];
         };
         /** @description A claimable building. No floor count or heights (the app needs no building floor data). */
         Building: {
@@ -712,10 +717,30 @@ export interface components {
             height_m: number;
             reached: boolean;
         };
+        /**
+         * @description Inferred: the rule that failed (plan 2, 3.3, 3.4).
+         *     pressure_steps_mismatch: steps per metre of ascent outside 4 to 10 (elevator, flat walking, shaking).
+         *     ascent_range: ascent_m outside 2.0 to 120.0. steps_range: steps outside 1 to 2000.
+         *     stair_prob_range: stair_prob outside 0 to 1 or not finite.
+         *     speed: vertical speed outside 0.1 to 0.9 m/s. cadence: implausible step rate.
+         *     started_at_range: started_at older than 7 days or more than 5 minutes in the future.
+         *     season_inactive: no season was running at started_at. no_team: the user had no team in that season.
+         *     duration: window outside 5 s to 3 min. rate_limit: the user's verified steps with started_at
+         *     less than 10 minutes before or after this segment's, plus its own steps, are above 600 (over 60
+         *     uploads per hour returns 429 for the whole batch). overlap: [started_at, started_at + duration_s)
+         *     overlaps that of a verified segment of the same user; climbs that only touch at an end do not
+         *     overlap (1 ms tolerance for real rounding). no_checkin: no check-in valid at started_at, or
+         *     the segment is already stored (a resend from another device, or another user's id).
+         *     building_mismatch: building_id differs from the check-in's building.
+         * @enum {string}
+         */
+        RejectionReason: "pressure_steps_mismatch" | "ascent_range" | "steps_range" | "speed" | "cadence" | "duration" | "rate_limit" | "no_checkin" | "building_mismatch" | "started_at_range" | "season_inactive" | "no_team" | "stair_prob_range" | "overlap";
         /** @description A stored segment with its server-side status. */
         SegmentRecord: components["schemas"]["SegmentFields"] & {
             /** @enum {string} */
             status: "pending" | "verified" | "rejected";
+            /** @description Why the segment was rejected; null unless status is rejected. */
+            reason: components["schemas"]["RejectionReason"] | null;
             /** @description Verified stair steps credited for the segment. Inferred: 0 while pending or when rejected. */
             steps_scored: number;
         };
@@ -782,8 +807,8 @@ export interface components {
         BuildingFlippedEvent: {
             /** @constant */
             type: "building_flipped";
-            /** @description Inferred: id of the stored game event (plan 7.2.1); grows over time; used for since. */
-            event_id?: number;
+            /** @description Id of the stored game event (plan 7.2.1); grows over time; used for since. Required: an event without it cannot be deduplicated. */
+            event_id: number;
         } & components["schemas"]["BuildingFlip"] & {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -798,8 +823,8 @@ export interface components {
              * @enum {string}
              */
             type: "season_state";
-            /** @description Inferred: id of the stored game event (plan 7.2.1); grows over time; used for since. */
-            event_id?: number;
+            /** @description Id of the stored game event (plan 7.2.1); grows over time; used for since. Required: an event without it cannot be deduplicated. */
+            event_id: number;
             paused: boolean;
             /** Format: date-time */
             ends_at: string;
@@ -1061,6 +1086,27 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+        };
+    };
+    listSeasons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All seasons, newest starts_at first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Season"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     joinSeason: {

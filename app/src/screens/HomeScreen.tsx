@@ -8,8 +8,11 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { clock, useRead } from '../data/useRead';
+import { localMidnight, todayFigures, todayText } from '../history/today';
 import { revokeRefreshToken } from '../auth/logout';
 import { endSession } from '../auth/session';
+import { hasBarometer } from '../landing/landingScan';
 import { FloorSensors } from '../native/floorSensors';
 import type {
   ActiveCheckin,
@@ -118,6 +121,35 @@ function useSync(): SyncState {
   return sync;
 }
 
+// Today's figures: verified climbs since local midnight. The key holds the date, so a new day
+// starts without a cached copy.
+function TodayFigures() {
+  const midnight = localMidnight(Date.now());
+  const today = useRead(`today:${midnight}`, () => todayFigures(midnight));
+  const stale = today.failure && today.data;
+  const text =
+    today.data && !today.failure
+      ? todayText(today.data)
+      : today.failure
+      ? 'Verified today: unavailable'
+      : 'Verified today: loading';
+  return (
+    <View style={styles.today}>
+      <Text style={styles.value} accessibilityLiveRegion="polite">
+        {text}
+      </Text>
+      {stale && today.data && today.cachedAt !== null && (
+        <>
+          <Text style={styles.label}>{todayText(today.data)}</Text>
+          <Text style={styles.label}>
+            {`Last updated ${clock(today.cachedAt)}. Can't reach the server.`}
+          </Text>
+        </>
+      )}
+    </View>
+  );
+}
+
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <View
@@ -150,6 +182,7 @@ export function HomeScreen({
   }, [sync.running, refresh]);
 
   const problem = problemKind(sync);
+  const noBarometer = snap !== null && !hasBarometer(snap.status);
   // Every native read failed: nothing on this screen can be trusted.
   const unreadable =
     snap !== null &&
@@ -182,23 +215,29 @@ export function HomeScreen({
       ) : (
         <>
           <View>
-            <Row
-              label="Detection"
-              value={
-                snap.status === null
-                  ? 'Unknown'
-                  : snap.status.detecting
-                  ? 'Running'
-                  : 'Not running'
-              }
-            />
+            {!noBarometer && (
+              <Row
+                label="Detection"
+                value={
+                  snap.status === null
+                    ? 'Unknown'
+                    : snap.status.detecting
+                    ? 'Running'
+                    : 'Not running'
+                }
+              />
+            )}
             <Row label="Check-in" value={checkinText(snap.checkin)} />
-            <Row
-              label="Last segment"
-              value={
-                snap.status ? timeText(snap.status.last_segment_ms) : 'Unknown'
-              }
-            />
+            {!noBarometer && (
+              <Row
+                label="Last segment"
+                value={
+                  snap.status
+                    ? timeText(snap.status.last_segment_ms)
+                    : 'Unknown'
+                }
+              />
+            )}
             <Row
               label="Waiting to upload"
               value={snap.pending === null ? 'Unknown' : String(snap.pending)}
@@ -211,7 +250,7 @@ export function HomeScreen({
               you are about to climb.
             </Body>
           )}
-          {snap.status !== null && !snap.status.detecting && (
+          {!noBarometer && snap.status !== null && !snap.status.detecting && (
             <Body>Detection is not running, so climbs are not recorded.</Body>
           )}
           {problem && <ErrorText message={problemText(problem, sync)} />}
@@ -229,12 +268,45 @@ export function HomeScreen({
           )}
         </>
       )}
+      <TodayFigures />
       {/* Buttons stay reachable in every state. */}
       <Button title="Sync now" busy={sync.running} onPress={() => syncNow()} />
       <Button
         title="Check in"
         secondary
         onPress={() => navigation.navigate('Checkin')}
+      />
+      {noBarometer && (
+        <Button
+          title="Scan at the stairs"
+          onPress={() => navigation.navigate('LandingScan')}
+        />
+      )}
+      {snap?.checkin && (
+        <Button
+          title="Building standings"
+          secondary
+          onPress={() =>
+            navigation.navigate('Standings', {
+              buildingId: snap.checkin!.building_id,
+            })
+          }
+        />
+      )}
+      <Button
+        title="Leaderboards"
+        secondary
+        onPress={() => navigation.navigate('Leaderboards')}
+      />
+      <Button
+        title="Climb history"
+        secondary
+        onPress={() => navigation.navigate('History')}
+      />
+      <Button
+        title="How it works"
+        secondary
+        onPress={() => navigation.navigate('Onboarding')}
       />
       <Button
         title="Sensor logger"
@@ -256,4 +328,5 @@ const styles = StyleSheet.create({
   label: { fontSize: 14, color: colors.muted },
   value: { fontSize: 18, fontWeight: '600', color: colors.ink },
   hint: { gap: 12, marginTop: 8 },
+  today: { gap: 2 },
 });

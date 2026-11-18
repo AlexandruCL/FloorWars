@@ -8,6 +8,7 @@ type TokenPair = components['schemas']['TokenPair'];
 const TOKENS = 'floorwars.auth';
 const DEVICE = 'floorwars.device';
 const TEAM = 'floorwars.team';
+const ONBOARDING = 'floorwars.onboarding';
 
 type Stored = { access: string; refresh: string };
 
@@ -57,6 +58,15 @@ export async function markTeamChosen(seasonId: number): Promise<void> {
   });
 }
 
+// Not cleared by endSession: the explanation is shown once per install, not once per sign-in.
+export async function hasSeenOnboarding(): Promise<boolean> {
+  return (await Keychain.getGenericPassword({ service: ONBOARDING })) !== false;
+}
+
+export async function markOnboardingSeen(): Promise<void> {
+  await Keychain.setGenericPassword('seen', '1', { service: ONBOARDING });
+}
+
 // Random v4 id kept for the install; it is an identifier, not a secret, so Math.random is enough.
 export async function getDeviceId(): Promise<string> {
   const stored = await Keychain.getGenericPassword({ service: DEVICE });
@@ -79,13 +89,14 @@ export function setOnSessionEnded(fn: (() => void) | undefined): void {
 }
 
 // Clears the stored tokens and team flag (the device id stays) and tells the app.
-// Unsent segments and the active check-in belong to the leaving user, so they go too;
+// Unsent segments, the active check-in and the realtime state belong to the leaving user, so they go too;
 // a native failure must not keep the user signed in.
 export async function endSession(): Promise<void> {
   // Detection stops first, and drops its open climb, so nothing is written after clearPending.
   for (const clear of [
     () => FloorSensors.clearActiveCheckin(),
     () => FloorSensors.clearPending(),
+    () => FloorSensors.clearRealtime(),
   ]) {
     try {
       await clear();

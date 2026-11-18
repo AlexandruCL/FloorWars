@@ -2,11 +2,13 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { AppState } from 'react-native';
 import * as Keychain from 'react-native-keychain';
 import App from '../App';
+import { markOnboardingSeen } from '../src/auth/session';
 import { RootNavigator } from '../src/navigation/RootNavigator';
 
 beforeEach(async () => {
   await Keychain.resetGenericPassword({ service: 'floorwars.auth' });
   await Keychain.resetGenericPassword({ service: 'floorwars.team' });
+  await markOnboardingSeen(); // the onboarding has its own tests
 });
 
 test('App starts on the Auth stack', async () => {
@@ -32,8 +34,17 @@ test('stored tokens and a chosen team restore straight into Main', async () => {
     service: 'floorwars.auth',
   });
   await Keychain.setGenericPassword('team', '1', { service: 'floorwars.team' });
-  await render(<App />);
-  expect((await screen.findAllByText('Status')).length).toBeGreaterThan(0);
+  // Offline, so the start-up season check never reaches the real server.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = jest.fn(async () => {
+    throw new TypeError('Network request failed');
+  });
+  try {
+    await render(<App />);
+    expect((await screen.findAllByText('Status')).length).toBeGreaterThan(0);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 // The Home screen heading is "Home" now and "Status" once the status screen lands.

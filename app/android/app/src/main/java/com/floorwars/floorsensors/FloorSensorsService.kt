@@ -31,6 +31,8 @@ import com.floorwars.floorsensors.detection.detectionEndMs
 import com.floorwars.floorsensors.outbox.OutboxSegment
 import com.floorwars.floorsensors.outbox.RoomSegmentOutbox
 import com.floorwars.floorsensors.outbox.SegmentOutbox
+import com.floorwars.realtime.Holder
+import com.floorwars.realtime.Realtime
 import java.util.Date
 
 // Two modes, which can overlap: logging records a trace for the logger screen; detecting runs the
@@ -145,6 +147,8 @@ class FloorSensorsService :
         history.set(newCheckin, SystemClock.elapsedRealtime() + offsetMs)
         checkin = newCheckin
         detecting = true
+        // The session holder: game events keep arriving while the app is in the background.
+        Realtime.get(this).client.hold(Holder.SESSION)
         startForeground()
         val stopInMs = detectionEndMs(newCheckin.validUntilMs) - System.currentTimeMillis()
         mainHandler.removeCallbacks(expire)
@@ -160,6 +164,7 @@ class FloorSensorsService :
         history.end(SystemClock.elapsedRealtime() + offsetMs)
         checkin = null
         detecting = false
+        Realtime.get(this).client.release(Holder.SESSION)
         if (discard) dropDetector() else flushDetector()
         updateSensorsAndWakeLock()
         if (label == null) stopSelf() else startForeground()
@@ -244,6 +249,7 @@ class FloorSensorsService :
         wakeLock = null
         checkin = null
         detecting = false
+        Realtime.get(this).client.release(Holder.SESSION)
         Log.i(TAG, "stopped label=$label buffered=${buffer.size()} byType=${buffer.countByType()}")
         if (label != null) session = session?.copy(stoppedAtMillis = System.currentTimeMillis())
         label = null

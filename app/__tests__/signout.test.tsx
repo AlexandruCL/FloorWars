@@ -2,12 +2,18 @@ import { Alert } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import App from '../App';
 import * as Keychain from 'react-native-keychain';
-import { endSession, saveTokens } from '../src/auth/session';
+import {
+  endSession,
+  markOnboardingSeen,
+  saveTokens,
+} from '../src/auth/session';
 import { FloorSensors } from '../src/native/floorSensors';
 
 const sensors = FloorSensors as jest.Mocked<typeof FloorSensors>;
 
 const realFetch = globalThis.fetch;
+
+beforeEach(() => markOnboardingSeen());
 
 afterEach(() => {
   jest.restoreAllMocks();

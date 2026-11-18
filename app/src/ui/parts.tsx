@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  type RefreshControlProps,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,9 +19,16 @@ export const colors = {
   error: '#A31515',
 };
 
-export function Screen({ children }: { children: ReactNode }) {
+export function Screen({
+  children,
+  refreshControl,
+}: {
+  children: ReactNode;
+  refreshControl?: ReactElement<RefreshControlProps>;
+}) {
   return (
     <ScrollView
+      refreshControl={refreshControl}
       style={styles.screen}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"

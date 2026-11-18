@@ -41,6 +41,9 @@ export type ActiveCheckin = {
   valid_until_ms: number;
 };
 export type PendingChanged = { pending: number };
+// TurboModule codegen has no unions, so game events cross as JSON text.
+export type GameEventJson = { json: string }; // one WsEvent from contracts/openapi.yaml
+export type RealtimeState = { state: string }; // 'connecting' | 'open' | 'closed' | 'auth_needed'
 
 export interface Spec extends TurboModule {
   startLogging(label: string): void;
@@ -65,6 +68,21 @@ export interface Spec extends TurboModule {
   clearPending(): Promise<void>; // w3-outbox
   isIgnoringBatteryOptimizations(): Promise<boolean>; // w3-sync
   openBatteryOptimizationSettings(): void; // w3-sync
+  // JS calls after sign-in, every token refresh, app foreground and every headless sync run.
+  configureRealtime(wsUrl: string, accessToken: string | null): void; // w4-realtime
+  // Team code of the joined season; buildingNamesJson is [{id,name}] from GET /buildings.
+  setRealtimeContext(
+    myTeamCode: string | null,
+    buildingNamesJson: string,
+  ): void; // w4-realtime
+  startRealtime(): void; // the app is in the foreground: hold the socket; w4-realtime
+  stopRealtime(): void; // the app left the foreground: release the hold; w4-realtime
+  // A GameEventPage from GET /me/events, run through the same pipeline as socket events.
+  deliverPolledEvents(pageJson: string): void; // w4-realtime
+  getLastEventId(): Promise<number>; // w4-realtime
+  clearRealtime(): void; // sign-out: forget socket, token, team, names, last id; w4-realtime
+  readonly onGameEvent: CodegenTypes.EventEmitter<GameEventJson>; // w4-realtime
+  readonly onRealtimeState: CodegenTypes.EventEmitter<RealtimeState>; // w4-realtime
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('FloorSensors');

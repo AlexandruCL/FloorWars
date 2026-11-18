@@ -1,5 +1,6 @@
 package com.floorwars
 
+import android.content.Intent
 import android.os.Bundle
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -13,6 +14,14 @@ class MainActivity : ReactActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         supportFragmentManager.fragmentFactory = RNScreensFragmentFactory()
         super.onCreate(savedInstanceState)
+    }
+
+    // A notification tap after Android killed the process restarts the task with its old launch
+    // intent and hands the link to onNewIntent before React is ready, which drops it. Keeping it as
+    // the activity's intent lets Linking.getInitialURL find it (W4-1 cold-start deep link).
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
     }
 
     /**

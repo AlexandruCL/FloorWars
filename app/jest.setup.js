@@ -60,6 +60,15 @@ jest.mock('./src/native/NativeFloorSensors', () => ({
     clearPending: jest.fn(() => Promise.resolve()),
     isIgnoringBatteryOptimizations: jest.fn(() => Promise.resolve(true)),
     openBatteryOptimizationSettings: jest.fn(),
+    configureRealtime: jest.fn(),
+    setRealtimeContext: jest.fn(),
+    startRealtime: jest.fn(),
+    stopRealtime: jest.fn(),
+    deliverPolledEvents: jest.fn(),
+    getLastEventId: jest.fn(() => Promise.resolve(0)),
+    clearRealtime: jest.fn(),
+    onGameEvent: jest.fn(() => ({ remove: jest.fn() })),
+    onRealtimeState: jest.fn(() => ({ remove: jest.fn() })),
   },
 }));
 
@@ -79,3 +88,15 @@ jest.mock('@react-native-community/geolocation', () => ({
   __esModule: true,
   default: { getCurrentPosition: jest.fn() },
 }));
+
+// Reanimated needs the native worklets runtime; tests only check what is animated, and to what.
+jest.mock('react-native-reanimated', () => {
+  const { View } = require('react-native');
+  return {
+    __esModule: true,
+    default: { View },
+    useSharedValue: init => require('react').useRef({ value: init }).current,
+    useAnimatedStyle: fn => fn(),
+    withTiming: jest.fn(value => value),
+  };
+});

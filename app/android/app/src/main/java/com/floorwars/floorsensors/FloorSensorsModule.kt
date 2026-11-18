@@ -18,6 +18,8 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableArray
 import com.floorwars.floorsensors.detection.ActiveCheckin
 import com.floorwars.floorsensors.outbox.RoomSegmentOutbox
+import com.floorwars.realtime.Holder
+import com.floorwars.realtime.Realtime
 import java.io.File
 import java.io.IOException
 
@@ -26,6 +28,12 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
 
     private val statusListener = { emitStatus() }
     private val pendingListener = { emitPending() }
+    private val gameEventListener = { json: String ->
+        emitOnGameEvent(Arguments.createMap().apply { putString("json", json) })
+    }
+    private val realtimeStateListener = { state: String ->
+        emitOnRealtimeState(Arguments.createMap().apply { putString("state", state) })
+    }
 
     private val hasBarometer by lazy {
         reactApplicationContext.getSystemService(SensorManager::class.java)
@@ -35,6 +43,8 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
     init {
         FloorSensorsService.statusListener = statusListener
         FloorSensorsService.pendingListener = pendingListener
+        Realtime.eventListener = gameEventListener
+        Realtime.stateListener = realtimeStateListener
         // After an app restart: resume detection for a check-in that is still valid.
         if (!FloorSensorsService.detecting) {
             ActiveCheckinStore.load(reactApplicationContext)?.let { startDetecting() }
@@ -249,8 +259,25 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    private fun notImplemented(promise: Promise) =
-        promise.reject("E_NOT_IMPLEMENTED", "Not implemented yet")
+    private val realtime get() = Realtime.get(reactApplicationContext)
+
+    override fun configureRealtime(wsUrl: String, accessToken: String?) =
+        realtime.client.configure(wsUrl, accessToken)
+
+    override fun setRealtimeContext(myTeamCode: String?, buildingNamesJson: String) =
+        realtime.prefs.setContext(myTeamCode, buildingNamesJson)
+
+    override fun startRealtime() = realtime.client.hold(Holder.FOREGROUND)
+
+    override fun stopRealtime() = realtime.client.release(Holder.FOREGROUND)
+
+    override fun deliverPolledEvents(pageJson: String) = realtime.pipeline.onPage(pageJson)
+
+    // pollGameEvents calls this once, before its first page: the start of a poll run.
+    override fun getLastEventId(promise: Promise) =
+        promise.resolve(realtime.pipeline.startRun().toDouble())
+
+    override fun clearRealtime() = realtime.clear()
 
     private fun withOutbox(promise: Promise, call: (RoomSegmentOutbox) -> Any?) {
         try {
@@ -271,6 +298,8 @@ class FloorSensorsModule(reactContext: ReactApplicationContext) :
         if (FloorSensorsService.pendingListener === pendingListener) {
             FloorSensorsService.pendingListener = null
         }
+        if (Realtime.eventListener === gameEventListener) Realtime.eventListener = null
+        if (Realtime.stateListener === realtimeStateListener) Realtime.stateListener = null
         super.invalidate()
     }
 

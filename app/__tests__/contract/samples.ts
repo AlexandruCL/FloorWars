@@ -167,6 +167,7 @@ export const unclaimed: Schemas['BuildingStandings'] = {
 // WebSocket events
 export const flippedEvent: Schemas['WsEvent'] = {
   type: 'building_flipped',
+  event_id: 41,
   building_id: 4,
   from_team: 'ETC',
   to_team: 'AC',
@@ -174,6 +175,7 @@ export const flippedEvent: Schemas['WsEvent'] = {
 };
 export const seasonEvent: Schemas['WsEvent'] = {
   type: 'season_state',
+  event_id: 42,
   paused: false,
   ends_at: '2026-11-09T00:00:00Z',
 };
