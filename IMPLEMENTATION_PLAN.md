@@ -411,13 +411,14 @@ How it works:
 2. While a play session runs, the Kotlin foreground service that already does the sensing (section 4.3) keeps one WebSocket open to `WS /v1/ws`, authenticated on connect. On connect it sends the last event id it has seen (`since`); the server first replays the missed events for the player's team, then streams new ones. Delivery is at least once: the app ignores ids it has already handled.
 3. When the player's team loses a building, the service posts a local Android notification ("AC took the Politehnica building"). Tapping it opens that building's screen. The service does this itself, so it works with the JS runtime closed.
 4. Connection handling: a ping every 30 s, reconnect with exponential backoff and jitter, close the socket when the session stops.
-5. Fallback when no session runs: a WorkManager job (every 15 minutes, the Android minimum; Doze can stretch it) calls `GET /v1/me/events?since=<id>` and shows the same notifications.
+5. Fallback when no session runs: a WorkManager job (every 15 minutes, the Android minimum; Doze can stretch it) calls `GET /v1/me/events?since=<id>` and shows the same notifications. Decided 2026-11-17 (Cristea): this is the existing Week 3 sync job, whose headless JS run polls the feed after the segment sync and hands the events to the Kotlin pipeline; no second job.
 6. The game screens use the same WebSocket while the app is open (Week 4 hook).
 
 Details:
 
 - Message content: short text plus `building_id`, no personal data beyond the team code and the building.
-- Rate limit notifications per user (for example at most one per building per 10 minutes) so a flip war does not spam players.
+- Rate limit notifications per user (for example at most one per building per 10 minutes) so a flip war does not spam players. App side, decided 2026-11-17 (Cristea): the phone notifies only when the player's team loses a building, at most once per building per 10 minutes; `season_state` and wins do not notify.
+- One socket per app, owned by Kotlin (decided 2026-11-17, Cristea): open while a session runs or the app is in the foreground; the JS hook subscribes through the native module's events. Native never refreshes tokens: JS hands it the access token after sign-in, each refresh, on foreground and in each headless run; a 401 waits for a new token. Ping 30 s; reconnect backoff 1 s doubling to 60 s with full jitter, reset after 60 s open. Tapping a notification opens `floorwars://building/{id}`.
 - Known limit: with no session running and the phone in deep Doze, a notification can arrive late (at the next WorkManager window). We accept this and measure it.
 - Evaluation (section 11): notification delay (event to notification) with the service on and off, and the battery cost of the open socket, on both phones.
 - Considered and not chosen: UnifiedPush with a self-hosted ntfy server (real-time even without a session, but every tester must install a second app as the "distributor").
@@ -654,7 +655,8 @@ Goal: the loop is visible and social.
 - Personal history screen with the reason for each rejected segment.
 - Barometer-less fallback: detect `has_barometer=false`, QR-sticker-on-landing flow ("scan at the stairs of building X") with local rate limit.
 - Onboarding: safety copy (no running), permission explanations, per-manufacturer battery-optimisation guide.
-- Classifier tuning pass 1 with new real-world traces (pocket, bag, hand, going down, flat walking). Record new precision and recall.
+- Classifier tuning pass 1 with new real-world traces (pocket, bag, hand, going down, flat walking). Record new precision and recall. Decided 2026-11-17: pass 1 runs on the 21 existing real traces; no new traces were recorded this week.
+- Contract 0.8.0-draft (added 2026-11-17, Cristea writes it, Ionut reviews): `reason` on `SegmentRecord`, needed by the history screen, and `GET /v1/seasons`, needed by the season selector.
 
 **Ionut**
 - WebSocket hub in the API: auth on connect, Valkey pub/sub fan-out so two replicas share events.
@@ -863,8 +865,8 @@ Our 6 weeks map onto this as: Week 1 = M1, Week 2 and 3 = M2, Week 4 = M3, Week 
 | Background sync trigger: decided 2026-11-06, WorkManager from the native module, waking the JS worker through Headless JS | Cristea | Week 3 |
 | Point values and diminishing-returns curve | Both | Week 3 |
 | CI precision threshold for the trace-replay gate | Cristea | Week 2 |
-| Accessible contribution mode rules | Both | Week 4 |
-| Bring a third person for the pilot logistics (captains, recruiting)? | Both | Week 4 |
+| Accessible contribution mode rules. Cristea's position 2026-11-17: the app shows the `points` the server returns for a landing scan and computes none; the per-scan value is Ionut's server setting. Waiting on Ionut | Both | Week 4 |
+| Bring a third person for the pilot logistics (captains, recruiting)? Cristea's position 2026-11-17: no. Waiting on Ionut | Both | Week 4 |
 
 ### 15.4 Glossary
 
