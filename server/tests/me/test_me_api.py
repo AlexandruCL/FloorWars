@@ -242,8 +242,37 @@ def test_landmark_boundary_is_reached(client: TestClient) -> None:
     assert [m["height_m"] for m in set_second(43.0)] == sorted(m[1] for m in LANDMARKS)
 
 
-@pytest.mark.skip(reason="W4-4 scan points")
-def test_stats_count_landing_scan_points(client: TestClient) -> None:
-    """Re-enable after feat/w4-landing-scans merges: a scan's points add to ``points`` and ``rank``
-    but not to ``steps_verified`` or ``ascent_m`` (see ``app.me.stats.scan_points``)."""
-    raise AssertionError(uuid.uuid4())
+def _scan(client: TestClient, world: World, team: str, points: int) -> None:
+    """A landing scan of ``team``'s user at building 0 (its check-in comes from ``_add``)."""
+    building_id = world.building_ids[0]
+    with client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
+        db.execute(
+            text(
+                "INSERT INTO landing_scan (user_id, building_id, season_id, team_id, checkin_id, "
+                "points, scanned_at) VALUES (:u, :b, :s, :t, :c, :p, now())"
+            ),
+            {
+                "u": world.users[team],
+                "b": building_id,
+                "s": world.season_id,
+                "t": world.team_ids[team],
+                "c": world.checkins[(team, building_id)],
+                "p": points,
+            },
+        )
+        db.commit()
+
+
+@pytest.mark.parametrize("valkey", [True, False], ids=["valkey", "database"])
+def test_stats_count_landing_scan_points(make_app, valkey: bool) -> None:  # type: ignore[no-untyped-def]
+    """Scan points add to ``points`` and ``rank``, never to ``steps_verified`` or ``ascent_m``."""
+    client = make_app() if valkey else make_app(valkey_url=None)
+    world = seed(client)
+    _add(client, world, "AC", 100)
+    _add(client, world, "ETC", 500)
+    _scan(client, world, "AC", 450)  # 550 > 500: AC overtakes ETC only with its scan points
+    body = client.get("/v1/me/season-stats", headers=_headers(client, world)).json()
+    assert (body["steps_verified"], body["ascent_m"], body["points"]) == (40, 6.0, 550)
+    assert body["rank"] == 1
+    etc = client.get("/v1/me/season-stats", headers=_headers(client, world, "ETC")).json()
+    assert etc["rank"] == 2
