@@ -13,20 +13,27 @@ from sqlalchemy import (
     ColumnElement,
     Interval,
     and_,
+    cast,
     delete,
     exists,
+    extract,
     func,
     insert,
     literal,
     literal_column,
     or_,
     select,
+    true,
+    tuple_,
+    union,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, TIMESTAMP, UUID
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.db.models import (
+    GEOGRAPHY,
+    Building,
     Checkin,
     ClimbSegment,
     Device,
@@ -38,7 +45,14 @@ from app.db.models import (
     User,
 )
 from app.segments.models import STATUS_VERIFIED, ItemContext, Receipt, SegmentRow, VerifiedClimb
-from app.segments.rules import DURATION_MAX_S, OVERLAP_TOLERANCE
+from app.segments.rules import (
+    DURATION_MAX_S,
+    IDENTICAL_ASCENT_M,
+    IDENTICAL_DURATION_S,
+    IDENTICAL_WINDOW,
+    MAX_WALK_SPEED_MPS,
+    OVERLAP_TOLERANCE,
+)
 
 # Far above a normal batch (about 1 s), and below the 30 s wait for a pooled connection, so batches
 # queued on one user cannot starve other users of connections.
@@ -474,4 +488,138 @@ def purge_rejected(db: Session, now: datetime) -> tuple[int, int]:
     return (
         int(getattr(receipts, "rowcount", 0) or 0),
         int(getattr(flags, "rowcount", 0) or 0),
+    )
+
+
+# Anti-cheat v2 (Week 4): flag-only checks of a batch's newly verified segments, read after the
+# loop, so the batch's own rows are visible. ``keys`` are their ``(id, started_at)``.
+
+_seg_s = aliased(ClimbSegment, name="s")
+_seg_o = aliased(ClimbSegment, name="o")
+
+
+def device_shared(db: Session, device_id: uuid.UUID, user_id: uuid.UUID, since: datetime) -> bool:
+    """Whether another user has a receipt on ``device_id`` created after ``since``."""
+    return bool(
+        db.scalar(
+            select(
+                exists().where(
+                    SegmentReceipt.device_id == device_id,
+                    SegmentReceipt.user_id != user_id,
+                    SegmentReceipt.created_at > since,
+                )
+            )
+        )
+    )
+
+
+def identical_segments(
+    db: Session, user_id: uuid.UUID, keys: Collection[tuple[uuid.UUID, datetime]]
+) -> set[tuple[uuid.UUID, datetime]]:
+    """Which of ``keys`` match another verified segment of the user within
+    ``IDENTICAL_WINDOW`` either side: same ``steps``, ``ascent_m`` and ``duration_s`` closer than
+    the tolerances. A row of the same batch counts only if it comes earlier in the batch order
+    ``(started_at, id)``, so the batch flags what uploading its items one by one would."""
+    if not keys:
+        return set()
+    ids = {i for i, _ in keys}
+    s, o = _seg_s, _seg_o
+    rows = db.execute(
+        select(s.id, s.started_at)
+        .distinct()
+        .join(
+            o,
+            and_(
+                o.user_id == s.user_id,
+                o.status == STATUS_VERIFIED,
+                o.steps == s.steps,
+                func.abs(o.ascent_m - s.ascent_m) < IDENTICAL_ASCENT_M,
+                func.abs(o.duration_s - s.duration_s) < IDENTICAL_DURATION_S,
+                o.started_at > s.started_at - IDENTICAL_WINDOW,
+                o.started_at < s.started_at + IDENTICAL_WINDOW,
+                or_(o.id.not_in(ids), tuple_(o.started_at, o.id) < tuple_(s.started_at, s.id)),
+            ),
+        )
+        .where(
+            s.user_id == user_id,
+            s.id.in_(ids),
+            s.started_at.in_({at for _, at in keys}),
+        )
+    )
+    return {(row.id, row.started_at) for row in rows} & set(keys)
+
+
+def impossible_sequences(
+    db: Session, user_id: uuid.UUID, keys: Collection[tuple[uuid.UUID, datetime]]
+) -> set[tuple[uuid.UUID, datetime]]:
+    """Which of ``keys`` sit next to a verified segment of the user in another building with less
+    time between them than the walk at ``MAX_WALK_SPEED_MPS`` (footprint distance). Both sides of
+    ``started_at``: the nearest earlier and the nearest later segment, so the upload order does not
+    matter. Nearest neighbours suffice: if any pair is impossible, so is a pair of neighbours
+    (triangle inequality). The later side skips the batch's own rows, as one-by-one uploads would.
+    """
+    if not keys:
+        return set()
+    ids = {i for i, _ in keys}
+    s = _seg_s
+    here, there = aliased(Building, name="here"), aliased(Building, name="there")
+    second = literal_column("interval '1 second'", Interval)
+    queries = []
+    for later in (False, True):
+        o = aliased(ClimbSegment, name="o")
+        near = (
+            select(
+                o.started_at, (o.started_at + o.duration_s * second).label("ends_at"), o.building_id
+            )
+            .where(
+                o.user_id == s.user_id,
+                o.status == STATUS_VERIFIED,
+                *(
+                    [o.started_at > s.started_at, o.id.not_in(ids)]
+                    if later
+                    else [o.started_at < s.started_at]
+                ),
+            )
+            .order_by(o.started_at if later else o.started_at.desc())
+            .limit(1)
+            .lateral("near")
+        )
+        gap = (
+            near.c.started_at - (s.started_at + s.duration_s * second)
+            if later
+            else s.started_at - near.c.ends_at
+        )
+        distance = func.ST_Distance(
+            cast(here.footprint, GEOGRAPHY), cast(there.footprint, GEOGRAPHY)
+        )
+        queries.append(
+            select(s.id, s.started_at)
+            .select_from(s)
+            .join(near, true())
+            .join(here, here.id == s.building_id)
+            .join(there, there.id == near.c.building_id)
+            .where(
+                s.user_id == user_id,
+                s.id.in_(ids),
+                s.started_at.in_({at for _, at in keys}),
+                near.c.building_id != s.building_id,
+                extract("epoch", gap) * MAX_WALK_SPEED_MPS < distance,
+            )
+        )
+    rows = db.execute(union(*queries))
+    return {(row.id, row.started_at) for row in rows} & set(keys)
+
+
+def add_fraud_flags(
+    db: Session, user_id: uuid.UUID, flags: Collection[tuple[uuid.UUID, datetime, str]]
+) -> None:
+    """``add_fraud_flag`` for many ``(segment_id, started_at, rule)`` in one statement."""
+    if not flags:
+        return
+    db.execute(
+        insert(FraudFlag),
+        [
+            {"segment_id": i, "segment_started_at": at, "user_id": user_id, "rule": rule}
+            for i, at, rule in sorted(flags)
+        ],
     )
