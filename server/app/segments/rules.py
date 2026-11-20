@@ -45,6 +45,17 @@ FULL_POINT_STEPS_PER_HOUR: Final = 300
 REDUCED_POINT_PER_STEP: Final = 0.5
 OWNERSHIP_WINDOW: Final = timedelta(days=7)
 
+# Anti-cheat v2 (Week 4, decided 2026-11-20): flag only, on newly verified segments. The segment
+# keeps its status and points; an admin reviews the flags. Thresholds are guesses until pilot data.
+DEVICE_BATCHES_PER_HOUR: Final = 60  # more batches from one device_id: device_burst
+DEVICE_SHARED_WINDOW: Final = timedelta(days=1)  # a second user on the device in it: device_shared
+IDENTICAL_WINDOW: Final = timedelta(days=7)  # either side of started_at
+IDENTICAL_ASCENT_M: Final = 0.01  # differences below these count as identical
+IDENTICAL_DURATION_S: Final = 0.1
+MAX_WALK_SPEED_MPS: Final = 2.0  # between two buildings: faster is impossible_sequence
+
+FlagRule = Literal["device_burst", "device_shared", "identical_segment", "impossible_sequence"]
+
 RejectReason = Literal[
     "pressure_steps_mismatch",
     "ascent_range",
@@ -81,6 +92,16 @@ RECEIPT_ONLY: Final[frozenset[RejectReason]] = frozenset(
         "no_team",
     }
 )
+
+
+def receipt_only(item: "Segment", reason: RejectReason) -> bool:
+    """Whether a rejection is recorded only in ``segment_receipt``, with no ``climb_segment`` row:
+    the ``RECEIPT_ONLY`` reasons, and a ``speed`` rejection whose stored speed would be negative or
+    not finite, which ``SegmentRecord.vert_speed_mps`` (minimum 0) cannot return."""
+    if reason in RECEIPT_ONLY:
+        return True
+    speed = storable_real(item.vert_speed_mps)
+    return reason == "speed" and not (math.isfinite(speed) and speed >= 0)
 
 
 def _within(value: float, low: float, high: float) -> bool:

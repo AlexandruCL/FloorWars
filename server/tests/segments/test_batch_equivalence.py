@@ -143,6 +143,8 @@ def _old_upload_batch(db, user_id, batch, now, limiter):  # type: ignore[no-unty
     budget = _RejectionBudget(limiter, user_id)
     result = SegmentBatchResult(accepted=[], rejected=[], flips=[])
     scored: list[ScoredSegment] = []
+    # Anti-cheat v2 (W4-5) has no per-item ancestor: its checks run on each item as it is accepted.
+    device_rules = service._device_rules(db, limiter, user_id, batch.device_id, now)
     for item in sorted(batch.segments, key=lambda s: (s.started_at, s.id)):
         receipt = repository.get_receipt(db, batch.device_id, item.id)
         if receipt is not None:
@@ -159,6 +161,9 @@ def _old_upload_batch(db, user_id, batch, now, limiter):  # type: ignore[no-unty
         segment = _accept(db, item, batch.device_id, user_id, ctx, result)
         if segment is not None:
             scored.append(segment)
+            key = [(item.id, item.started_at)]
+            flags = service._anticheat_flags(db, user_id, key, device_rules)
+            repository.add_fraud_flags(db, user_id, flags)
     _add_scores(db, scored)
     flips: list[Flip] = []
     for season_id, building_id in sorted({(s.season_id, s.building_id) for s in scored}):
@@ -410,6 +415,9 @@ def test_old_and_new_upload_agree(make_app: Callable[..., TestClient]) -> None:
         mine = [r for r in rows if r["user_id"] == uid]
         seen["verified"] += len(old_result["accepted"])
         seen["halved"] += sum(r["status"] == "verified" and r["points"] < r["steps"] for r in mine)
+        seen["identical_flagged"] += sum(
+            f["user_id"] == uid and f["rule"] == "identical_segment" for f in flags
+        )
         for reason in ("rate_limit", "overlap"):
             stored = sum(r["reject_reason"] == reason for r in mine)
             flagged = sum(f["user_id"] == uid and f["rule"] == reason for f in flags)
@@ -438,5 +446,6 @@ def test_old_and_new_upload_agree(make_app: Callable[..., TestClient]) -> None:
         "in_batch_dup",
         "capped",
         "halved",
+        "identical_flagged",
     ):
         assert seen[key] > 0, f"never exercised: {key} ({dict(seen)})"
