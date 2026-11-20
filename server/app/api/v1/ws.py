@@ -5,8 +5,10 @@
   (``send_denial_response``), never 403 and never a close after accept. A token that expires
   while the socket is open does not close it (Ionut, 2026-11-20).
 - Order: register with the process hub first (live events queue up), then replay
-  ``events_after`` page by page, then forward the queued and new live events, dropping those at or
-  below the replay's highest id (already sent, or already had by the client).
+  ``events_after`` page by page, then forward the queued and new live events, dropping only the
+  ids the replay sent (Ionut, 2026-11-20). A lower id that commits after the replay's query still
+  arrives; anything else the client already has, it drops by ``event_id``. The set is the replay's
+  ids only, so it stays bounded.
 - The database is used only in thread-pool calls with their own short sessions (the user and
   joined seasons on connect, one per replay page); no connection is held while the socket is open.
 - Joined seasons are read once on connect: a season joined later shows up after a reconnect.
@@ -17,7 +19,7 @@ import asyncio
 import contextlib
 import json
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session, sessionmaker
@@ -69,29 +71,33 @@ async def _send(websocket: WebSocket, text: str) -> None:
 
 async def _replay(
     websocket: WebSocket, factory: sessionmaker[Session], user_id: uuid.UUID, since: int
-) -> int:
-    """Send every visible event after ``since``; return the highest id the client now has."""
+) -> set[int]:
+    """Send every visible event after ``since``; return the ids sent."""
+    sent: set[int] = set()
     while True:
         page = await run_in_threadpool(_page, factory, user_id, since)
         for item in page.items:
             await _send(websocket, _json(item))
+            sent.add(cast(int, item["event_id"]))
         since = page.last_event_id
         if not page.has_more:
-            return since
+            return sent
 
 
 def _json(item: dict[str, Any]) -> str:
     return json.dumps(item, separators=(",", ":"))
 
 
-async def _forward(websocket: WebSocket, conn: Connection, replayed: int) -> None:
+async def _forward(websocket: WebSocket, conn: Connection, replayed: set[int]) -> None:
     while True:
         item = await conn.queue.get()
         if isinstance(item, int):  # kicked by the hub (socket cap or slow client)
             await asyncio.wait_for(websocket.close(item), SEND_TIMEOUT_S)
             return
         event_id, text = item
-        if event_id > replayed:
+        # Only what the replay sent is dropped: a lower id that committed after the replay's
+        # query (ids are assigned before commit) is still delivered. The client dedupes the rest.
+        if event_id not in replayed:
             await _send(websocket, text)
 
 
@@ -122,7 +128,7 @@ async def open_websocket(websocket: WebSocket) -> None:
         return
     since = _since(websocket.query_params.get("since"))
     if since is None:
-        # TODO(w4-events, Blocked): the contract lists only 101 and 401 for the upgrade.
+        # 422 before accept (Ionut, 2026-11-20; contract PR #82).
         await websocket.send_denial_response(
             problem_response(422, detail="since must be an integer from 0 to 2^63-1.")
         )

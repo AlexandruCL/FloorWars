@@ -45,9 +45,13 @@ def live_flip(world: World, vk: ValkeyClient, season_id: int | None = None) -> i
     """Commit a flip row, then publish it as the claim path does; returns its id."""
     season = world.season_id if season_id is None else season_id
     event_id = add_flip(world, season_id=season)
-    flip = Flip(world.building_id, season, None, world.team_ids["AC"], None, "AC", AT, event_id)
-    leaderboards.publish_flip(vk, flip)
+    _publish(world, vk, event_id, season)
     return event_id
+
+
+def _publish(world: World, vk: ValkeyClient, event_id: int, season_id: int) -> None:
+    flip = Flip(world.building_id, season_id, None, world.team_ids["AC"], None, "AC", AT, event_id)
+    leaderboards.publish_flip(vk, flip)
 
 
 def _ids(socket: Any, n: int) -> list[int]:
@@ -153,6 +157,43 @@ def test_no_gap_and_no_duplicate_at_the_replay_live_edge(
         last = live_flip(world, vk)
         # One at a time, so a lost or repeated event fails here instead of blocking.
         assert _ids(socket, 1) == [edge[1]]
+        assert _ids(socket, 1) == [last]
+
+
+def test_a_lower_id_committed_after_the_replay_is_delivered(
+    world: World, vk: ValkeyClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ids are assigned before commit: #9 commits after the replay sent #10. Live #9 is delivered
+    once; a live repeat of the replayed #10 is dropped."""
+    user = world.climber("AC")
+    real_page = ws._page
+    ids: dict[str, int] = {}
+
+    def page(factory: Any, user_id: uuid.UUID, since: int) -> Any:
+        if ids:
+            return real_page(factory, user_id, since)
+        with _state(world.client).sessionmaker() as late:
+            ids["late"] = late.execute(
+                text(
+                    "INSERT INTO game_event (kind, season_id, building_id, to_team) "
+                    "VALUES ('building_flipped', :s, :b, :t) RETURNING id"
+                ),
+                {"s": world.season_id, "b": world.building_id, "t": world.team_ids["AC"]},
+            ).scalar_one()  # not committed yet: invisible to the replay
+            ids["replayed"] = add_flip(world)
+            result = real_page(factory, user_id, since)
+            late.commit()
+        _publish(world, vk, ids["late"], world.season_id)
+        _publish(world, vk, ids["replayed"], world.season_id)
+        time.sleep(0.3)  # let the hub dispatch both while the replay is still running
+        return result
+
+    monkeypatch.setattr(ws, "_page", page)
+    with world.client.websocket_connect("/v1/ws", headers=user.headers) as socket:
+        assert _ids(socket, 1) == [ids["replayed"]]
+        assert ids["late"] < ids["replayed"]
+        last = live_flip(world, vk)  # sentinel: a lost #9 fails here instead of blocking
+        assert _ids(socket, 1) == [ids["late"]]
         assert _ids(socket, 1) == [last]
 
 

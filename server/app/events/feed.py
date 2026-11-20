@@ -65,7 +65,12 @@ def joined_seasons(db: Session, user_id: uuid.UUID) -> set[int]:
 
 
 def events_after(db: Session, user_id: uuid.UUID, since: int, limit: int) -> EventPage:
-    """The user's visible events with ``id > since``, ascending, at most ``limit``."""
+    """The user's visible events with ``id > since``, ascending, at most ``limit``.
+
+    Known window: ids are assigned at insert, so a lower id can commit after a higher one; a poll
+    whose ``since`` already passed it never sees it (the socket delivers it live).
+    """
+    # TODO(week 5): xid8 + pg_snapshot_xmin filter on the feed
     joined = select(TeamMembership.season_id).where(TeamMembership.user_id == user_id)
     rows = list(
         db.execute(
