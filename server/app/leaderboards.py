@@ -9,11 +9,13 @@ Keys (score = season points, always an integer):
   "needs rebuild": reads rebuild first, uploads skip the season.
 - ``fw:lb:s{season}:lock``: held by a running rebuild (``SET NX``, random token).
 
-Events are published on the channel ``fw:events`` as JSON.
+Events are published on the channel ``fw:events`` as JSON: the event of ``flip_message`` plus
+``season_id`` (internal, stripped by the socket hub).
 
 Everything here is best effort for the caller: Valkey errors are raised as ``ValkeyError`` and
 the caller decides (the claim path logs and carries on, the read path falls back to the database).
-``rebuild`` recomputes every key of a season from ``climb_segment`` and is idempotent, so a drift
+``rebuild`` recomputes every key of a season from ``POINTS_SOURCE`` (verified segments and landing
+scans) and is idempotent, so a drift
 caused by a failed incremental update is repaired by running it again.
 """
 
@@ -48,6 +50,8 @@ class FlipLike(Protocol):
 
     @property
     def building_id(self) -> int: ...
+    @property
+    def season_id(self) -> int: ...
     @property
     def event_id(self) -> int: ...
     @property
@@ -154,23 +158,27 @@ def record_verified(
     )
 
 
+def _flip_event(flip: FlipLike) -> dict[str, object]:
+    return {
+        "type": "building_flipped",
+        "event_id": flip.event_id,
+        "building_id": flip.building_id,
+        "from_team": flip.from_code,
+        "to_team": flip.to_code,
+        "at": flip.at.isoformat(),
+    }
+
+
 def flip_message(flip: FlipLike) -> str:
     """The JSON text of a ``building_flipped`` event (team codes, not ids)."""
-    return json.dumps(
-        {
-            "type": "building_flipped",
-            "event_id": flip.event_id,
-            "building_id": flip.building_id,
-            "from_team": flip.from_code,
-            "to_team": flip.to_code,
-            "at": flip.at.isoformat(),
-        },
-        separators=(",", ":"),
-    )
+    return json.dumps(_flip_event(flip), separators=(",", ":"))
 
 
 def publish_flip(vk: Commands, flip: FlipLike) -> None:
-    vk.execute("PUBLISH", EVENTS_CHANNEL, flip_message(flip))
+    """Publish the event plus the internal ``season_id``, which the socket hub needs for its
+    visibility rule and strips before sending (``app.realtime.hub``)."""
+    message = {**_flip_event(flip), "season_id": flip.season_id}
+    vk.execute("PUBLISH", EVENTS_CHANNEL, json.dumps(message, separators=(",", ":")))
 
 
 def top(vk: Commands, key: str, limit: int) -> list[tuple[str, int]] | None:
@@ -193,18 +201,25 @@ def top(vk: Commands, key: str, limit: int) -> list[tuple[str, int]] | None:
     return out
 
 
+# Every row worth season points: verified segments and landing scans (W4-4). Each reader of points
+# (rebuild, the database fallback of GET /leaderboards) reads this, so none can drop a source.
+# PostgreSQL pushes the outer ``season_id`` filter into both branches.
+POINTS_SOURCE = (
+    "(SELECT season_id, user_id, team_id, building_id, points FROM climb_segment "
+    "WHERE status = 'verified' "
+    "UNION ALL SELECT season_id, user_id, team_id, building_id, points FROM landing_scan) AS scored"
+)
 _USER_TOTALS = text(
-    "SELECT user_id::text AS member, sum(points)::bigint AS points FROM climb_segment "
-    "WHERE season_id = :s AND status = 'verified' GROUP BY user_id HAVING sum(points) > 0"
+    "SELECT user_id::text AS member, sum(points)::bigint AS points FROM "  # noqa: S608
+    f"{POINTS_SOURCE} WHERE season_id = :s GROUP BY user_id HAVING sum(points) > 0"
 )
 _TEAM_TOTALS = text(
-    "SELECT team_id::text AS member, sum(points)::bigint AS points FROM climb_segment "
-    "WHERE season_id = :s AND status = 'verified' GROUP BY team_id HAVING sum(points) > 0"
+    "SELECT team_id::text AS member, sum(points)::bigint AS points FROM "  # noqa: S608
+    f"{POINTS_SOURCE} WHERE season_id = :s GROUP BY team_id HAVING sum(points) > 0"
 )
 _BUILDING_TOTALS = text(
-    "SELECT building_id, team_id::text AS member, sum(points)::bigint AS points "
-    "FROM climb_segment WHERE season_id = :s AND status = 'verified' "
-    "GROUP BY building_id, team_id HAVING sum(points) > 0"
+    "SELECT building_id, team_id::text AS member, sum(points)::bigint AS points FROM "  # noqa: S608
+    f"{POINTS_SOURCE} WHERE season_id = :s GROUP BY building_id, team_id HAVING sum(points) > 0"
 )
 _BUILDING_IDS = text("SELECT id FROM building")
 
@@ -237,7 +252,7 @@ def _replace(vk: Commands, key: str, scores: dict[str, int], token: str, deadlin
 
 
 def rebuild(db: Session, vk: Commands, season_id: int) -> bool:
-    """Recompute the three board families of a season from verified segments (season totals),
+    """Recompute the three board families of a season from ``POINTS_SOURCE`` (season totals),
     then set the built marker. True when the season is marked built; False when another rebuild
     holds the lock or an upload overlapped this one (the marker stays missing)."""
     token = secrets.token_hex(16)
@@ -276,6 +291,7 @@ def _rebuild_keys(db: Session, vk: Commands, season_id: int, token: str, deadlin
 
 __all__ = [
     "EVENTS_CHANNEL",
+    "POINTS_SOURCE",
     "Commands",
     "ValkeyClient",
     "building_key",

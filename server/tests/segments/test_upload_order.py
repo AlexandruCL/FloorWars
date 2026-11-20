@@ -126,7 +126,9 @@ def test_replaying_long_climbs_newest_first_hits_the_rate_limit(world: World) ->
     # fits per 10 minute window: every 4th passes (12 minutes apart), the first with 300 full
     # points and 240 halved (420), the others all halved (270).
     hour = clock_hour()
-    items = [_at(hour + timedelta(minutes=57 - 3 * i), **LONG_CLIMB) for i in range(20)]
+    # Ascents 0.02 m apart: not identical_segment, which would flag the verified ones.
+    long = [{**LONG_CLIMB, "ascent_m": 90.0 + 0.02 * i} for i in range(20)]
+    items = [_at(hour + timedelta(minutes=57 - 3 * i), **long[i]) for i in range(20)]
     accepted, rejected = _replay(user, items)
     passed = items[::4]
     assert [accepted[item["id"]] for item in passed] == [420, 270, 270, 270, 270]
@@ -188,7 +190,11 @@ def test_a_late_upload_rejected_only_because_of_later_climbs_is_not_flagged(worl
     now = utcnow()
     user = _checked_in(world, now)
     hour = clock_hour()
-    first, middle, last = (_at(hour + timedelta(minutes=m), **THREE_HUNDRED) for m in (0, 9, 18))
+    first, middle, last = (
+        # Ascents apart: not identical_segment, which would flag ``last``.
+        _at(hour + timedelta(minutes=m), **{**THREE_HUNDRED, "ascent_m": 50.0 + m / 100})
+        for m in (0, 9, 18)
+    )
     user.ok(first)
     user.ok(last)
     assert user.ok(middle)["rejected"] == [{"id": middle["id"], "reason": "rate_limit"}]
@@ -452,5 +458,13 @@ def test_racing_uploads_cannot_pass_the_step_cap_together(world: World) -> None:
     results = _race(world, user, _at(start, **big), _at(start + timedelta(minutes=3), **big))
     assert _one_verified_one_rejected(results) == "rate_limit"
     assert scalar(world.client, "SELECT count(*) FROM climb_segment WHERE status = 'verified'") == 1
-    assert scalar(world.client, "SELECT rule FROM fraud_flag") == "rate_limit"
+    # Either upload may take the lock first. Only a climb that earlier climbs push over the cap is
+    # flagged (service._is_flagged); the earlier climb rejected because of a later one is not.
+    earlier_won = scalar(
+        world.client,
+        "SELECT bool_and(status = 'verified') FROM climb_segment"
+        " WHERE started_at = (SELECT min(started_at) FROM climb_segment)",
+    )
+    flag = scalar(world.client, "SELECT rule FROM fraud_flag")
+    assert flag == ("rate_limit" if earlier_won else None)
     assert scalar(world.client, "SELECT points FROM team_building_score") == 350  # 300 + 100 / 2

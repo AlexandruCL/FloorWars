@@ -130,7 +130,10 @@ def test_600_verified_steps_per_ten_minutes(world: World) -> None:
         "duration_s": 120.0,
         "vert_speed_mps": 0.5,
     }
-    first, second, third = (climb(minutes_ago=m, **big) for m in (9, 6, 3))
+    # Ascents apart: not identical_segment, so the one flag below is the rate_limit one.
+    first, second, third = (
+        climb(minutes_ago=m, **{**big, "ascent_m": 60.0 + m / 100}) for m in (9, 6, 3)
+    )
     result = user.ok(first, second, third)
     assert {a["id"] for a in result["accepted"]} == {first["id"], second["id"]}
     assert result["rejected"] == [{"id": third["id"], "reason": "rate_limit"}]
@@ -194,13 +197,14 @@ def test_the_windows_are_open_at_both_ends(world: World) -> None:
 @pytest.mark.parametrize(
     "bad",
     [
-        {"vert_speed_mps": 1e300},
-        {"vert_speed_mps": 1e-300},
-        {"vert_speed_mps": float("nan")},
-        {"vert_speed_mps": float("inf")},
+        {"vert_speed_mps": 1e-300},  # stored as 0
+        {"vert_speed_mps": 0.0},
+        {"vert_speed_mps": 5.0},
     ],
 )
-def test_extreme_speed_is_stored_as_a_rejected_row(world: World, bad: dict[str, float]) -> None:
+def test_a_finite_speed_out_of_range_is_stored_as_a_rejected_row(
+    world: World, bad: dict[str, float]
+) -> None:
     result = world.climber().ok(climb(**bad))
     assert [r["reason"] for r in result["rejected"]] == ["speed"]
     assert scalar(world.client, "SELECT reject_reason FROM climb_segment") == "speed"
@@ -228,6 +232,13 @@ def test_a_tiny_stair_prob_is_stored_as_zero_and_the_climb_verified(world: World
         ({"stair_prob": 1.5}, "stair_prob_range"),
         ({"stair_prob": float("nan")}, "stair_prob_range"),
         ({"building_id": 10**30}, "building_mismatch"),
+        # SegmentRecord.vert_speed_mps has minimum 0 and is a finite number (review W4-6 #1).
+        ({"vert_speed_mps": -0.5}, "speed"),
+        ({"vert_speed_mps": 1e300}, "speed"),  # beyond a real: stored as infinity
+        ({"vert_speed_mps": 10**400}, "speed"),
+        ({"vert_speed_mps": float("nan")}, "speed"),
+        ({"vert_speed_mps": float("inf")}, "speed"),
+        ({"vert_speed_mps": float("-inf")}, "speed"),
     ],
 )
 def test_receipt_only_rejections_are_flagged_without_a_row(
