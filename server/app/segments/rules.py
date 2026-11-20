@@ -94,6 +94,16 @@ RECEIPT_ONLY: Final[frozenset[RejectReason]] = frozenset(
 )
 
 
+def receipt_only(item: "Segment", reason: RejectReason) -> bool:
+    """Whether a rejection is recorded only in ``segment_receipt``, with no ``climb_segment`` row:
+    the ``RECEIPT_ONLY`` reasons, and a ``speed`` rejection whose stored speed would be negative or
+    not finite, which ``SegmentRecord.vert_speed_mps`` (minimum 0) cannot return."""
+    if reason in RECEIPT_ONLY:
+        return True
+    speed = storable_real(item.vert_speed_mps)
+    return reason == "speed" and not (math.isfinite(speed) and speed >= 0)
+
+
 def _within(value: float, low: float, high: float) -> bool:
     """False for NaN as well, since every comparison with NaN is false."""
     return low <= value <= high

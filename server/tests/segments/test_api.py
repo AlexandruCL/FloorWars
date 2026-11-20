@@ -197,13 +197,14 @@ def test_the_windows_are_open_at_both_ends(world: World) -> None:
 @pytest.mark.parametrize(
     "bad",
     [
-        {"vert_speed_mps": 1e300},
-        {"vert_speed_mps": 1e-300},
-        {"vert_speed_mps": float("nan")},
-        {"vert_speed_mps": float("inf")},
+        {"vert_speed_mps": 1e-300},  # stored as 0
+        {"vert_speed_mps": 0.0},
+        {"vert_speed_mps": 5.0},
     ],
 )
-def test_extreme_speed_is_stored_as_a_rejected_row(world: World, bad: dict[str, float]) -> None:
+def test_a_finite_speed_out_of_range_is_stored_as_a_rejected_row(
+    world: World, bad: dict[str, float]
+) -> None:
     result = world.climber().ok(climb(**bad))
     assert [r["reason"] for r in result["rejected"]] == ["speed"]
     assert scalar(world.client, "SELECT reject_reason FROM climb_segment") == "speed"
@@ -231,6 +232,13 @@ def test_a_tiny_stair_prob_is_stored_as_zero_and_the_climb_verified(world: World
         ({"stair_prob": 1.5}, "stair_prob_range"),
         ({"stair_prob": float("nan")}, "stair_prob_range"),
         ({"building_id": 10**30}, "building_mismatch"),
+        # SegmentRecord.vert_speed_mps has minimum 0 and is a finite number (review W4-6 #1).
+        ({"vert_speed_mps": -0.5}, "speed"),
+        ({"vert_speed_mps": 1e300}, "speed"),  # beyond a real: stored as infinity
+        ({"vert_speed_mps": 10**400}, "speed"),
+        ({"vert_speed_mps": float("nan")}, "speed"),
+        ({"vert_speed_mps": float("inf")}, "speed"),
+        ({"vert_speed_mps": float("-inf")}, "speed"),
     ],
 )
 def test_receipt_only_rejections_are_flagged_without_a_row(

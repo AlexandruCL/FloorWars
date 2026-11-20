@@ -350,7 +350,7 @@ def _reject(
     if not budget.take():
         result.rejected.append(RejectedSegment(id=item.id, reason=reason))
         return
-    if ctx is not None and reason not in rules.RECEIPT_ONLY:
+    if ctx is not None and not rules.receipt_only(item, reason):
         row = _row(item, device_id, user_id, ctx, reason, 0)
         if repository.insert_segment(db, row) is None:  # a concurrent upload stored this id first
             _id_taken(receipts, item, device_id, user_id, result)
