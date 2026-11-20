@@ -146,6 +146,21 @@ Notes:
 | `POST /v1/seasons/{id}/join` | Body `{team_id}`, 201 `{season_id, team_id}`. 404 `season-not-found`, 422 `team-not-found`, 409 `season-not-active` or `already-joined` (the primary key `(user_id, season_id)` decides, so concurrent joins give one 201). |
 | `POST /v1/checkins` | Bearer. Check in by entrance QR token or geofence. 201 `Checkin`, 401, 403 (see [Check-in](#check-in)), 422, 503 no QR key. |
 
+Week 4 paths (contract 0.9.0-draft; all Bearer, 401 without a token):
+
+| Path | Purpose |
+|---|---|
+| `GET /v1/seasons` | Every season, newest `starts_at` first, same shape as `/seasons/active`. |
+| `GET /v1/me/segments` | The caller's stored segments, newest `started_at` first. `limit` 1 to 100 (default 50), opaque `cursor` / `next_cursor` (keyset on `(started_at, id)`, so an upload between pages repeats or skips nothing). `status` is `verified` or `rejected`, never `pending` (pending rows live only on the phone); `reason` is the reject reason, `null` otherwise. Rejected rows past the 200-per-hour cap are not stored, so History cannot show them. 422 bad `limit` or `cursor`. |
+| `GET /v1/me/season-stats` | `season_id` query, default the active season (404 when there is none, 404 for an unknown id, 422 bad id). `team_id`, `steps_verified`, `ascent_m`, `points` (segments plus landing scans), `rank`, `buildings_owned_by_team`, `landmarks` (Statue of Liberty 93 m, Big Ben 96 m, Eiffel Tower 330 m, Empire State Building 381 m, Burj Khalifa 828 m; `reached` when `ascent_m >= height_m`). |
+| `GET /v1/me/events` | Events with `id > since`, ascending, `limit` 1 to 100 (default 50), `last_event_id` (`since` when empty), `has_more`. Every event of every season the user has joined. 422 bad `limit`. All rows are kept this week (retention: Week 5). |
+| `WS /v1/ws` | `Authorization: Bearer` or `?access_token=`, optional `?since=<event id>`. A bad or missing token gets HTTP 401 on the upgrade, never 403 and never a close after accept. Auth is checked on connect only; a socket stays open after its token expires. The server subscribes first, replays `events_after(since)`, then streams live events, dropping any id already sent (nothing lost, nothing repeated). One Valkey subscriber per process fans out across replicas. At most 3 sockets per user per replica (a 4th closes the oldest with 1008); a blocked send drops that socket. The server sends no pings; it answers the client's. Event JSON carries team codes and the building only, no `season_id`. Neither Caddy nor uvicorn logs the query string of `/v1/ws`. A publish that fails after the commit is missed by live sockets until they reconnect; the phone's 15-minute poll catches it. |
+| `POST /v1/landing-scans` | Body `{qr_token, building_id, scanned_at?}`, token `fwl1.` (landing kind inside the signed payload, same key as entrance codes; entrance and landing tokens are not interchangeable). 201 `{points, flips}` (20 points, `LANDING_SCAN_POINTS`, counted like verified segments in ownership and leaderboards). 403 token invalid, expired, other building, or no check-in of the user at that building valid at the scan time. 422 body. 429 `Retry-After`: 1 scan per user per building per 10 minutes, 6 per user per hour. 503 Valkey down. `scanned_at` missing, more than 10 minutes old or 5 minutes ahead: the server uses its own time. No idempotency key: a retry is a 429. |
+
+Anti-cheat v2 (plan 3.4) only flags, in `fraud_flag`, one row per segment and rule; the segment keeps its status and points and no rejection reason is added: `device_burst` (one `device_id`, more than 60 batches in an hour), `device_shared` (one `device_id` uploading for more than one user in a day), `identical_segment` (same user, same `steps`, `ascent_m` to 0.01 m and `duration_s` to 0.1 s within 7 days), `impossible_sequence` (two buildings closer in time than the walking time at `MAX_WALK_SPEED_MPS = 2.0`, checked on both sides of `started_at`). Thresholds are guesses until pilot data exists.
+
+TODO(w4-lead): confirm the final names and numbers above against the merged code.
+
 Auth details (plan 7.9): codes are `sha256(salt || code)` with a 16-byte salt, compared in
 constant time, attempts counted under a row lock before comparing; a new request supersedes the
 previous unused code only once the mail backend accepted the new one (if sending fails, 503, and
