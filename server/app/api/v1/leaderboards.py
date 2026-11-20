@@ -1,8 +1,9 @@
 """``GET /v1/leaderboards``: individual, team and building boards for a season.
 
 Served from the Valkey sorted sets of ``app.leaderboards``. When Valkey is not configured or
-fails, the board is computed from ``climb_segment`` (season totals). When the season's built marker
-is missing, the season is rebuilt first; with the marker, a missing key is an empty board.
+fails, the board is computed from ``leaderboards.POINTS_SOURCE`` (season totals). When the
+season's built marker is missing, the season is rebuilt first; with the marker, a missing key is
+an empty board.
 
 ``scope=building`` ranks the **teams** in that building for the season (spec section 8).
 
@@ -47,20 +48,21 @@ class LeaderboardOut(BaseModel):
     entries: list[LeaderboardEntryOut]
 
 
+# Season totals from ``leaderboards.POINTS_SOURCE`` (verified segments and landing scans).
 _DB_BOARDS = {
     "individual": text(
-        "SELECT user_id::text AS member, sum(points)::bigint AS points FROM climb_segment "
-        "WHERE season_id = :s AND status = 'verified' GROUP BY user_id HAVING sum(points) > 0 "
+        "SELECT user_id::text AS member, sum(points)::bigint AS points "  # noqa: S608
+        f"FROM {lb.POINTS_SOURCE} WHERE season_id = :s GROUP BY user_id HAVING sum(points) > 0 "
         "ORDER BY points DESC, member LIMIT :n"
     ),
     "team": text(
-        "SELECT team_id::text AS member, sum(points)::bigint AS points FROM climb_segment "
-        "WHERE season_id = :s AND status = 'verified' GROUP BY team_id HAVING sum(points) > 0 "
+        "SELECT team_id::text AS member, sum(points)::bigint AS points "  # noqa: S608
+        f"FROM {lb.POINTS_SOURCE} WHERE season_id = :s GROUP BY team_id HAVING sum(points) > 0 "
         "ORDER BY points DESC, member LIMIT :n"
     ),
     "building": text(
-        "SELECT team_id::text AS member, sum(points)::bigint AS points FROM climb_segment "
-        "WHERE season_id = :s AND building_id = :b AND status = 'verified' "
+        "SELECT team_id::text AS member, sum(points)::bigint AS points "  # noqa: S608
+        f"FROM {lb.POINTS_SOURCE} WHERE season_id = :s AND building_id = :b "
         "GROUP BY team_id HAVING sum(points) > 0 ORDER BY points DESC, member LIMIT :n"
     ),
 }
