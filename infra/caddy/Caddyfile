@@ -4,6 +4,18 @@
 {
 	email {$ACME_EMAIL}
 	# Caddy's admin API stays on localhost inside the container (used by `caddy reload`).
+
+	# The default logger also carries the request URI (for example the error entry of a 502 when
+	# every api replica is down): drop the socket's access_token there too, as in the site log.
+	log default {
+		output stderr
+		format filter {
+			request>uri query {
+				delete access_token
+			}
+			wrap json
+		}
+	}
 }
 
 (security_headers) {
