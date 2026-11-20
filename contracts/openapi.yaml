@@ -13,7 +13,8 @@ info:
       without a check-in of the user at that building valid at the scan time, or with no running season
       or no team at the scan time; the server replaces a scanned_at more than 10 minutes old
       or more than 5 minutes ahead with its own time. GET /me/events and WS /ws carry the events of
-      every season the user has joined, not only flips involving the user's team.
+      every season the user has joined, not only flips involving the user's team. WS /ws answers 422 on
+      the upgrade for a malformed since.
     - 0.8.0-draft (2026-11-17): new schema RejectionReason (the 14 reasons of RejectedSegment.reason,
       which now refers to it). SegmentRecord gains reason (RejectionReason or null, required; null
       unless status is rejected), for the history screen. New GET /seasons (all seasons, newest
@@ -606,6 +607,11 @@ paths:
         '101':
           description: Switching Protocols. Messages follow as JSON text frames.
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422':
+          description: Malformed since (not an integer from 0 to 2^63-1), answered on the upgrade request before accept.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
       x-websocket-events:
         server-to-client:
           $ref: '#/components/schemas/WsEvent'
