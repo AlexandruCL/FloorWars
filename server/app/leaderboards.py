@@ -9,7 +9,8 @@ Keys (score = season points, always an integer):
   "needs rebuild": reads rebuild first, uploads skip the season.
 - ``fw:lb:s{season}:lock``: held by a running rebuild (``SET NX``, random token).
 
-Events are published on the channel ``fw:events`` as JSON.
+Events are published on the channel ``fw:events`` as JSON: the event of ``flip_message`` plus
+``season_id`` (internal, stripped by the socket hub).
 
 Everything here is best effort for the caller: Valkey errors are raised as ``ValkeyError`` and
 the caller decides (the claim path logs and carries on, the read path falls back to the database).
@@ -48,6 +49,8 @@ class FlipLike(Protocol):
 
     @property
     def building_id(self) -> int: ...
+    @property
+    def season_id(self) -> int: ...
     @property
     def event_id(self) -> int: ...
     @property
@@ -154,23 +157,27 @@ def record_verified(
     )
 
 
+def _flip_event(flip: FlipLike) -> dict[str, object]:
+    return {
+        "type": "building_flipped",
+        "event_id": flip.event_id,
+        "building_id": flip.building_id,
+        "from_team": flip.from_code,
+        "to_team": flip.to_code,
+        "at": flip.at.isoformat(),
+    }
+
+
 def flip_message(flip: FlipLike) -> str:
     """The JSON text of a ``building_flipped`` event (team codes, not ids)."""
-    return json.dumps(
-        {
-            "type": "building_flipped",
-            "event_id": flip.event_id,
-            "building_id": flip.building_id,
-            "from_team": flip.from_code,
-            "to_team": flip.to_code,
-            "at": flip.at.isoformat(),
-        },
-        separators=(",", ":"),
-    )
+    return json.dumps(_flip_event(flip), separators=(",", ":"))
 
 
 def publish_flip(vk: Commands, flip: FlipLike) -> None:
-    vk.execute("PUBLISH", EVENTS_CHANNEL, flip_message(flip))
+    """Publish the event plus the internal ``season_id``, which the socket hub needs for its
+    visibility rule and strips before sending (``app.realtime.hub``)."""
+    message = {**_flip_event(flip), "season_id": flip.season_id}
+    vk.execute("PUBLISH", EVENTS_CHANNEL, json.dumps(message, separators=(",", ":")))
 
 
 def top(vk: Commands, key: str, limit: int) -> list[tuple[str, int]] | None:

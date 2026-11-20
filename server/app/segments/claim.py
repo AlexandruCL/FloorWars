@@ -128,6 +128,7 @@ def recompute_owner(db: Session, season_id: int, building_id: int, now: datetime
             building_id=building_id,
             from_team=owner_id,
             to_team=winner.team_id,
+            created_at=now,  # the flip's ``at``: the feed must equal the published event
         )
         .returning(GameEvent.id)
     ).scalar_one()
