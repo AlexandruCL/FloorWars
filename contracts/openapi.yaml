@@ -10,7 +10,8 @@ info:
       season is active, or when the given season_id does not exist. GET /me/season-stats,
       GET /me/segments and GET /me/events list 422 for invalid query parameters; POST /landing-scans
       lists 503 when the rate limiter is unavailable. POST /landing-scans: the 403 also covers a scan
-      without a check-in of the user at that building valid at the scan time; the server replaces a scanned_at more than 10 minutes old
+      without a check-in of the user at that building valid at the scan time, or with no running season
+      or no team at the scan time; the server replaces a scanned_at more than 10 minutes old
       or more than 5 minutes ahead with its own time. GET /me/events and WS /ws carry the events of
       every season the user has joined, not only flips involving the user's team.
     - 0.8.0-draft (2026-11-17): new schema RejectionReason (the 14 reasons of RejectedSegment.reason,
@@ -527,7 +528,7 @@ paths:
               schema: { $ref: '#/components/schemas/LandingScan' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403':
-          description: 'Inferred: sticker token invalid, outside its time window, or not for the given building; or no check-in of the user at this building valid at the scan time.'
+          description: 'Inferred: sticker token invalid, outside its time window, or not for the given building; or no check-in of the user at this building valid at the scan time; or no running season, or the user has no team in it, at the scan time.'
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
