@@ -1,11 +1,21 @@
 openapi: 3.1.0
 info:
   title: FloorWars API
-  version: 0.8.0-draft
+  version: 0.9.0-draft
   description: |
     Approved by both members on 2026-10-21. Every later change is a PR reviewed by the other member.
 
     Changelog:
+    - 0.9.0-draft (2026-11-20): GET /me/season-stats answers 404 when no season_id is given and no
+      season is active, or when the given season_id does not exist. GET /me/season-stats,
+      GET /me/segments and GET /me/events list 422 for invalid query parameters; POST /landing-scans
+      lists 503 when the rate limiter is unavailable. POST /landing-scans: the 403 also covers a scan
+      without a check-in of the user at that building valid at the scan time, or with no running season
+      or no team at the scan time; the server replaces a scanned_at more than 10 minutes old
+      or more than 5 minutes ahead with its own time. GET /me/events and WS /ws carry the events of
+      every season the user has joined, not only flips involving the user's team. WS /ws answers 422 on
+      the upgrade for a malformed since. Upper bounds the server already enforces (422): season_id and
+      building_id at most 2147483647, since at most 9223372036854775807, qr_token at most 4096 characters.
     - 0.8.0-draft (2026-11-17): new schema RejectionReason (the 14 reasons of RejectedSegment.reason,
       which now refers to it). SegmentRecord gains reason (RejectionReason or null, required; null
       unless status is rejected), for the history screen. New GET /seasons (all seasons, newest
@@ -427,7 +437,7 @@ paths:
           in: query
           required: false
           description: 'Inferred: defaults to the active season.'
-          schema: { type: integer, minimum: 1 }
+          schema: { type: integer, minimum: 1, maximum: 2147483647 }
       responses:
         '200':
           description: Stats for the season.
@@ -435,6 +445,12 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SeasonStats' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '404':
+          description: No season with the given season_id, or no season_id was given and no season is active right now.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
 
   /me/segments:
     get:
@@ -459,22 +475,25 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SegmentPage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /me/events:
     get:
       tags: [me]
       operationId: listMyEvents
-      summary: Game events for the player's team after a given id (notification feed)
+      summary: Game events after a given id (notification feed)
       description: |
         Plan 7.2.1. Fallback for notifications when no WebSocket is open (WorkManager polls it), and
         the same feed the WebSocket replays on connect. Events are ordered by event_id ascending.
+        It carries the events of every season the user has joined (a team membership in the event's
+        season), not only flips involving the user's team: flips are public game state.
         The client stores the highest event_id it has handled and passes it as since.
       parameters:
         - name: since
           in: query
           required: false
           description: 'Inferred: return events with event_id greater than this. 0 returns the oldest kept events.'
-          schema: { type: integer, minimum: 0, default: 0 }
+          schema: { type: integer, minimum: 0, maximum: 9223372036854775807, default: 0 }
         - name: limit
           in: query
           required: false
@@ -487,6 +506,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/GameEventPage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /landing-scans:
     post:
@@ -510,12 +530,13 @@ paths:
               schema: { $ref: '#/components/schemas/LandingScan' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403':
-          description: 'Inferred: sticker token invalid, outside its time window, or not for the given building.'
+          description: 'Inferred: sticker token invalid, outside its time window, or not for the given building; or no check-in of the user at this building valid at the scan time; or no running season, or the user has no team in it, at the scan time.'
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
         '422': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /config:
     get:
@@ -567,8 +588,9 @@ paths:
         The connection is authenticated on connect. Server-to-client messages are WsEvent:
         building_flipped {building_id, from_team, to_team, at} when a building changes owner, and
         season_state {paused, ends_at}; see x-websocket-events. Plan 7.2.1: on connect the server first
-        replays the events after since for the player's team, then streams new ones (at least once;
-        the client ignores event_id values it has handled).
+        replays the events after since, then streams new ones (at least once;
+        the client ignores event_id values it has handled). Like GET /me/events, it carries the events
+        of every season the user has joined, not only flips involving the user's team.
         A missing, expired or invalid token is rejected with 401 on the upgrade request, never with
         403 and never by closing after accept, so the client stops reconnecting until it has a new token.
       parameters:
@@ -576,7 +598,7 @@ paths:
           in: query
           required: false
           description: 'Inferred: replay events with event_id greater than this before live events.'
-          schema: { type: integer, minimum: 0 }
+          schema: { type: integer, minimum: 0, maximum: 9223372036854775807 }
         - name: access_token
           in: query
           required: false
@@ -586,6 +608,11 @@ paths:
         '101':
           description: Switching Protocols. Messages follow as JSON text frames.
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422':
+          description: Malformed since (not an integer from 0 to 2^63-1), answered on the upgrade request before accept.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
       x-websocket-events:
         server-to-client:
           $ref: '#/components/schemas/WsEvent'
@@ -1172,15 +1199,17 @@ components:
       properties:
         qr_token:
           type: string
+          maxLength: 4096
           description: 'Inferred field name: the signed token from the sticker at the stairs. It encodes the building only.'
         building_id:
           type: integer
           minimum: 1
+          maximum: 2147483647
           description: 'Inferred: the building the sticker belongs to. Must match the building in the token.'
         scanned_at:
           type: string
           format: date-time
-          description: 'Inferred: device time of the scan.'
+          description: 'Inferred: device time of the scan. The server replaces a value more than 10 minutes old or more than 5 minutes ahead (or a missing one) with its own time.'
       additionalProperties: false
 
     LandingScan:
