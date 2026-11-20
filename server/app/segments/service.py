@@ -350,7 +350,7 @@ def _reject(
     if not budget.take():
         result.rejected.append(RejectedSegment(id=item.id, reason=reason))
         return
-    if ctx is not None and reason not in rules.RECEIPT_ONLY:
+    if ctx is not None and not rules.receipt_only(item, reason):
         row = _row(item, device_id, user_id, ctx, reason, 0)
         if repository.insert_segment(db, row) is None:  # a concurrent upload stored this id first
             _id_taken(receipts, item, device_id, user_id, result)
@@ -383,6 +383,53 @@ def _accept(
     _answer(receipts, item, device_id, user_id, STATUS_VERIFIED, None, item.steps)
     result.accepted.append(AcceptedSegment(id=item.id, steps_scored=item.steps, points=points))
     return ScoredSegment(row.season_id, user_id, row.team_id, row.building_id, points, item.steps)
+
+
+def _device_rules(
+    db: Session,
+    limiter: RateLimiter | None,
+    user_id: uuid.UUID,
+    device_id: uuid.UUID,
+    now: datetime,
+) -> list[rules.FlagRule]:
+    """The device flags of this batch, read before its receipts. ``device_burst`` takes a token
+    from the device's own bucket (the per-user bucket of the route stays as it is); without a
+    limiter or with Valkey down it is skipped, since it only flags."""
+    found: list[rules.FlagRule] = []
+    if limiter is not None:
+        try:
+            decision = limiter.hit(
+                "seg:device", str(device_id), rules.DEVICE_BATCHES_PER_HOUR, HOUR_S
+            )
+            if not decision.allowed:
+                found.append("device_burst")
+        except ValkeyError:
+            logger.error("device limiter unavailable")
+    if repository.device_shared(db, device_id, user_id, now - rules.DEVICE_SHARED_WINDOW):
+        found.append("device_shared")
+    return found
+
+
+def _anticheat_flags(
+    db: Session,
+    user_id: uuid.UUID,
+    accepted: list[tuple[uuid.UUID, datetime]],
+    device_rules: list[rules.FlagRule],
+) -> list[tuple[uuid.UUID, datetime, str]]:
+    """Anti-cheat v2 (flag only) for the newly verified segments of a batch, after the loop: the
+    segments keep their status and points. At most one flag per segment and rule."""
+    if not accepted:
+        return []
+    flags = {(i, at, rule) for i, at in accepted for rule in device_rules}
+    flags |= {
+        (i, at, "identical_segment")
+        for i, at in repository.identical_segments(db, user_id, accepted)
+    }
+    flags |= {
+        (i, at, "impossible_sequence")
+        for i, at in repository.impossible_sequences(db, user_id, accepted)
+    }
+    return sorted(flags)
 
 
 def _add_scores(db: Session, scored: list[ScoredSegment]) -> None:
@@ -440,7 +487,9 @@ def upload_batch(
     budget = _RejectionBudget(limiter, user_id)
     result = SegmentBatchResult(accepted=[], rejected=[], flips=[])
     scored: list[ScoredSegment] = []
+    accepted: list[tuple[uuid.UUID, datetime]] = []
     device_id = batch.device_id
+    device_rules = _device_rules(db, limiter, user_id, device_id, now)
     # A full order: two batches holding the same items lock their rows in the same order.
     items = sorted(batch.segments, key=lambda s: (s.started_at, s.id))
     # All reads happen here, once per batch (spec 5a); the loop below only writes.
@@ -488,6 +537,8 @@ def upload_batch(
         segment = _accept(db, item, device_id, user_id, ctx, result, climbs, receipts)
         if segment is not None:
             scored.append(segment)
+            accepted.append((item.id, item.started_at))
+    repository.add_fraud_flags(db, user_id, _anticheat_flags(db, user_id, accepted, device_rules))
     repository.insert_receipts(db, [r for i, r in receipts.items() if i not in known])
 
     if budget.capped:

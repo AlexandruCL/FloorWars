@@ -277,7 +277,18 @@ Plan: *per-device limits, repeated identical segment detection, impossible-seque
 After each item, one line: `W4-n done | verify: <command> → <summary line> | commit: <sha>`. Agents post the same line in their reports; the lead copies it here after re-running the verify command. Keep these sections up to date:
 
 - **Blocked:** one line each, the question and the recommendation. Expect at least: the OPEN items still open; Cristea's review of the 0.9.0 contract commit (and whether his app treats the season-stats 404 as "no team"); Cristea's phones for W4-7; the cause of the 2026-11-17 timeouts.
-- **Blocked, also expected:** the third person for the pilot (plan 15.3; Cristea's position is "no", Ionut's answer pending).
+- **Blocked, also expected:** ~~the third person for the pilot~~ (decided 2026-11-20: no).
+- **Blocked (2026-11-20):** `api.floorwars.me/healthz` timed out after 15 s from Ionut's PC too (same as Cristea, 11-17). Ionut checks VM, NSG 443, ufw 443 and the deployed commit later; code work goes ahead, the deploy waits.
+- **Report lines (lead re-ran each verify on a fresh database, 2026-11-20/21):**
+  - `W4-0 done | contract 0.9.0-draft PR #82 (c42edd7, deb041e, 80daf12, 84284c2) | openapi-spec-validator OK, app apiContract 3 passed, server -k contract 17 passed` (server reachability still Blocked).
+  - `W4-1 done | verify: pytest -> 642 passed, 1 skipped | PR #83 (8847c1c, aad61b3, 1c7c3df)`; scan points in season-stats: `feat/w4-stats-scan-points` 666f2a5 -> 684 passed (PR after #83 and #84 merge).
+  - `W4-2/W4-3 done | verify: pytest -> 652 passed | PR #88 (93a376c)`.
+  - `W4-4 done | verify: pytest -> 662 passed, alembic check clean | PR #84 (dd53046)`.
+  - `W4-5 done | verify: pytest -> 651 passed, batch cost 113/120 | PR #86 (bd3ae2f)`.
+  - Integration (all code branches + #87 merged locally, `tmp/w4-integration`): ruff clean, mypy 63 files clean, pytest 741 passed 1 skipped (the skip is fixed on the stats branch), tools 19 passed.
+  - Flaky test: `test_racing_uploads_cannot_pass_the_step_cap_together` (9/25 alone on main; either lock order is valid, the test assumed one) -> PR #87, 0/25 after.
+  - Local stack fixed: PR #85.
+- **W4-0 log (2026-11-20):** baseline on `main` 7aa6a7c: ruff OK, mypy OK (45 files), pytest 622 passed, tools 18 passed. Contract branch: one of four full runs had 1 failure that did not reproduce (flaky, name not caught). App `apiContract` jest failed on `main` and the branch with a stale `node_modules` before `npm ci`.
 - **Decisions:** Ionut's answers only, one line each, dated, with the reason. Already decided (2026-11-19):
   - Execution: Cristea's model, one coordinating session with five `w4-*` subagents in worktrees (section 3.1); reviews by the three existing reviewer agents.
   - Event visibility: every event of every season the user has joined, on `GET /me/events` and the socket alike. Reason: the live Standings screen needs flips between other teams; flips are public game state.
@@ -287,6 +298,24 @@ After each item, one line: `W4-n done | verify: <command> → <summary line> | c
   - `GET /me/season-stats` with no active season and no `season_id`: 404 `Problem`, added in contract 0.9.0.
   - Landing scan needs a valid check-in at that building: 403 otherwise, 403 text widened in contract 0.9.0.
   - Landing scan `scanned_at` more than 10 minutes old or 5 minutes ahead: replaced by the server time, not refused.
+  Decided 2026-11-20 (Ionut, answers to the lead's questions; each was the recommendation):
+  - Contract 0.9.0 also lists 422 on `GET /me/season-stats`, `/me/segments`, `/me/events`, 503 on `POST /landing-scans`, and 404 on season-stats for an unknown `season_id`. Reason: the server answers them; no second contract PR mid-week.
+  - W4-1: `pending` is never returned (pending rows live only on the phone). Rejected segments past the 200-per-hour cap stay unstored, so History cannot show them; written in `server/README.md`. Landmarks, sorted by height: Statue of Liberty 93 m, Big Ben (Elizabeth Tower) 96 m, Eiffel Tower 330 m, Empire State Building 381 m (roof), Burj Khalifa 828 m, each height checked against a cited source by the agent.
+  - W4-2: no server-side notification rate limit (the phone limits one per building per 10 minutes; a server drop would also hide flips from live standings); recorded in plan 7.2.1. All `game_event` rows are kept this week; the Week 5 retention job drops rows older than season end + 30 days (runbook TODO).
+  - W4-3: auth on connect only, the socket stays open after its token expires (contract forbids an auth close after accept). `access_token` stays in the query, but neither Caddy nor uvicorn logs the `/v1/ws` query string. At most 3 sockets per user per replica, a 4th closes the oldest with 1008; a blocked send drops that socket, not the hub.
+  - W4-4: rate limits 1 scan per user per building per 10 minutes and 6 per user per hour, in Valkey via the existing limiter, 429 with `Retry-After`; Valkey down: 503. No idempotency key; a retried scan gets a 429.
+  - W4-5 (flag only): `device_burst` when one `device_id` sends more than 60 batches in an hour; `device_shared` when one `device_id` uploads for more than one user in a day; `identical_segment` = same user, verified, same `steps`, `ascent_m` to 0.01 m, `duration_s` to 0.1 s, within 7 days; `MAX_WALK_SPEED_MPS = 2.0` for `impossible_sequence`.
+  - Plan 15.3: no third person for the pilot (agrees with Cristea).
+  - Dev dependency `jsonschema>=4.26,<5` (MIT) for contract shape tests (`server/tests/me/contract.py`), in `pyproject.toml` and `uv.lock`. Reason: real Draft 2020-12 validation of response bodies; reusable by the other W4 tests.
+  - W4-1: season-stats `rank` is competition rank (ties share a rank), so it can differ from the leaderboard row number for tied players; documented in `server/README.md`.
+  - W4-4: a landing scan with a valid sticker and check-in but no running season or no team answers 403 (`season-inactive`, `no-team`); contract 0.9.0 403 text says so (`80daf12`).
+  - W4-3: a malformed `since` on the WS upgrade answers 422 Problem before accept; contract 0.9.0 lists it (`84284c2`).
+  - W4-3: commit-order gap (an event id committed after a higher one): the socket dedupes against the set of replayed ids, not the replay max (fixed this week); the poll's window is documented and Week 5 adds an `xid8` column with a `pg_snapshot_xmin` filter on the feed.
+  - W4-3: the socket reads joined seasons at connect only; Cristea's app restarts the socket after a successful join (note for his review; in the pair check, join before opening the app).
+  - W4-7: the lead fixes `infra/compose.local.yml` and `make-local-secrets.sh` (non-base64 ACS placeholder, empty ACS endpoint, migrate running as prod) on a separate infra branch.
+  - W4-5: the agent's readings accepted: checks only on newly verified segments; device flags on every newly verified segment of the batch; "a day" = rolling 24 h, "an hour" = 60-token bucket refilled hourly; `device_burst` in practice fires only on shared devices (per-user limit is also 60/h); `impossible_sequence` compares the nearest earlier and later verified segment; `device_burst` skipped when Valkey is down. Fixture-only edits in `tests/segments/test_upload_order.py` approved.
+  - W4-3: keep uvicorn's default server WebSocket pings (every 20 s); no Dockerfile flag. Reason: dead half-open sockets close within about 40 s instead of counting toward the 3-socket cap. Corrects the W4-3 line "the server sends no pings of its own".
+  - W4-0: `npm ci` in `app/` approved (stale `node_modules`, `react-native-worklets` missing).
   You make no entries of your own.
 - **Pair and phone checks:** only items run with Cristea's phones (W4-7). Not claimed until done.
 - **Surprises from the deploy and the pair check:** field names, time zones, auth edges.

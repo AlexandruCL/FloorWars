@@ -11,12 +11,14 @@ from app.api.v1 import (
     auth,
     buildings,
     checkins,
+    events,
     landing,
     leaderboards,
     me,
     seasons,
     segments,
     teams,
+    ws,
 )
 
 _FEATURE_ROUTERS = (
@@ -28,6 +30,8 @@ _FEATURE_ROUTERS = (
     leaderboards.router,
     seasons.router,
     me.router,
+    events.router,
+    ws.router,
     landing.router,
 )
 

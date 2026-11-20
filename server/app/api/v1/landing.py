@@ -31,8 +31,8 @@ def _leaderboards(request: Request) -> Leaderboards:
     responses={
         401: problem_doc("Missing, invalid or expired access token."),
         403: problem_doc(
-            "Sticker invalid, outside its window or not for this building; or no check-in of "
-            "the user at this building valid at the scan time."
+            "Sticker invalid, outside its window or not for this building; no check-in of the "
+            "user at this building valid at the scan time; no running season; or no team."
         ),
         422: problem_doc("The body does not match the schema."),
         429: problem_doc("More than 1 scan per building per 10 minutes or 6 per hour."),

@@ -219,6 +219,23 @@ def test_building_limit_retry_after(world: World) -> None:
     assert 590 <= int(response.headers["Retry-After"]) <= 600
 
 
+def test_failure_after_the_cooldown_token_gives_it_back(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A database error after the per-building token: nothing stored, the retry is not a 429."""
+    user = world.climber()
+
+    def broken(*args: Any) -> None:
+        raise RuntimeError("database gone")
+
+    monkeypatch.setattr(service.claim, "recompute_owner", broken)
+    with pytest.raises(RuntimeError):
+        post_scan(user)
+    assert scalar(world.client, "SELECT count(*) FROM landing_scan") == 0
+    monkeypatch.undo()
+    assert post_scan(user).status_code == 201
+
+
 def test_hourly_limit_counts_every_attempt(world: World) -> None:
     user = world.climber()
     for _ in range(service.SCANS_PER_HOUR):
@@ -301,6 +318,9 @@ def test_rebuild_and_database_fallback_equal_incremental_boards(
 class _Allow:
     def hit(self, name: str, subject: str, capacity: int, period_s: int) -> Decision:
         return Decision(allowed=True, retry_after_s=0)
+
+    def refund(self, name: str, subject: str, capacity: int, period_s: int) -> None:
+        pass
 
 
 def test_scan_and_segment_upload_in_parallel_leave_one_owner(world: World) -> None:

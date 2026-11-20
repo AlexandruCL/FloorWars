@@ -3,7 +3,7 @@
 import math
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 from pydantic import ValidationError
@@ -345,3 +345,33 @@ def test_batch_needs_a_device_and_nothing_else() -> None:
         SegmentBatch.model_validate({"segments": [raw_item()]})
     with pytest.raises(ValidationError):
         SegmentBatch.model_validate({**good, "extra": 1})
+
+
+def test_anticheat_rules_are_flags_not_reasons() -> None:
+    """Anti-cheat v2 is flag only (W4-5): no rule name may become a rejection reason."""
+    assert not set(get_args(rules.FlagRule)) & set(get_args(rules.RejectReason))
+
+
+@pytest.mark.parametrize(
+    ("speed", "stored"),
+    [
+        (5.0, True),
+        (0.0, True),
+        (-0.0, True),
+        (1e-300, True),  # stored as 0
+        (-1e-300, True),  # stored as 0
+        (3.4e38, True),
+        (-0.5, False),
+        (1e300, False),  # beyond a real: infinity once stored
+        (math.inf, False),
+        (-math.inf, False),
+        (math.nan, False),
+    ],
+)
+def test_a_speed_rejection_is_stored_only_with_a_returnable_speed(
+    speed: float, stored: bool
+) -> None:
+    assert rules.receipt_only(item(vert_speed_mps=speed), "speed") is not stored
+    # Other reasons keep their own rule.
+    assert rules.receipt_only(item(vert_speed_mps=speed), "steps_range")
+    assert not rules.receipt_only(item(vert_speed_mps=speed), "cadence")

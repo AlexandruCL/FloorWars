@@ -18,6 +18,7 @@ from app.config import Settings, check_api_settings, get_settings
 from app.db.session import make_engine, make_sessionmaker
 from app.logging_config import configure_logging
 from app.mail import build_mail_sender
+from app.realtime.hub import Hub
 from app.valkey import ValkeyClient
 
 logger = logging.getLogger("floorwars")
@@ -41,10 +42,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         make_engine(settings.database_url.get_secret_value()) if settings.database_url else None
     )
     valkey = ValkeyClient(settings.valkey_url.get_secret_value()) if settings.valkey_url else None
+    # The socket hub's own Valkey subscriber (one per process, plan 7.2.1).
+    hub = Hub(settings.valkey_url.get_secret_value() if settings.valkey_url else None)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        await hub.start()
         yield
+        await hub.stop()
         if engine is not None:
             engine.dispose()
         if valkey is not None:
@@ -57,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.mail_sender = build_mail_sender(settings)
     # None without FLOORWARS_VALKEY_URL: POST /v1/auth/otp then answers 503 (fails closed).
     app.state.valkey = valkey
+    app.state.hub = hub
     app.state.rate_limiter = ValkeyRateLimiter(valkey) if valkey is not None else None
     install_problem_handlers(app)
 
