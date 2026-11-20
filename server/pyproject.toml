@@ -29,6 +29,8 @@ dev = [
     "mypy>=2.4.0",
     # Offline QR tool only (tools/qr), never imported by the app. Approved 2026-10-31.
     "qrcode==8.2",
+    # Contract shape checks in tests only (tests/me/contract.py). Approved 2026-11-20.
+    "jsonschema>=4.26,<5",
 ]
 
 [build-system]
