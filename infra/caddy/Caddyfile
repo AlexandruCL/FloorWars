@@ -68,7 +68,15 @@
 
 	log {
 		output stdout
-		format json
+		# The socket's access_token query value (WS /v1/ws) never reaches the log. Caddy
+		# already redacts the Authorization header. Caddy proxies the WebSocket upgrade
+		# natively and has no idle timeout on an upgraded connection.
+		format filter {
+			request>uri query {
+				delete access_token
+			}
+			wrap json
+		}
 	}
 }
 
