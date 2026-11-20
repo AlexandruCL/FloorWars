@@ -1,4 +1,4 @@
-"""Signed entrance QR tokens (plan section 3.2, check-in flow).
+"""Signed QR tokens: entrance codes (plan section 3.2, check-in flow) and landing stickers.
 
 Token format, version 1::
 
@@ -10,6 +10,11 @@ Token format, version 1::
 
 ``kid`` is the first 8 hex characters of SHA-256 of the raw key bytes, so a code printed with an
 old key is reported as "wrong key" rather than "bad signature". base64url has no padding.
+
+Landing stickers (W4-4, barometer-less scans) use the same scheme and key with the prefix
+``fwl1.`` and ``"kind":"landing"`` inside the signed payload. The entrance verifier refuses any
+token with a ``kind`` claim and the landing verifier requires ``kind == "landing"``, so a sticker
+never checks in and an entrance code never scores, even with its prefix swapped.
 
 Pure standard library; the key is passed in as bytes so this module does not depend on settings.
 Verification order: prefix, two parts, base64url, JSON, ``v == 1``, ``kid``, signature
@@ -25,6 +30,8 @@ import re
 from dataclasses import dataclass
 
 PREFIX = "fwq1."
+LANDING_PREFIX = "fwl1."
+KIND_LANDING = "landing"
 VERSION = 1
 KEY_BYTES = 32
 MAX_TOKEN_LEN = 512
@@ -105,14 +112,26 @@ def _mac(key: bytes, payload: bytes) -> bytes:
     return hmac.new(key, payload, hashlib.sha256).digest()
 
 
-def sign(building_id: int, key: bytes, nbf: int, exp: int) -> str:
-    """Create a token for ``building_id`` valid from ``nbf`` to ``exp`` (unix seconds)."""
+def sign(building_id: int, key: bytes, nbf: int, exp: int, *, landing: bool = False) -> str:
+    """Create a token for ``building_id`` valid from ``nbf`` to ``exp`` (unix seconds).
+
+    ``landing=True`` makes a landing sticker (``fwl1.``, ``kind`` claim), not an entrance code.
+    """
     _check_key(key)
     if isinstance(building_id, bool) or building_id < 0 or nbf < 0 or exp < nbf:
         raise ValueError("building_id and nbf must be non-negative and exp must not precede nbf")
-    claims = {"v": VERSION, "b": building_id, "nbf": nbf, "exp": exp, "kid": key_id(key)}
+    claims: dict[str, object] = {
+        "v": VERSION,
+        "b": building_id,
+        "nbf": nbf,
+        "exp": exp,
+        "kid": key_id(key),
+    }
+    if landing:
+        claims["kind"] = KIND_LANDING
     payload = json.dumps(claims, separators=(",", ":"), sort_keys=True).encode("ascii")
-    return f"{PREFIX}{_b64e(payload)}.{_b64e(_mac(key, payload))}"
+    prefix = LANDING_PREFIX if landing else PREFIX
+    return f"{prefix}{_b64e(payload)}.{_b64e(_mac(key, payload))}"
 
 
 def _claim_int(data: dict[str, object], name: str) -> int:
@@ -123,17 +142,26 @@ def _claim_int(data: dict[str, object], name: str) -> int:
 
 
 def verify(token: str, key: bytes, now: int) -> QrClaims:
-    """Verify ``token`` against ``key`` at ``now`` (unix seconds) and return its claims.
+    """Verify an entrance ``token`` against ``key`` at ``now`` (unix seconds) and return its claims.
 
     Raises QrMalformedError, QrWrongKeyError, QrBadSignatureError, QrNotYetValidError or
-    QrExpiredError (all subclasses of QrTokenError).
+    QrExpiredError (all subclasses of QrTokenError). A landing sticker is malformed here.
     """
+    return _verify(token, key, now, PREFIX, None)
+
+
+def verify_landing(token: str, key: bytes, now: int) -> QrClaims:
+    """``verify`` for a landing sticker; an entrance code is malformed here."""
+    return _verify(token, key, now, LANDING_PREFIX, KIND_LANDING)
+
+
+def _verify(token: str, key: bytes, now: int, prefix: str, kind: str | None) -> QrClaims:
     _check_key(key)
     if len(token) > MAX_TOKEN_LEN:
         raise QrMalformedError("token too long")
-    if not token.startswith(PREFIX):
+    if not token.startswith(prefix):
         raise QrMalformedError("missing prefix")
-    parts = token[len(PREFIX) :].split(".")
+    parts = token[len(prefix) :].split(".")
     if len(parts) != 2:
         raise QrMalformedError("expected two parts")
     payload = _b64d(parts[0])
@@ -144,6 +172,12 @@ def verify(token: str, key: bytes, now: int) -> QrClaims:
         raise QrMalformedError("payload is not JSON") from None
     if not isinstance(data, dict) or _claim_int(data, "v") != VERSION:
         raise QrMalformedError("unsupported payload")
+    # The kind is signed, the prefix is not: this check is what keeps the two codes apart.
+    if kind is None:
+        if "kind" in data:
+            raise QrMalformedError("not an entrance token")
+    elif data.get("kind") != kind:
+        raise QrMalformedError("not a landing token")
     building = _claim_int(data, "b")
     nbf = _claim_int(data, "nbf")
     exp = _claim_int(data, "exp")
