@@ -12,6 +12,7 @@ from app.api.v1 import (
     buildings,
     checkins,
     events,
+    landing,
     leaderboards,
     me,
     seasons,
@@ -31,6 +32,7 @@ _FEATURE_ROUTERS = (
     me.router,
     events.router,
     ws.router,
+    landing.router,
 )
 
 router = APIRouter(prefix="/v1")

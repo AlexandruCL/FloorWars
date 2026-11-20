@@ -1,4 +1,4 @@
-"""Create signed entrance QR codes (one SVG per building).
+"""Create signed entrance QR codes (one SVG per building), or landing stickers with ``--landing``.
 
 The key (64 hex characters) is read from ``--key-file`` or the ``FLOORWARS_QR_HMAC_KEY``
 environment variable; it is never taken as a command-line value and never printed.
@@ -10,7 +10,8 @@ Examples::
     python tools/qr/make_entrance_qr.py --key-file key.txt --out out --from-db
 
 Per building it writes ``<id>.svg`` (QR plus name and validity dates) and ``<id>.token.txt``
-(the token string embedded in the QR).
+(the token string embedded in the QR). ``--landing`` writes the same files for stair-landing
+stickers (``fwl1.`` tokens, ``POST /v1/landing-scans``) signed with the same key.
 """
 
 import argparse
@@ -101,6 +102,7 @@ def generate(
     days: int,
     out: Path,
     now: int | None = None,
+    landing: bool = False,
 ) -> list[Path]:
     """Write ``<id>.svg`` and ``<id>.token.txt`` per building; return the SVG paths."""
     start = int(time.time()) if now is None else now
@@ -109,7 +111,7 @@ def generate(
     out.mkdir(parents=True, exist_ok=True)
     written = []
     for building_id, name in buildings:
-        token = sign(building_id, key, nbf, end)
+        token = sign(building_id, key, nbf, end, landing=landing)
         svg_path = out / f"{building_id}.svg"
         svg_path.write_text(render_svg(token, name, start, end), encoding="utf-8")
         (out / f"{building_id}.token.txt").write_text(token + "\n", encoding="ascii")
@@ -125,6 +127,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--from-db", action="store_true", help=f"read buildings via {DB_ENV}")
     parser.add_argument("--days", type=int, default=7, help="validity in days (default 7)")
     parser.add_argument("--out", required=True, help="output directory")
+    parser.add_argument(
+        "--landing", action="store_true", help="stair-landing stickers instead of entrance codes"
+    )
     args = parser.parse_args(argv)
 
     if not 1 <= args.days <= MAX_DAYS:
@@ -143,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("no buildings")
 
     key = load_key(args.key_file)
-    for path in generate(buildings, key, args.days, Path(args.out)):
+    for path in generate(buildings, key, args.days, Path(args.out), landing=args.landing):
         print(f"wrote {path}")
     return 0
 

@@ -1,5 +1,7 @@
 """The claim transaction: points of a segment and the owner of a building.
 
+Landing scans (``app.landing``) run the same ``recompute_owner``; their points count in the window.
+
 ``recompute_owner`` runs last in the batch transaction and locks the building's claim row until
 the commit, so claims on one building are serialised. PostgreSQL's default READ COMMITTED matters
 here: the owner query takes a fresh snapshot after the lock is granted, so it sees every segment
@@ -24,25 +26,36 @@ from app.segments.rules import (
 
 EVENT_BUILDING_FLIPPED = "building_flipped"
 
-# Verified points per team in the window, best first. ``status = 'verified'`` is written as a
-# literal so the planner can match the partial index; ``started_at`` has no upper bound because a
-# segment may start up to 5 minutes in the future and must count at once.
+# Points per team in the window, best first: verified segments and landing scans (W4-4; a scan
+# counts at ``scanned_at``). The filters sit inside each branch so the planner can use the partial
+# index and prune partitions. ``status = 'verified'`` is a literal for the same reason; there is no
+# upper time bound because a segment may start up to 5 minutes in the future and must count at once.
 #
-# ``reached_at`` is when the team's running total first equalled its final total: a segment worth
+# ``reached_at`` is when the team's running total first equalled its final total: a row worth
 # 0 points after that moment does not make the team later. ``ORDER BY started_at, id`` gives every
-# segment its own running total, also when two share a ``started_at``.
+# row its own running total, also when two share a ``started_at`` (both ids are UUIDs).
 ROLLING_POINTS_SQL = text(
     """
-    WITH counted AS (
-        SELECT team_id,
-               started_at,
-               sum(points) OVER (PARTITION BY team_id ORDER BY started_at, id) AS running,
-               sum(points) OVER (PARTITION BY team_id) AS total
+    WITH scored AS (
+        SELECT team_id, started_at, id, points
         FROM climb_segment
         WHERE building_id = :building_id
           AND status = 'verified'
           AND season_id = :season_id
           AND started_at >= :window_start
+        UNION ALL
+        SELECT team_id, scanned_at, id, points
+        FROM landing_scan
+        WHERE building_id = :building_id
+          AND season_id = :season_id
+          AND scanned_at >= :window_start
+    ),
+    counted AS (
+        SELECT team_id,
+               started_at,
+               sum(points) OVER (PARTITION BY team_id ORDER BY started_at, id) AS running,
+               sum(points) OVER (PARTITION BY team_id) AS total
+        FROM scored
     )
     SELECT counted.team_id,
            team.code,

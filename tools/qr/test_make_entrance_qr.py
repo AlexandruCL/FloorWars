@@ -6,7 +6,7 @@ from pathlib import Path
 
 import make_entrance_qr
 import pytest
-from app.qr_token import QrExpiredError, key_from_hex, verify
+from app.qr_token import QrExpiredError, QrMalformedError, key_from_hex, verify, verify_landing
 
 KEY_HEX = "00112233445566778899aabbccddeeff" * 2
 BUILDINGS = [(1, "Library & Lab"), (2, "Aula")]
@@ -124,3 +124,14 @@ def test_key_file_with_bom_and_unreadable(tmp_path: Path) -> None:
     binary.write_bytes(bytes([0xFF, 0xFE, 0x00]))
     with pytest.raises(SystemExit, match="cannot read key file"):
         make_entrance_qr.load_key(str(binary))
+
+
+def test_landing_flag_writes_stickers(tmp_path: Path) -> None:
+    files = _run(tmp_path, "--landing", "--days", "31")
+    assert files == ["1.svg", "1.token.txt", "2.svg", "2.token.txt"]
+    token = (tmp_path / "out" / "2.token.txt").read_text(encoding="ascii").strip()
+    key = key_from_hex(KEY_HEX)
+    assert token.startswith("fwl1.")
+    assert verify_landing(token, key, int(time.time())).building_id == 2
+    with pytest.raises(QrMalformedError):
+        verify(token, key, int(time.time()))
