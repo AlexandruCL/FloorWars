@@ -100,9 +100,7 @@ def read_checks(base: str, access: str, season_id: Any) -> bool:
         if status == 200 and isinstance(seasons, list)
         else f"HTTP {status}",
     )
-    status, stats = call(
-        "GET", base, f"/me/season-stats?season_id={season_id}", token=access
-    )
+    status, stats = call("GET", base, f"/me/season-stats?season_id={season_id}", token=access)
     keys = {"team_id", "steps_verified", "ascent_m", "points", "rank", "landmarks"}
     good = status == 200 and isinstance(stats, dict) and keys <= stats.keys()
     ok &= step(
@@ -113,9 +111,7 @@ def read_checks(base: str, access: str, season_id: Any) -> bool:
         else f"HTTP {status}",
     )
     status, page = call("GET", base, "/me/segments?limit=5", token=access)
-    good = (
-        status == 200 and isinstance(page, dict) and isinstance(page.get("items"), list)
-    )
+    good = status == 200 and isinstance(page, dict) and isinstance(page.get("items"), list)
     ok &= step(
         good,
         "GET /me/segments",
@@ -159,7 +155,7 @@ def ws_checks(base: str, access: str) -> Any:
     """Connect with replay from 0. Returns the open socket (or None on failure)."""
     try:
         sock = ws_open(base, access)
-    except Exception as error:  # noqa: BLE001 - any connect failure is a FAIL line
+    except Exception as error:
         step(False, "WS /ws connect with replay", type(error).__name__)
         return None
     replay = ws_drain(sock, 2)
@@ -182,9 +178,7 @@ def upload_checks(
     building_id = checkin["building_id"]
     valid_from = datetime.fromisoformat(checkin["valid_from"])
     # Inside the check-in's validity, and not in the future beyond the server's 5 minute skew.
-    started_at = max(
-        datetime.now(UTC) - timedelta(seconds=5), valid_from + timedelta(seconds=1)
-    )
+    started_at = max(datetime.now(UTC) - timedelta(seconds=5), valid_from + timedelta(seconds=1))
     rng = random.SystemRandom()
 
     def upload(segment: dict[str, Any]) -> tuple[int, Any]:
@@ -216,9 +210,7 @@ def upload_checks(
         reason = rejected_by_id(status, result).get(segment_id)
         return f"rejected as {reason}" if reason else f"HTTP {status} {problem(result)}"
 
-    status, before = call(
-        "GET", base, f"/buildings/{building_id}/standings", token=access
-    )
+    status, before = call("GET", base, f"/buildings/{building_id}/standings", token=access)
     if not step(status == 200, "standings before", f"HTTP {status}"):
         return False
 
@@ -254,9 +246,7 @@ def upload_checks(
     ):
         return False
 
-    status, after = call(
-        "GET", base, f"/buildings/{building_id}/standings", token=access
-    )
+    status, after = call("GET", base, f"/buildings/{building_id}/standings", token=access)
     if not step(status == 200, "standings after", f"HTTP {status}"):
         return False
     if sock is not None:
@@ -265,11 +255,7 @@ def upload_checks(
         print(f"[INFO] building_flipped frames seen on the socket: {len(flips)}")
     owner = (after.get("owner") or {}).get("code", "nobody")
     old, new = team_points(before), team_points(after)
-    gained = {
-        code: (old.get(code, 0), pts)
-        for code, pts in new.items()
-        if pts != old.get(code, 0)
-    }
+    gained = {code: (old.get(code, 0), pts) for code, pts in new.items() if pts != old.get(code, 0)}
     shown = ", ".join(f"{code} {was} -> {now}" for code, (was, now) in gained.items())
     return step(
         bool(gained),
@@ -282,12 +268,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--base-url", default="https://api.floorwars.me")
     parser.add_argument("--email", required=True)
-    parser.add_argument(
-        "--qr-token-file", type=Path, help="a tools/qr/out/<id>.token.txt file"
-    )
-    parser.add_argument(
-        "--team-id", type=int, help="team to join (default: the first team)"
-    )
+    parser.add_argument("--qr-token-file", type=Path, help="a tools/qr/out/<id>.token.txt file")
+    parser.add_argument("--team-id", type=int, help="team to join (default: the first team)")
     parser.add_argument(
         "--upload",
         action="store_true",
@@ -295,9 +277,7 @@ def main() -> int:
     )
     args = parser.parse_args()
     if args.upload and not args.qr_token_file:
-        parser.error(
-            "--upload needs --qr-token-file: the segments belong to a check-in"
-        )
+        parser.error("--upload needs --qr-token-file: the segments belong to a check-in")
     base = args.base_url.rstrip("/") + "/v1"
 
     status, _ = call("POST", base, "/auth/otp", {"email": args.email})
@@ -327,9 +307,7 @@ def main() -> int:
     access = tokens["access_token"]
 
     status, teams = call("GET", base, "/teams")
-    if not step(
-        status == 200 and bool(teams), "list teams", f"{len(teams or [])} teams"
-    ):
+    if not step(status == 200 and bool(teams), "list teams", f"{len(teams or [])} teams"):
         return 1
     status, season = call("GET", base, "/seasons/active")
     if not step(
@@ -385,13 +363,9 @@ def main() -> int:
     # family, so a retried request does not sign the user out. Wait it out to test real reuse.
     print("      waiting 22 s, past the refresh grace window ...")
     time.sleep(22)
-    status, _ = call(
-        "POST", base, "/auth/refresh", {"refresh_token": tokens["refresh_token"]}
-    )
+    status, _ = call("POST", base, "/auth/refresh", {"refresh_token": tokens["refresh_token"]})
     step(status == 401, "reusing the old refresh token is refused", f"HTTP {status}")
-    status, _ = call(
-        "POST", base, "/auth/refresh", {"refresh_token": rotated["refresh_token"]}
-    )
+    status, _ = call("POST", base, "/auth/refresh", {"refresh_token": rotated["refresh_token"]})
     step(status == 401, "...and the whole family is revoked", f"HTTP {status}")
     print("Done.")
     return 0
