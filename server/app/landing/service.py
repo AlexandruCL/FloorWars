@@ -23,6 +23,7 @@ Tokens are never logged or stored.
 
 import logging
 import uuid
+from contextlib import suppress
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
@@ -134,25 +135,25 @@ def scan(
     ctx = repository.scan_context(db, user_id, building_id, at)
     if ctx.checkin_id is None:
         raise forbidden("You are not checked in at this building.", type_=NO_CHECKIN)
-    # TODO(blocked, W4-4): the contract's 403 does not name these two cases; 403 until Ionut says.
     if ctx.season_id is None:
         raise forbidden("No season is running.", type_=SEASON_INACTIVE)
     if ctx.team_id is None:
         raise forbidden("Join a team to score.", type_=NO_TEAM)
     # Taken last, so a refused scan does not start the building's 10-minute cooldown.
-    _take(
-        limiter,
-        "landing:building",
-        f"{user_id}:{building_id}",
-        SCANS_PER_BUILDING,
-        BUILDING_PERIOD_S,
-    )
-
+    bucket = ("landing:building", f"{user_id}:{building_id}", SCANS_PER_BUILDING, BUILDING_PERIOD_S)
+    _take(limiter, *bucket)
     points = LANDING_SCAN_POINTS
-    scan_id = repository.insert_scan(db, user_id, building_id, ctx, points, at)
-    segments_repository.add_score(db, ctx.season_id, building_id, ctx.team_id, points, 0)
-    flip = claim.recompute_owner(db, ctx.season_id, building_id, now)
-    db.commit()
+    try:
+        scan_id = repository.insert_scan(db, user_id, building_id, ctx, points, at)
+        segments_repository.add_score(db, ctx.season_id, building_id, ctx.team_id, points, 0)
+        flip = claim.recompute_owner(db, ctx.season_id, building_id, now)
+        db.commit()
+    except BaseException:
+        # Nothing was stored: give the cooldown back, so the app's retry is not a 429.
+        if limiter is not None:
+            with suppress(Exception):
+                limiter.refund(*bucket)
+        raise
 
     flips = [flip] if flip is not None else []
     scored = ScoredSegment(ctx.season_id, user_id, ctx.team_id, building_id, points, 0)
