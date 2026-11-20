@@ -375,3 +375,13 @@ def test_scan_and_segment_upload_in_parallel_leave_one_owner(world: World) -> No
             assert [p.points for p in points] == [60, 20]
     finally:
         engine.dispose()
+
+
+def test_prefix_swaps_are_refused_by_both_routes(world: World) -> None:
+    """The prefix is not signed; the signed kind claim keeps the two codes apart."""
+    user = world.climber()
+    swapped = "fwq1." + sticker(user.building_id).removeprefix("fwl1.")
+    body = {"method": "qr", "qr_token": swapped}
+    problem(world.client.post("/v1/checkins", json=body, headers=user.headers), 403)
+    entrance = "fwl1." + token_for(user.building_id).removeprefix("fwq1.")
+    problem(post_scan(user, qr_token=entrance), 403, P + "sticker-invalid")
