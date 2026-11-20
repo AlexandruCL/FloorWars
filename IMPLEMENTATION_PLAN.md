@@ -305,6 +305,7 @@ PDF-defined: `POST /v1/segments`, `GET /v1/buildings/{id}/standings` (was `/floo
 | `POST /v1/auth/refresh` | Rotate refresh token | Reuse revokes the family |
 | `POST /v1/auth/logout` | Revoke a refresh token's family | 204 for any token; the access token lives until it expires; the app calls it best-effort on sign-out |
 | `GET /v1/teams`, `POST /v1/seasons/{id}/join` | List teams, pick one for the season | One team per user per season |
+| `GET /v1/seasons` | All seasons, newest first | Leaderboard season selector (contract 0.8.0) |
 | `POST /v1/checkins` | Check in by signed QR token or geofence | Server verifies HMAC and time window; creates 90-minute range |
 | `POST /v1/segments` | Upload a batch of segments | Idempotent; header `Idempotency-Key`; response `{accepted, rejected, flips}` |
 | `GET /v1/buildings` | Buildings list | |
@@ -312,7 +313,7 @@ PDF-defined: `POST /v1/segments`, `GET /v1/buildings/{id}/standings` (was `/floo
 | `GET /v1/leaderboards` | Individual, team, building | Served from Valkey sorted sets |
 | `GET /v1/me/season-stats` | Personal stats, landmarks progress, share-card data | |
 | `GET /v1/me/segments` | Personal history | |
-| `GET /v1/me/events` | Game events for the player's team after a given id | Notification fallback and WebSocket replay (7.2.1); ordered by id, paged |
+| `GET /v1/me/events` | Game events after a given id, of every season the user has joined | Notification fallback and WebSocket replay (7.2.1); ordered by id, paged |
 | `POST /v1/landing-scans` | Barometer-less fallback scan on a stair landing | Strict rate limit |
 | `GET /v1/config` | Classifier thresholds (versioned) | Revert in seconds without a deploy |
 | `GET /v1/me/export`, `DELETE /v1/me` | GDPR export and delete | Delete cascades; it must also delete the leaderboard markers `fw:lb:s{season}:built`, or the user stays on the boards for up to 1 h |
