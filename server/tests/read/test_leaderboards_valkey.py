@@ -31,6 +31,7 @@ class Flip:
     from_code: str | None = "AC"
     to_code: str = "ETC"
     at: datetime = datetime(2026, 11, 7, tzinfo=UTC)
+    season_id: int = 2
 
 
 def test_record_skips_a_season_that_is_not_built(vk: ValkeyClient) -> None:
