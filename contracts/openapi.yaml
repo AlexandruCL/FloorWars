@@ -10,9 +10,12 @@ info:
       season is active, or when the given season_id does not exist. GET /me/season-stats,
       GET /me/segments and GET /me/events list 422 for invalid query parameters; POST /landing-scans
       lists 503 when the rate limiter is unavailable. POST /landing-scans: the 403 also covers a scan
-      without a check-in of the user at that building valid at the scan time; the server replaces a scanned_at more than 10 minutes old
+      without a check-in of the user at that building valid at the scan time, or with no running season
+      or no team at the scan time; the server replaces a scanned_at more than 10 minutes old
       or more than 5 minutes ahead with its own time. GET /me/events and WS /ws carry the events of
-      every season the user has joined, not only flips involving the user's team.
+      every season the user has joined, not only flips involving the user's team. WS /ws answers 422 on
+      the upgrade for a malformed since. Upper bounds the server already enforces (422): season_id and
+      building_id at most 2147483647, since at most 9223372036854775807, qr_token at most 4096 characters.
     - 0.8.0-draft (2026-11-17): new schema RejectionReason (the 14 reasons of RejectedSegment.reason,
       which now refers to it). SegmentRecord gains reason (RejectionReason or null, required; null
       unless status is rejected), for the history screen. New GET /seasons (all seasons, newest
@@ -434,7 +437,7 @@ paths:
           in: query
           required: false
           description: 'Inferred: defaults to the active season.'
-          schema: { type: integer, minimum: 1 }
+          schema: { type: integer, minimum: 1, maximum: 2147483647 }
       responses:
         '200':
           description: Stats for the season.
@@ -490,7 +493,7 @@ paths:
           in: query
           required: false
           description: 'Inferred: return events with event_id greater than this. 0 returns the oldest kept events.'
-          schema: { type: integer, minimum: 0, default: 0 }
+          schema: { type: integer, minimum: 0, maximum: 9223372036854775807, default: 0 }
         - name: limit
           in: query
           required: false
@@ -527,7 +530,7 @@ paths:
               schema: { $ref: '#/components/schemas/LandingScan' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403':
-          description: 'Inferred: sticker token invalid, outside its time window, or not for the given building; or no check-in of the user at this building valid at the scan time.'
+          description: 'Inferred: sticker token invalid, outside its time window, or not for the given building; or no check-in of the user at this building valid at the scan time; or no running season, or the user has no team in it, at the scan time.'
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -595,7 +598,7 @@ paths:
           in: query
           required: false
           description: 'Inferred: replay events with event_id greater than this before live events.'
-          schema: { type: integer, minimum: 0 }
+          schema: { type: integer, minimum: 0, maximum: 9223372036854775807 }
         - name: access_token
           in: query
           required: false
@@ -605,6 +608,11 @@ paths:
         '101':
           description: Switching Protocols. Messages follow as JSON text frames.
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422':
+          description: Malformed since (not an integer from 0 to 2^63-1), answered on the upgrade request before accept.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
       x-websocket-events:
         server-to-client:
           $ref: '#/components/schemas/WsEvent'
@@ -1191,10 +1199,12 @@ components:
       properties:
         qr_token:
           type: string
+          maxLength: 4096
           description: 'Inferred field name: the signed token from the sticker at the stairs. It encodes the building only.'
         building_id:
           type: integer
           minimum: 1
+          maximum: 2147483647
           description: 'Inferred: the building the sticker belongs to. Must match the building in the token.'
         scanned_at:
           type: string

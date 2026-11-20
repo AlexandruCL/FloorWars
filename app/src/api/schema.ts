@@ -1414,7 +1414,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description Inferred: sticker token invalid, outside its time window, or not for the given building; or no check-in of the user at this building valid at the scan time. */
+            /** @description Inferred: sticker token invalid, outside its time window, or not for the given building; or no check-in of the user at this building valid at the scan time; or no running season, or the user has no team in it, at the scan time. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1513,6 +1513,15 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            /** @description Malformed since (not an integer from 0 to 2^63-1), answered on the upgrade request before accept. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
 }
