@@ -319,9 +319,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Game events for the player's team after a given id (notification feed)
+         * Game events after a given id (notification feed)
          * @description Plan 7.2.1. Fallback for notifications when no WebSocket is open (WorkManager polls it), and
          *     the same feed the WebSocket replays on connect. Events are ordered by event_id ascending.
+         *     It carries the events of every season the user has joined (a team membership in the event's
+         *     season), not only flips involving the user's team: flips are public game state.
          *     The client stores the highest event_id it has handled and passes it as since.
          */
         get: operations["listMyEvents"];
@@ -425,8 +427,9 @@ export interface paths {
          *     The connection is authenticated on connect. Server-to-client messages are WsEvent:
          *     building_flipped {building_id, from_team, to_team, at} when a building changes owner, and
          *     season_state {paused, ends_at}; see x-websocket-events. Plan 7.2.1: on connect the server first
-         *     replays the events after since for the player's team, then streams new ones (at least once;
-         *     the client ignores event_id values it has handled).
+         *     replays the events after since, then streams new ones (at least once;
+         *     the client ignores event_id values it has handled). Like GET /me/events, it carries the events
+         *     of every season the user has joined, not only flips involving the user's team.
          *     A missing, expired or invalid token is rejected with 401 on the upgrade request, never with
          *     403 and never by closing after accept, so the client stops reconnecting until it has a new token.
          */
@@ -763,7 +766,7 @@ export interface components {
             building_id: number;
             /**
              * Format: date-time
-             * @description Inferred: device time of the scan.
+             * @description Inferred: device time of the scan. The server replaces a value more than 10 minutes old or more than 5 minutes ahead (or a missing one) with its own time.
              */
             scanned_at?: string;
         };
@@ -1322,6 +1325,15 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            /** @description No season_id was given and no season is active right now. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     listMySegments: {
@@ -1399,7 +1411,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description Inferred: sticker token invalid, outside its time window, or not for the given building. */
+            /** @description Inferred: sticker token invalid, outside its time window, or not for the given building; or no check-in of the user at this building valid at the scan time. */
             403: {
                 headers: {
                     [name: string]: unknown;
