@@ -27,3 +27,7 @@ The fake segments come from `tools/fake_segments` and are synthetic test data, b
 Rerunning `--upload` on the same account too soon fails step 2, printed as `rejected as overlap`, because the new climb overlaps the verified one from the previous run. That climb lasts up to 3 minutes: wait that long, or use another account.
 
 Tests of the flow against an in-memory fake of the endpoints: `python -m pytest -q tools/e2e`.
+
+## Week 4 reads and the socket
+
+After joining a team the script also calls `GET /seasons`, `GET /me/season-stats?season_id=`, `GET /me/segments` and `GET /me/events`, then opens `WS /v1/ws?since=0` (bearer header, `websockets`, installed with uvicorn) and checks the replay is ascending. With `--upload` the socket stays open during the uploads and the script prints how many `building_flipped` frames arrived; a flip needs an owner change, so zero is a note, not a failure.

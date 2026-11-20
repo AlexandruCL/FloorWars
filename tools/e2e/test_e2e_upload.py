@@ -1,4 +1,4 @@
-﻿"""Tests of the --upload flow of e2e_check.py against an in-memory fake of the three endpoints.
+"""Tests of the --upload flow of e2e_check.py against an in-memory fake of the three endpoints.
 
 Run: python -m pytest -q tools/e2e
 
@@ -32,7 +32,9 @@ class FakeServer:
         self.score = score
 
     def standings(self) -> dict[str, Any]:
-        teams = [{"team_id": 1, "code": "AC", "color_hex": "#112233", "points": self.points}]
+        teams = [
+            {"team_id": 1, "code": "AC", "color_hex": "#112233", "points": self.points}
+        ]
         return {
             "building_id": 4,
             "season_id": 1,
@@ -51,7 +53,13 @@ class FakeServer:
         headers: dict[str, str] | None = None,
     ) -> tuple[int, Any]:
         self.requests.append(
-            {"method": method, "path": path, "body": body, "token": token, "headers": headers}
+            {
+                "method": method,
+                "path": path,
+                "body": body,
+                "token": token,
+                "headers": headers,
+            }
         )
         if path.endswith("/standings"):
             return 200, self.standings()
@@ -86,7 +94,9 @@ def checkin() -> dict[str, Any]:
     }
 
 
-def run(server: FakeServer, checkin: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> bool:
+def run(
+    server: FakeServer, checkin: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> bool:
     monkeypatch.setattr(e2e_check, "call", server)
     return e2e_check.upload_checks("https://example.test/v1", ACCESS, DEVICE, checkin)
 
@@ -95,7 +105,9 @@ def test_the_flow_passes_against_a_correct_server(checkin, monkeypatch, capsys):
     server = FakeServer()
     assert run(server, checkin, monkeypatch)
     out = capsys.readouterr().out
-    assert out.count("[OK]") == 6  # standings before, three uploads, standings after, summary
+    assert (
+        out.count("[OK]") == 6
+    )  # standings before, three uploads, standings after, summary
     assert "[FAIL]" not in out
     assert "AC 0 -> " in out
     assert "owner: AC" in out
@@ -114,7 +126,9 @@ def test_requests_follow_the_contract(checkin, monkeypatch):
         (seg,) = r["body"]["segments"]
         assert seg["checkin_id"] == checkin["id"]
         assert seg["building_id"] == 4
-    assert posts[0]["body"]["segments"][0]["id"] == posts[1]["body"]["segments"][0]["id"]
+    assert (
+        posts[0]["body"]["segments"][0]["id"] == posts[1]["body"]["segments"][0]["id"]
+    )
     started = datetime.fromisoformat(posts[0]["body"]["segments"][0]["started_at"])
     assert datetime.fromisoformat(checkin["valid_from"]) <= started <= datetime.now(UTC)
     paths = [r["path"] for r in server.requests if r["method"] == "GET"]
@@ -136,7 +150,10 @@ def test_fails_when_a_repeat_is_scored_again(checkin, monkeypatch, capsys):
 def test_fails_when_the_valid_segment_is_rejected(checkin, monkeypatch, capsys):
     assert not run(FakeServer(score=False), checkin, monkeypatch)
     out = capsys.readouterr().out
-    assert "[FAIL] upload a valid segment (fresh Idempotency-Key): rejected as speed" in out
+    assert (
+        "[FAIL] upload a valid segment (fresh Idempotency-Key): rejected as speed"
+        in out
+    )
     assert "pressure_steps_mismatch" not in out  # stopped before the bad-ratio upload
 
 
