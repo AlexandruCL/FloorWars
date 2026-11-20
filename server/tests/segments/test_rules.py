@@ -3,7 +3,7 @@
 import math
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 from pydantic import ValidationError
@@ -345,3 +345,8 @@ def test_batch_needs_a_device_and_nothing_else() -> None:
         SegmentBatch.model_validate({"segments": [raw_item()]})
     with pytest.raises(ValidationError):
         SegmentBatch.model_validate({**good, "extra": 1})
+
+
+def test_anticheat_rules_are_flags_not_reasons() -> None:
+    """Anti-cheat v2 is flag only (W4-5): no rule name may become a rejection reason."""
+    assert not set(get_args(rules.FlagRule)) & set(get_args(rules.RejectReason))
