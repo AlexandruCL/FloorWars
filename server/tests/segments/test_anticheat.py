@@ -143,10 +143,12 @@ def test_identical_segment_of_another_user_is_not_flagged(world: World) -> None:
 # impossible_sequence
 
 
-def _two_checkins(world: World, now: datetime, split: datetime) -> tuple[Climber, int, str, float]:
+def _two_checkins(
+    world: World, now: datetime, split: datetime, until: datetime | None = None
+) -> tuple[Climber, int, str, float]:
     """A user checked in at the world's building until ``split``, then at a building about
-    1.1 km north (check-ins of one user cannot overlap): the user, that building, its check-in and
-    the walk between the two in seconds."""
+    1.1 km north until ``until`` (check-ins of one user cannot overlap): the user, that building,
+    its check-in and the walk between the two in seconds."""
     user = world.climber(valid_during=Range(now - timedelta(hours=3), split))
     building = insert_building(world.client, CENTRE_LAT + 0.01, CENTRE_LON)
     with world.client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
@@ -155,7 +157,12 @@ def _two_checkins(world: World, now: datetime, split: datetime) -> tuple[Climber
                 "INSERT INTO checkin (user_id, building_id, method, valid_during) "  # noqa: S608
                 f"VALUES (:u, :b, 'qr', {TSTZRANGE_SQL}) RETURNING id::text"
             ),
-            {"u": user.user_id, "b": building, "lo": split, "hi": now + timedelta(hours=1)},
+            {
+                "u": user.user_id,
+                "b": building,
+                "lo": split,
+                "hi": until or now + timedelta(hours=1),
+            },
         ).scalar_one()
         metres = db.execute(
             text(
@@ -204,6 +211,32 @@ def test_impossible_sequence_in_one_batch_flags_the_later_climb(world: World) ->
         checkin_id=checkin,
     )
     assert len(user.ok(there, here)["accepted"]) == 2
+    assert _flags(world) == {there["id"]: {"impossible_sequence"}}
+
+
+def test_impossible_on_both_sides_at_once_is_flagged_once(world: World) -> None:
+    now = utcnow()
+    t0 = now - timedelta(hours=2)
+    split, back = t0 + timedelta(seconds=45), t0 + timedelta(seconds=105)
+    user, building, checkin, _ = _two_checkins(world, now, split, back)
+    with world.client.app.state.sessionmaker() as db:  # type: ignore[attr-defined]
+        again = db.execute(
+            text(
+                "INSERT INTO checkin (user_id, building_id, method, valid_during) "  # noqa: S608
+                f"VALUES (:u, :b, 'qr', {TSTZRANGE_SQL}) RETURNING id::text"
+            ),
+            {"u": user.user_id, "b": world.building_id, "lo": back, "hi": now},
+        ).scalar_one()
+        db.commit()
+    here = climb_at(t0)
+    there = climb_at(
+        t0 + timedelta(seconds=60), ascent_m=13.0, building_id=building, checkin_id=checkin
+    )
+    here_again = climb_at(t0 + timedelta(seconds=120), ascent_m=14.0, checkin_id=again)
+    user.ok(here)
+    user.ok(here_again)
+    assert _flags(world) == {}
+    user.ok(there)  # both its neighbours are 30 s away in the other building
     assert _flags(world) == {there["id"]: {"impossible_sequence"}}
 
 

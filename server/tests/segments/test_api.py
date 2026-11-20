@@ -130,7 +130,10 @@ def test_600_verified_steps_per_ten_minutes(world: World) -> None:
         "duration_s": 120.0,
         "vert_speed_mps": 0.5,
     }
-    first, second, third = (climb(minutes_ago=m, **big) for m in (9, 6, 3))
+    # Ascents apart: not identical_segment, so the one flag below is the rate_limit one.
+    first, second, third = (
+        climb(minutes_ago=m, **{**big, "ascent_m": 60.0 + m / 100}) for m in (9, 6, 3)
+    )
     result = user.ok(first, second, third)
     assert {a["id"] for a in result["accepted"]} == {first["id"], second["id"]}
     assert result["rejected"] == [{"id": third["id"], "reason": "rate_limit"}]
