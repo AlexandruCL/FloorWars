@@ -7,8 +7,10 @@ info:
 
     Changelog:
     - 0.9.0-draft (2026-11-20): GET /me/season-stats answers 404 when no season_id is given and no
-      season is active. POST /landing-scans: the 403 also covers a scan without a check-in of the user
-      at that building valid at the scan time; the server replaces a scanned_at more than 10 minutes old
+      season is active, or when the given season_id does not exist. GET /me/season-stats,
+      GET /me/segments and GET /me/events list 422 for invalid query parameters; POST /landing-scans
+      lists 503 when the rate limiter is unavailable. POST /landing-scans: the 403 also covers a scan
+      without a check-in of the user at that building valid at the scan time; the server replaces a scanned_at more than 10 minutes old
       or more than 5 minutes ahead with its own time. GET /me/events and WS /ws carry the events of
       every season the user has joined, not only flips involving the user's team.
     - 0.8.0-draft (2026-11-17): new schema RejectionReason (the 14 reasons of RejectedSegment.reason,
@@ -440,8 +442,9 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SeasonStats' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '404':
-          description: No season_id was given and no season is active right now.
+          description: No season with the given season_id, or no season_id was given and no season is active right now.
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -469,6 +472,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SegmentPage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /me/events:
     get:
@@ -499,6 +503,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/GameEventPage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /landing-scans:
     post:
@@ -528,6 +533,7 @@ paths:
               schema: { $ref: '#/components/schemas/Problem' }
         '422': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /config:
     get:

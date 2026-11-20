@@ -1325,7 +1325,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description No season_id was given and no season is active right now. */
+            /** @description No season with the given season_id, or no season_id was given and no season is active right now. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1334,6 +1334,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            422: components["responses"]["ValidationError"];
         };
     };
     listMySegments: {
@@ -1360,6 +1361,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            422: components["responses"]["ValidationError"];
         };
     };
     listMyEvents: {
@@ -1386,6 +1388,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            422: components["responses"]["ValidationError"];
         };
     };
     createLandingScan: {
@@ -1422,6 +1425,7 @@ export interface operations {
             };
             422: components["responses"]["ValidationError"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     getClassifierConfig: {
