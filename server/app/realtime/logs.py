@@ -7,14 +7,24 @@ handler, so every record is checked. Caddy deletes the parameter from its own lo
 
 import logging
 import re
+from urllib.parse import unquote_plus
 
-_TOKEN = re.compile(r"(access_token=)[^&\s\"']*")
+# Any query parameter; its key is compared after percent-decoding, because Starlette decodes the
+# key too (``access%5Ftoken`` or ``%61ccess_token`` authenticate like ``access_token``).
+_PARAM = re.compile(r"([?&;])([^=&\s\"']+)=([^&\s\"']*)")
+
+
+def _redact(match: re.Match[str]) -> str:
+    if unquote_plus(match.group(2)).lower() != "access_token":
+        return match.group(0)
+    return f"{match.group(1)}{match.group(2)}=[redacted]"
 
 
 class RedactAccessToken(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
-        if "access_token=" in message:
-            record.msg = _TOKEN.sub(r"\1[redacted]", message)
+        redacted = _PARAM.sub(_redact, message)
+        if redacted != message:
+            record.msg = redacted
             record.args = None
         return True

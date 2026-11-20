@@ -86,13 +86,23 @@ def test_uvicorn_sends_the_401_and_logs_no_token(capsys: pytest.CaptureFixture[s
 
 
 @pytest.mark.parametrize("name", ["uvicorn.error", "uvicorn.access"])
+@pytest.mark.parametrize(
+    "key", ["access_token", "access%5Ftoken", "access%5ftoken", "%61ccess_token", "ACCESS_TOKEN"]
+)
 def test_access_token_is_redacted_in_uvicorn_logs(
-    name: str, capsys: pytest.CaptureFixture[str]
+    name: str, key: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Starlette percent-decodes query keys, so every spelling that authenticates is redacted."""
     configure_logging("INFO")
     logging.getLogger(name).info(
-        '%s - "GET %s HTTP/1.1" %d', "1.2.3.4:5", "/v1/ws?access_token=xyz&since=3", 401
+        '%s - "GET %s HTTP/1.1" %d', "1.2.3.4:5", f"/v1/ws?since=3&{key}=xyz&a=b", 401
     )
     out = capsys.readouterr().out
-    assert "access_token=[redacted]&since=3" in out
+    assert f"since=3&{key}=[redacted]&a=b" in out
     assert "xyz" not in out
+
+
+def test_other_query_values_are_kept(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging("INFO")
+    logging.getLogger("uvicorn.access").info("GET /v1/me/events?since=12&limit=5 200")
+    assert "?since=12&limit=5 200" in capsys.readouterr().out
