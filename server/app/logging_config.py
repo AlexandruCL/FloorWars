@@ -13,6 +13,8 @@ from typing import Any
 from pythonjsonlogger.core import RESERVED_ATTRS
 from pythonjsonlogger.json import JsonFormatter
 
+from app.realtime.logs import RedactAccessToken
+
 UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 # Uvicorn adds an ANSI-coloured duplicate of the message as ``color_message``; drop it.
 DROPPED_ATTRS = ("color_message",)
@@ -35,11 +37,13 @@ def configure_logging(level: str = "INFO") -> None:
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {"json": {"()": build_formatter}},
+        "filters": {"redact": {"()": RedactAccessToken}},
         "handlers": {
             "stdout": {
                 "class": "logging.StreamHandler",
                 "formatter": "json",
                 "stream": "ext://sys.stdout",
+                "filters": ["redact"],
             }
         },
         "root": {"level": level, "handlers": ["stdout"]},

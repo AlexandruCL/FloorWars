@@ -48,7 +48,13 @@ put_missing valkey_url "redis://:${vk_pw}@valkey:6379/0"
 put_missing migration_database_url "$pg_url"
 put_missing jwt_signing_key "$(rand_hex)$(rand_hex)"
 put_missing qr_hmac_key "$(rand_hex)$(rand_hex)"
-put_missing acs_access_key "local-placeholder-not-a-real-key"
+# Must be base64 (the settings validate it); mail_backend=log never uses it.
+acs_placeholder="bG9jYWwtcGxhY2Vob2xkZXItbm90LWEtcmVhbC1rZXk="
+# Repair the non-base64 placeholder that older versions of this script wrote.
+if [[ "$(cat "$out_dir/acs_access_key" 2>/dev/null)" == "local-placeholder-not-a-real-key" ]]; then
+  rm "$out_dir/acs_access_key"
+fi
+put_missing acs_access_key "$acs_placeholder"
 
 echo "local secrets are in infra/local-secrets/"
 echo "note: --force after a first run also needs 'docker compose ... down -v' (postgres keeps the old password)"

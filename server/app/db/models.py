@@ -353,3 +353,31 @@ class GameEvent(Base):
     to_team: Mapped[int | None] = mapped_column(Integer)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'"))
     created_at: Mapped[datetime] = _created_at()
+
+
+class LandingScan(Base):
+    """A scored stair-sticker scan (W4-4, plan 15.3 accessible contribution mode).
+
+    Its points count like a verified segment's: in ``team_building_score``, the 7-day ownership
+    window (by ``scanned_at``) and the leaderboards.
+    """
+
+    __tablename__ = "landing_scan"
+    __table_args__ = (
+        CheckConstraint("points >= 0", name="points_not_negative"),
+        # The owner query: scans of one building, newest first.
+        Index("ix_landing_scan_building_id_scanned_at", "building_id", text("scanned_at DESC")),
+        Index("ix_landing_scan_user_id_season_id", "user_id", "season_id"),
+        Index("ix_landing_scan_season_id_team_id", "season_id", "team_id"),
+        Index("ix_landing_scan_checkin_id", "checkin_id"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
+    building_id: Mapped[int] = mapped_column(ForeignKey("building.id"))
+    season_id: Mapped[int] = mapped_column(ForeignKey("season.id"))
+    team_id: Mapped[int] = mapped_column(ForeignKey("team.id"))
+    checkin_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("checkin.id"))
+    points: Mapped[int] = mapped_column(Integer)
+    scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()

@@ -458,5 +458,13 @@ def test_racing_uploads_cannot_pass_the_step_cap_together(world: World) -> None:
     results = _race(world, user, _at(start, **big), _at(start + timedelta(minutes=3), **big))
     assert _one_verified_one_rejected(results) == "rate_limit"
     assert scalar(world.client, "SELECT count(*) FROM climb_segment WHERE status = 'verified'") == 1
-    assert scalar(world.client, "SELECT rule FROM fraud_flag") == "rate_limit"
+    # Either upload may take the lock first. Only a climb that earlier climbs push over the cap is
+    # flagged (service._is_flagged); the earlier climb rejected because of a later one is not.
+    earlier_won = scalar(
+        world.client,
+        "SELECT bool_and(status = 'verified') FROM climb_segment"
+        " WHERE started_at = (SELECT min(started_at) FROM climb_segment)",
+    )
+    flag = scalar(world.client, "SELECT rule FROM fraud_flag")
+    assert flag == ("rate_limit" if earlier_won else None)
     assert scalar(world.client, "SELECT points FROM team_building_score") == 350  # 300 + 100 / 2

@@ -46,6 +46,23 @@ redis.call('PEXPIRE', KEYS[1], math.ceil((capacity - tokens) / rate) + 1000)
 return {allowed, wait_ms}
 """
 
+# Gives one token back (after the refill up to now), never above capacity. A missing key is a full
+# bucket already.
+_REFUND_SCRIPT = """
+local capacity = tonumber(ARGV[1])
+local period_ms = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local state = redis.call('HMGET', KEYS[1], 'tokens', 'ts')
+local tokens = tonumber(state[1])
+local ts = tonumber(state[2])
+if tokens == nil or ts == nil then return 0 end
+local rate = capacity / period_ms
+tokens = math.min(capacity, tokens + math.max(0, now - ts) * rate + 1)
+redis.call('HSET', KEYS[1], 'tokens', tostring(tokens), 'ts', tostring(now))
+redis.call('PEXPIRE', KEYS[1], math.ceil((capacity - tokens) / rate) + 1000)
+return 1
+"""
+
 
 @dataclass(frozen=True)
 class Decision:
@@ -56,6 +73,10 @@ class Decision:
 class RateLimiter(Protocol):
     def hit(self, name: str, subject: str, capacity: int, period_s: int) -> Decision:
         """Take one token. Raises ``app.valkey.ValkeyError`` when the limiter cannot answer."""
+        ...
+
+    def refund(self, name: str, subject: str, capacity: int, period_s: int) -> None:
+        """Give back the token of a ``hit`` whose work failed. Raises ``ValkeyError``."""
         ...
 
 
@@ -92,6 +113,7 @@ class ValkeyRateLimiter:
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._script = client.register_script(_BUCKET_SCRIPT)
+        self._refund = client.register_script(_REFUND_SCRIPT)
         self._prefix = prefix
         self._clock = clock
 
@@ -105,3 +127,7 @@ class ValkeyRateLimiter:
         if not (isinstance(allowed, int) and isinstance(wait_ms, int)):
             raise ValkeyError("unexpected token bucket reply")
         return Decision(allowed=allowed == 1, retry_after_s=math.ceil(wait_ms / 1000))
+
+    def refund(self, name: str, subject: str, capacity: int, period_s: int) -> None:
+        key = f"{self._prefix}:{name}:{subject}"
+        self._refund([key], [capacity, period_s * 1000, int(self._clock() * 1000)])
