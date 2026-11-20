@@ -1,4 +1,4 @@
-﻿"""Tests of the --upload flow of e2e_check.py against an in-memory fake of the three endpoints.
+"""Tests of the --upload flow of e2e_check.py against an in-memory fake of the three endpoints.
 
 Run: python -m pytest -q tools/e2e
 
@@ -51,7 +51,13 @@ class FakeServer:
         headers: dict[str, str] | None = None,
     ) -> tuple[int, Any]:
         self.requests.append(
-            {"method": method, "path": path, "body": body, "token": token, "headers": headers}
+            {
+                "method": method,
+                "path": path,
+                "body": body,
+                "token": token,
+                "headers": headers,
+            }
         )
         if path.endswith("/standings"):
             return 200, self.standings()

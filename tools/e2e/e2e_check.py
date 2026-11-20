@@ -9,6 +9,10 @@ check in with the entrance QR token, then refresh the tokens and test reuse dete
 about 25 s). Standard library only. Tokens and the code are never printed. It creates or
 updates a real account, so use your own e-mail address.
 
+Week 4: after joining it also reads GET /seasons, /me/season-stats, /me/segments and /me/events,
+and opens WS /ws with replay (since=0); with --upload the socket stays open while the fake
+segments go up and the building_flipped frames seen are counted.
+
 With --upload (needs --qr-token-file) it also runs the Week 3 segment flow right after the
 check-in: upload a valid fake segment (expect accepted with points), upload it again (accepted
 without points), upload a segment with a bad steps-per-metre ratio (expect rejected as
@@ -86,7 +90,87 @@ def team_points(standings: Any) -> dict[str, int]:
     return {t["code"]: t["points"] for t in standings.get("teams") or []}
 
 
-def upload_checks(base: str, access: str, device_id: str, checkin: dict[str, Any]) -> bool:
+def read_checks(base: str, access: str, season_id: Any) -> bool:
+    """Week 4 read endpoints: seasons, season stats, own segments, event feed (contract 0.9.0)."""
+    status, seasons = call("GET", base, "/seasons", token=access)
+    ok = step(
+        status == 200 and isinstance(seasons, list) and bool(seasons),
+        "GET /seasons",
+        f"{len(seasons)} seasons"
+        if status == 200 and isinstance(seasons, list)
+        else f"HTTP {status}",
+    )
+    status, stats = call("GET", base, f"/me/season-stats?season_id={season_id}", token=access)
+    keys = {"team_id", "steps_verified", "ascent_m", "points", "rank", "landmarks"}
+    good = status == 200 and isinstance(stats, dict) and keys <= stats.keys()
+    ok &= step(
+        good,
+        "GET /me/season-stats",
+        f"points {stats['points']}, {len(stats['landmarks'])} landmarks"
+        if good
+        else f"HTTP {status}",
+    )
+    status, page = call("GET", base, "/me/segments?limit=5", token=access)
+    good = status == 200 and isinstance(page, dict) and isinstance(page.get("items"), list)
+    ok &= step(
+        good,
+        "GET /me/segments",
+        f"{len(page['items'])} items" if good else f"HTTP {status}",
+    )
+    status, feed = call("GET", base, "/me/events?since=0&limit=5", token=access)
+    good = status == 200 and isinstance(feed, dict) and "last_event_id" in feed
+    ok &= step(
+        good,
+        "GET /me/events",
+        f"last_event_id {feed['last_event_id']}" if good else f"HTTP {status}",
+    )
+    return ok
+
+
+def ws_url(base: str, since: int) -> str:
+    return "ws" + base.removeprefix("http") + f"/ws?since={since}"
+
+
+def ws_open(base: str, access: str, since: int = 0) -> Any:
+    from websockets.sync.client import connect  # installed with uvicorn[standard]
+
+    return connect(
+        ws_url(base, since),
+        additional_headers={"Authorization": f"Bearer {access}"},
+        open_timeout=TIMEOUT_S,
+    )
+
+
+def ws_drain(sock: Any, wait_s: float) -> list[dict[str, Any]]:
+    """Frames that arrive until nothing comes for wait_s seconds."""
+    events: list[dict[str, Any]] = []
+    while True:
+        try:
+            events.append(json.loads(sock.recv(timeout=wait_s)))
+        except TimeoutError:
+            return events
+
+
+def ws_checks(base: str, access: str) -> Any:
+    """Connect with replay from 0. Returns the open socket (or None on failure)."""
+    try:
+        sock = ws_open(base, access)
+    except Exception as error:
+        step(False, "WS /ws connect with replay", type(error).__name__)
+        return None
+    replay = ws_drain(sock, 2)
+    ids = [e.get("event_id") for e in replay]
+    step(ids == sorted(ids), "WS /ws replay is ascending", f"{len(replay)} events")
+    return sock
+
+
+def upload_checks(
+    base: str,
+    access: str,
+    device_id: str,
+    checkin: dict[str, Any],
+    sock: Any = None,
+) -> bool:
     """The Week 3 segment flow for a fresh check-in. Prints OK or FAIL lines, never a token."""
     sys.path.insert(0, str(FAKE_SEGMENTS_DIR))
     import fake_segments  # sibling tool, imported only for --upload
@@ -165,6 +249,10 @@ def upload_checks(base: str, access: str, device_id: str, checkin: dict[str, Any
     status, after = call("GET", base, f"/buildings/{building_id}/standings", token=access)
     if not step(status == 200, "standings after", f"HTTP {status}"):
         return False
+    if sock is not None:
+        flips = [e for e in ws_drain(sock, 3) if e.get("type") == "building_flipped"]
+        # A flip needs an owner change, which depends on the building's state: a note, not a FAIL.
+        print(f"[INFO] building_flipped frames seen on the socket: {len(flips)}")
     owner = (after.get("owner") or {}).get("code", "nobody")
     old, new = team_points(before), team_points(after)
     gained = {code: (old.get(code, 0), pts) for code, pts in new.items() if pts != old.get(code, 0)}
@@ -235,9 +323,17 @@ def main() -> int:
     )
     already = status == 409
     if not step(
-        status == 201 or already, "join team", "already a member" if already else f"HTTP {status}"
+        status == 201 or already,
+        "join team",
+        "already a member" if already else f"HTTP {status}",
     ):
         print("      " + problem(joined))
+        return 1
+
+    if not read_checks(base, access, season["id"]):
+        return 1
+    sock = ws_checks(base, access)
+    if sock is None:
         return 1
 
     if args.qr_token_file:
@@ -253,9 +349,11 @@ def main() -> int:
             else f"HTTP {status} {problem(checkin)}",
         ):
             return 1
-        if args.upload and not upload_checks(base, access, device["id"], checkin):
+        if args.upload and not upload_checks(base, access, device["id"], checkin, sock):
             return 1
 
+    if sock is not None:
+        sock.close()
     status, rotated = call(
         "POST", base, "/auth/refresh", {"refresh_token": tokens["refresh_token"]}
     )

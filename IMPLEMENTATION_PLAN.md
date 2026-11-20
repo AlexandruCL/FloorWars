@@ -305,6 +305,7 @@ PDF-defined: `POST /v1/segments`, `GET /v1/buildings/{id}/standings` (was `/floo
 | `POST /v1/auth/refresh` | Rotate refresh token | Reuse revokes the family |
 | `POST /v1/auth/logout` | Revoke a refresh token's family | 204 for any token; the access token lives until it expires; the app calls it best-effort on sign-out |
 | `GET /v1/teams`, `POST /v1/seasons/{id}/join` | List teams, pick one for the season | One team per user per season |
+| `GET /v1/seasons` | All seasons, newest first | Leaderboard season selector (contract 0.8.0) |
 | `POST /v1/checkins` | Check in by signed QR token or geofence | Server verifies HMAC and time window; creates 90-minute range |
 | `POST /v1/segments` | Upload a batch of segments | Idempotent; header `Idempotency-Key`; response `{accepted, rejected, flips}` |
 | `GET /v1/buildings` | Buildings list | |
@@ -312,7 +313,7 @@ PDF-defined: `POST /v1/segments`, `GET /v1/buildings/{id}/standings` (was `/floo
 | `GET /v1/leaderboards` | Individual, team, building | Served from Valkey sorted sets |
 | `GET /v1/me/season-stats` | Personal stats, landmarks progress, share-card data | |
 | `GET /v1/me/segments` | Personal history | |
-| `GET /v1/me/events` | Game events for the player's team after a given id | Notification fallback and WebSocket replay (7.2.1); ordered by id, paged |
+| `GET /v1/me/events` | Game events after a given id, of every season the user has joined | Notification fallback and WebSocket replay (7.2.1); ordered by id, paged |
 | `POST /v1/landing-scans` | Barometer-less fallback scan on a stair landing | Strict rate limit |
 | `GET /v1/config` | Classifier thresholds (versioned) | Revert in seconds without a deploy |
 | `GET /v1/me/export`, `DELETE /v1/me` | GDPR export and delete | Delete cascades; it must also delete the leaderboard markers `fw:lb:s{season}:built`, or the user stays on the boards for up to 1 h |
@@ -408,7 +409,7 @@ Course rule (professor, 2026-10-29): no Firebase and no similar managed platform
 How it works:
 
 1. Every event a player should hear about (`building_flipped`, `season_state`) is written as a row of the append-only `game_event` table (id is a `bigint` identity, so ids only grow) in the same transaction that changes the claim. After commit the API publishes it on Valkey, so both API replicas see it.
-2. While a play session runs, the Kotlin foreground service that already does the sensing (section 4.3) keeps one WebSocket open to `WS /v1/ws`, authenticated on connect. On connect it sends the last event id it has seen (`since`); the server first replays the missed events for the player's team, then streams new ones. Delivery is at least once: the app ignores ids it has already handled.
+2. While a play session runs, the Kotlin foreground service that already does the sensing (section 4.3) keeps one WebSocket open to `WS /v1/ws`, authenticated on connect. On connect it sends the last event id it has seen (`since`); the server first replays the missed events, then streams new ones. Visibility (decided 2026-11-19): every event of every season the user has joined, not only flips involving the user's team, because the live Standings screen needs flips between other teams and flips are public game state; the phone alone decides to notify (own team's losses only). No server-side notification rate limit (decided 2026-11-20): the phone limits one notification per building per 10 minutes, and a server drop would also hide flips from live standings. Delivery is at least once: the app ignores ids it has already handled.
 3. When the player's team loses a building, the service posts a local Android notification ("AC took the Politehnica building"). Tapping it opens that building's screen. The service does this itself, so it works with the JS runtime closed.
 4. Connection handling: a ping every 30 s, reconnect with exponential backoff and jitter, close the socket when the session stops.
 5. Fallback when no session runs: a WorkManager job (every 15 minutes, the Android minimum; Doze can stretch it) calls `GET /v1/me/events?since=<id>` and shows the same notifications. Decided 2026-11-17 (Cristea): this is the existing Week 3 sync job, whose headless JS run polls the feed after the segment sync and hands the events to the Kotlin pipeline; no second job.
@@ -660,9 +661,10 @@ Goal: the loop is visible and social.
 
 **Ionut**
 - WebSocket hub in the API: auth on connect, Valkey pub/sub fan-out so two replicas share events.
-- Notifications (7.2.1): `game_event` table written in the claim transaction, replay of missed events on WebSocket connect (`since`), `GET /v1/me/events`, per-user notification rate limit. Pair with Cristea on the socket in the Kotlin service, the local notification and the tap that deep-links to the building screen.
+- Notifications (7.2.1): `game_event` table written in the claim transaction, replay of missed events on WebSocket connect (`since`), `GET /v1/me/events` (the per-user notification rate limit is dropped, see 7.2.1). Pair with Cristea on the socket in the Kotlin service, the local notification and the tap that deep-links to the building screen.
 - Landmarks progress (Eiffel Tower style conversion) in `GET /v1/me/season-stats`.
-- `POST /v1/landing-scans` with strict rate limits.
+- `POST /v1/landing-scans` with strict rate limits (1 per user per building per 10 minutes, 6 per user per hour). Needs a valid check-in; worth 20 points (`LANDING_SCAN_POINTS`), counted in ownership and leaderboards (decided 2026-11-19).
+- Anti-cheat v2 is flag-only (`device_burst`, `device_shared`, `identical_segment`, `impossible_sequence`): no new rejection reason (decided 2026-11-19).
 - Anti-cheat v2: per-device limits, repeated identical segment detection, impossible-sequence checks (climbs in two buildings too close in time), fraud flag reasons.
 
 Exit: two phones on different teams: phone 1 climbs, phone 2's building standings flip live and phone 2 gets a notification. The barometer-less path works on a device or an emulator flag.
@@ -865,8 +867,8 @@ Our 6 weeks map onto this as: Week 1 = M1, Week 2 and 3 = M2, Week 4 = M3, Week 
 | Background sync trigger: decided 2026-11-06, WorkManager from the native module, waking the JS worker through Headless JS | Cristea | Week 3 |
 | Point values and diminishing-returns curve | Both | Week 3 |
 | CI precision threshold for the trace-replay gate | Cristea | Week 2 |
-| Accessible contribution mode rules. Cristea's position 2026-11-17: the app shows the `points` the server returns for a landing scan and computes none; the per-scan value is Ionut's server setting. Waiting on Ionut | Both | Week 4 |
-| Bring a third person for the pilot logistics (captains, recruiting)? Cristea's position 2026-11-17: no. Waiting on Ionut | Both | Week 4 |
+| Accessible contribution mode rules. Cristea's position 2026-11-17: the app shows the `points` the server returns for a landing scan and computes none; the per-scan value is Ionut's server setting. Decided 2026-11-19 (Ionut): 20 points per landing scan | Both | Week 4 |
+| Bring a third person for the pilot logistics (captains, recruiting)? Cristea's position 2026-11-17: no. Decided 2026-11-20 (Ionut): no third person for the pilot | Both | Week 4 |
 
 ### 15.4 Glossary
 

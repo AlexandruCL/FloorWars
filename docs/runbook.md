@@ -357,6 +357,22 @@ upkeep for a team of two with no users yet. Consequences to keep in mind:
    - `SELECT * FROM building_claim;`
    - `SELECT * FROM team_building_score ORDER BY points DESC;`
 
+## 14. Week 4 deploy (Ionut, on the VM)
+
+Not run yet. The Week 3 fixes (#69 to #71) are probably not live either (last known deploy `fbe9c18`); they go out with this one.
+
+1. Back up the database first (section 11 or the backup job; check the dump is non-empty).
+2. Pull the Week 4 tag/commit as in section 7.
+3. New migration `0006_landing_scan` (landing scans table, expand-only; its downgrade drops all scans) runs through the `migrate` service with the migrator role, as in section 13: `docker compose ... run --rm migrate alembic upgrade head`. Local stack (PR #85): `docker compose -f docker-compose.yml -f compose.local.yml --profile tools run --rm --no-deps -T migrate alembic upgrade head`.
+4. Partitions: `docker compose ... run --rm migrate python -m app.segments.partitions`.
+5. Deploy (section 7), **both API replicas together**: an old replica publishes events without `season_id`, which a new hub drops (the 15-minute poll covers the gap). `deploy.sh` reloads Caddy. Caddy deletes the `access_token` query parameter from its log; check that a socket opened through Caddy works.
+6. `curl.exe -i https://api.floorwars.me/healthz` returns 200.
+7. Four checks without a token (401, not 404): `GET /v1/seasons`, `GET /v1/me/events`, `POST /v1/landing-scans`, plus `GET /v1/me/segments`.
+8. `python tools/e2e/e2e_check.py --email <you> --qr-token-file <token> --upload` (see `tools/e2e/README.md`).
+9. Print the landing stickers (`python tools/qr/make_entrance_qr.py --landing ...`).
+
+**TODO (Week 5): `game_event` retention.** All rows are kept this week. The Week 5 retention job drops rows older than the season end plus 30 days.
+
 ## Cost hygiene
 
 Deallocate the VM when not working on it during development, delete unused disks, IPs and
