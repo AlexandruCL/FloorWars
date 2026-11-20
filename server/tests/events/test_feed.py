@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable
+from functools import cache
 from pathlib import Path
 from typing import Any, cast
 
@@ -22,6 +23,7 @@ from tests.segments.api_world import Climber, World, climb, make_world
 CONTRACT = Path(__file__).resolve().parents[3] / "contracts" / "openapi.yaml"
 
 
+@cache
 def _schemas() -> dict[str, Any]:
     schemas: dict[str, Any] = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))["components"][
         "schemas"
