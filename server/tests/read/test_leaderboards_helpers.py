@@ -48,6 +48,7 @@ class Flip:
     from_code: str | None
     to_code: str
     at: datetime
+    season_id: int = 2
 
 
 def test_keys() -> None:
@@ -127,7 +128,7 @@ def test_publish_flip_message() -> None:
     lb.publish_flip(vk, Flip(4, 12, None, "AC", at))
     channel, message = vk.published[0]
     assert channel == "fw:events"
-    assert json.loads(message) == {
+    event = {
         "type": "building_flipped",
         "event_id": 12,
         "building_id": 4,
@@ -135,3 +136,9 @@ def test_publish_flip_message() -> None:
         "to_team": "AC",
         "at": at.isoformat(),
     }
+    # The internal message adds season_id; the event itself (the socket's JSON) has none.
+    assert json.loads(message) == {**event, "season_id": 2}
+    assert lb.flip_message(Flip(4, 12, None, "AC", at)) == (
+        '{"type":"building_flipped","event_id":12,"building_id":4,"from_team":null,'
+        '"to_team":"AC","at":"2026-11-07T10:00:00+00:00"}'
+    )

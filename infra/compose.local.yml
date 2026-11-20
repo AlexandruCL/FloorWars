@@ -3,6 +3,7 @@
 #   cd infra
 #   docker compose -f docker-compose.yml -f compose.local.yml up -d --build --wait
 #   curl -s http://localhost:8080/healthz              # {"status":"ok"} via Caddy -> 2 api replicas
+#   docker compose -f docker-compose.yml -f compose.local.yml --profile tools run --rm --no-deps -T \n#     migrate alembic upgrade head                     # schema, as deploy.sh does on the VM
 #   docker compose -f docker-compose.yml -f compose.local.yml down -v
 #
 # Differences from production: api is built from ../server, Caddy serves plain HTTP on :8080
@@ -27,7 +28,7 @@ services:
       FLOORWARS_ENV: dev
       FLOORWARS_LOG_LEVEL: ${FLOORWARS_LOG_LEVEL:-INFO}
       FLOORWARS_MAIL_BACKEND: log # codes are not sent; the log shows "mail sent" only
-      FLOORWARS_ACS_ENDPOINT: ""
+      FLOORWARS_ACS_ENDPOINT: https://local.communication.azure.com # dummy; the settings reject ""
       FLOORWARS_MAIL_FROM: ""
 
   migrate:
