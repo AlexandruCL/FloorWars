@@ -106,7 +106,7 @@ def test_segments_same_started_at_is_not_repeated_or_skipped(client: TestClient)
     h = _headers(client, world)
     seen: list[str] = []
     cursor = ""
-    while True:
+    for _ in range(10):  # bounded: a repeating cursor must fail, not hang
         page = client.get(f"/v1/me/segments?limit=1&cursor={cursor}", headers=h).json()
         seen += [i["id"] for i in page["items"]]
         if page["next_cursor"] is None:
