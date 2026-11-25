@@ -1,0 +1,175 @@
+<title>FloorWars Simple Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;600;700&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: one drawable diagram, then the story told along its numbers, then a three-step scaling strip. */
+:root {
+  --paper: #F6F2EC; --zone: #EEE7DD; --card: #FFFDF9; --ink: #241E19; --muted: #625A52; --line: #CFC6BA; --accent: #B8430F; --on-accent: #FFFFFF;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-cond: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --paper: #1A1613; --zone: #221D19; --card: #29231F; --ink: #EEE6DB; --muted: #ADA295; --line: #4A4037; --accent: #E8804A; --on-accent: #1A1613; color-scheme: dark; } }
+:root[data-theme="dark"] { --paper: #1A1613; --zone: #221D19; --card: #29231F; --ink: #EEE6DB; --muted: #ADA295; --line: #4A4037; --accent: #E8804A; --on-accent: #1A1613; color-scheme: dark; }
+body { background: var(--paper); color: var(--ink); font: 16px/1.6 var(--f-body); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 1100px; margin: 0 auto; padding-block: 36px 56px; display: grid; gap: 36px; }
+h1, h2 { font-family: var(--f-cond); line-height: 1.15; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(2rem, 5vw, 3rem); }
+h2 { font-size: 1.6rem; }
+p { margin: 0; max-width: 70ch; }
+.muted { color: var(--muted); }
+section { display: grid; gap: 14px; }
+.frame { background: var(--card); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; }
+.frame svg { min-width: 720px; }
+ol { margin: 0; padding-left: 1.4em; display: grid; gap: 8px; max-width: 72ch; }
+.pill { display: inline-grid; place-items: center; min-width: 1.5rem; height: 1.5rem; border-radius: 999px; background: var(--accent); color: var(--on-accent); font: 700 0.85rem/1 var(--f-cond); margin-right: 6px; vertical-align: 1px; }
+.boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px 32px; max-width: 1000px; }
+.boxes p { max-width: none; }
+.boxes strong { font-family: var(--f-cond); font-size: 1.05rem; }
+svg { display: block; width: 100%; height: auto; font-family: var(--f-cond); }
+svg .zone { fill: var(--zone); stroke: var(--line); stroke-width: 1.5; }
+svg .box { fill: var(--card); stroke: var(--ink); stroke-width: 1.8; }
+svg .t { font-size: 19px; font-weight: 700; fill: var(--ink); }
+svg .s { font-size: 14px; fill: var(--muted); }
+svg .zl { font-size: 15px; font-weight: 700; fill: var(--muted); }
+svg .edge { fill: none; stroke: var(--ink); stroke-width: 2; }
+svg .ah { fill: var(--ink); }
+svg .el { font-size: 14px; fill: var(--ink); }
+svg .badge circle { fill: var(--accent); }
+svg .badge text { fill: var(--on-accent); font-size: 14px; font-weight: 700; text-anchor: middle; }
+svg .mid { text-anchor: middle; }
+@media print { .frame svg { min-width: 0; } body { background: #fff; } }
+</style>
+
+<div class="wrap">
+<header style="display:grid;gap:10px">
+  <h1>FloorWars, the simple version</h1>
+  <p>The whole system in seven boxes and six arrows, small enough to draw on one sheet and explain in two minutes. The <a href="https://claude.ai/artifact/JhnK9dHsURTWPMQF3wmMXR#sheet" style="color:var(--accent)">detailed sheet</a> has every component and all 13 connections.</p>
+</header>
+
+<section aria-labelledby="d">
+  <h2 id="d">The drawing</h2>
+  <div class="frame">
+    <svg viewBox="0 0 1000 470" role="img" aria-label="The phone app detects climbs and talks over HTTPS and a live WebSocket to Caddy on an Azure server; Caddy passes requests to two API copies, which store data in PostgreSQL and use Valkey for leaderboards and live messages; Azure Email sends sign-in codes; GitHub builds and deploys new versions.">
+      <defs><marker id="sa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+
+      <rect class="zone" x="20" y="30" width="270" height="400" rx="12"/>
+      <text class="zl" x="38" y="58">Player's phone</text>
+      <rect class="box" x="40" y="80" width="230" height="110" rx="8"/>
+      <text class="t" x="56" y="112">App screens</text>
+      <text class="s" x="56" y="136">React Native</text>
+      <text class="s" x="56" y="156">sign in, check in, standings,</text>
+      <text class="s" x="56" y="174">leaderboards, history</text>
+      <rect class="box" x="40" y="240" width="230" height="160" rx="8"/>
+      <text class="t" x="56" y="272">Sensor service</text>
+      <text class="s" x="56" y="296">Kotlin, runs in the background</text>
+      <text class="s" x="56" y="318">barometer (height) + steps</text>
+      <text class="s" x="56" y="340">decides: stairs or elevator?</text>
+      <text class="s" x="56" y="362">saves climbs until they are sent</text>
+      <text class="s" x="56" y="384">shows the "you lost" alert</text>
+      <line class="edge" x1="155" y1="192" x2="155" y2="238" marker-start="url(#sa)" marker-end="url(#sa)"/>
+
+      <rect class="zone" x="350" y="30" width="460" height="400" rx="12"/>
+      <text class="zl" x="368" y="58">Server: one Azure VM, Docker</text>
+      <rect class="box" x="370" y="110" width="140" height="100" rx="8"/>
+      <text class="t" x="386" y="142">Caddy</text>
+      <text class="s" x="386" y="166">front door,</text>
+      <text class="s" x="386" y="186">HTTPS</text>
+      <rect class="box" x="580" y="80" width="210" height="160" rx="8"/>
+      <rect class="box" x="572" y="88" width="210" height="160" rx="8"/>
+      <text class="t" x="588" y="120">API × 2</text>
+      <text class="s" x="588" y="144">FastAPI (Python)</text>
+      <text class="s" x="588" y="168">checks each climb,</text>
+      <text class="s" x="588" y="188">adds points,</text>
+      <text class="s" x="588" y="208">picks the building owner</text>
+      <rect class="box" x="370" y="310" width="190" height="100" rx="8"/>
+      <text class="t" x="386" y="342">PostgreSQL</text>
+      <text class="s" x="386" y="366">all game data:</text>
+      <text class="s" x="386" y="386">players, climbs, owners</text>
+      <rect class="box" x="600" y="310" width="190" height="100" rx="8"/>
+      <text class="t" x="616" y="342">Valkey</text>
+      <text class="s" x="616" y="366">fast memory: leaderboards,</text>
+      <text class="s" x="616" y="386">limits, live messages</text>
+
+      <rect class="box" x="840" y="110" width="140" height="100" rx="8"/>
+      <text class="t" x="856" y="142">Azure Email</text>
+      <text class="s" x="856" y="166">sends the</text>
+      <text class="s" x="856" y="186">sign-in code</text>
+      <rect class="box" x="840" y="310" width="140" height="100" rx="8"/>
+      <text class="t" x="856" y="342">GitHub</text>
+      <text class="s" x="856" y="366">tests, builds,</text>
+      <text class="s" x="856" y="386">deploys to the VM</text>
+
+      <!-- 1 phone to server -->
+      <line class="edge" x1="270" y1="135" x2="368" y2="135" marker-end="url(#sa)"/>
+      <g class="badge" transform="translate(319,135)"><circle r="13"/><text dy="0.35em">1</text></g>
+      <text class="el mid" x="319" y="112">HTTPS</text>
+      <!-- 5 live back to phone -->
+      <path class="edge" d="M410,210 V290 H272" marker-end="url(#sa)"/>
+      <g class="badge" transform="translate(330,290)"><circle r="13"/><text dy="0.35em">5</text></g>
+      <text class="el mid" x="320" y="326">live</text>
+      <text class="el mid" x="320" y="344">WebSocket</text>
+      <!-- 2 caddy to api -->
+      <line class="edge" x1="510" y1="160" x2="570" y2="160" marker-end="url(#sa)"/>
+      <g class="badge" transform="translate(540,160)"><circle r="13"/><text dy="0.35em">2</text></g>
+      <!-- 3 api to postgres -->
+      <line class="edge" x1="600" y1="248" x2="520" y2="308" marker-end="url(#sa)"/>
+      <g class="badge" transform="translate(560,278)"><circle r="13"/><text dy="0.35em">3</text></g>
+      <!-- 4 api <-> valkey -->
+      <line class="edge" x1="720" y1="250" x2="720" y2="308" marker-start="url(#sa)" marker-end="url(#sa)"/>
+      <g class="badge" transform="translate(720,279)"><circle r="13"/><text dy="0.35em">4</text></g>
+      <!-- 6 api to email -->
+      <line class="edge" x1="790" y1="160" x2="838" y2="160" marker-end="url(#sa)"/>
+      <g class="badge" transform="translate(814,160)"><circle r="13"/><text dy="0.35em">6</text></g>
+      <!-- deploy -->
+      <line class="edge" x1="838" y1="360" x2="812" y2="360" marker-end="url(#sa)"/>    </svg>
+  </div>
+  <p class="muted">Draw the two big zones first (phone, server), then the seven boxes, then the arrows with their numbers.</p>
+</section>
+
+<section aria-labelledby="story">
+  <h2 id="story">Explain it by following one climb</h2>
+  <ol>
+    <li><span class="pill">1</span>The player signs in with a code sent by <strong>Azure Email</strong> <span class="pill">6</span>, picks a faculty team and checks in at a building. The <strong>sensor service</strong> starts measuring height (barometer) and steps. When height goes up with about 4 to 10 steps per metre, it is stairs; height without steps is an elevator and scores nothing. The climb is saved on the phone and sent later over <strong>HTTPS</strong>, so it is never lost without internet.</li>
+    <li><span class="pill">2</span><strong>Caddy</strong> is the front door: it handles HTTPS and passes each request to one of the two <strong>API</strong> copies. Two copies means one can restart while the other works.</li>
+    <li><span class="pill">3</span>The API checks the climb again (a modified app cannot be trusted), saves it in <strong>PostgreSQL</strong>, adds the points to the player's team, and recomputes who owns the building: the team with the most points in the last 7 days. All of this is one database transaction, so it is saved completely or not at all.</li>
+    <li><span class="pill">4</span>If the owner changed, the API tells <strong>Valkey</strong>. Valkey keeps the leaderboards in memory and passes the news to both API copies.</li>
+    <li><span class="pill">5</span>Each API copy pushes the news over the <strong>live WebSocket</strong> to the phones. The phones of the team that lost show "AC took the Politehnica building". A phone that was offline catches up when it reconnects. We built this channel ourselves because Firebase is not allowed.</li>
+  </ol>
+  <p><strong>GitHub</strong> tests every change, builds the server, and a deploy script runs the new version on the VM.</p>
+</section>
+
+<section aria-labelledby="sc">
+  <h2 id="sc">Scaling in three steps</h2>
+  <div class="frame">
+    <svg viewBox="0 0 1000 250" role="img" aria-label="Now one server runs everything; at 10,000 players a load balancer, two app servers and a separate database server with a backup; at 1,000,000 players many API servers, separate live-message servers, a queue and database read copies.">
+      <defs><marker id="sb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="t" x="20" y="30">Now: 100 players</text>
+      <rect class="box" x="20" y="50" width="280" height="44" rx="6"/><text class="el mid" x="160" y="78">phones</text>
+      <line class="edge" x1="160" y1="94" x2="160" y2="128" marker-end="url(#sb)"/>
+      <rect class="box" x="20" y="130" width="280" height="100" rx="6"/><text class="el mid" x="160" y="168">1 server runs everything:</text><text class="el mid" x="160" y="192">Caddy, API × 2, database, Valkey</text>
+
+      <text class="t" x="350" y="30">10,000 players</text>
+      <rect class="box" x="350" y="50" width="290" height="44" rx="6"/><text class="el mid" x="495" y="78">load balancer</text>
+      <line class="edge" x1="420" y1="94" x2="420" y2="118" marker-end="url(#sb)"/><line class="edge" x1="570" y1="94" x2="570" y2="118" marker-end="url(#sb)"/>
+      <rect class="box" x="350" y="120" width="135" height="44" rx="6"/><text class="el mid" x="417" y="148">app server 1</text>
+      <rect class="box" x="505" y="120" width="135" height="44" rx="6"/><text class="el mid" x="572" y="148">app server 2</text>
+      <line class="edge" x1="495" y1="164" x2="495" y2="184" marker-end="url(#sb)"/>
+      <rect class="box" x="350" y="186" width="290" height="44" rx="6"/><text class="el mid" x="495" y="214">database server + standby + backups</text>
+
+      <text class="t" x="690" y="30">1,000,000 players</text>
+      <rect class="box" x="690" y="50" width="290" height="44" rx="6"/><text class="el mid" x="835" y="78">load balancer</text>
+      <line class="edge" x1="760" y1="94" x2="760" y2="118" marker-end="url(#sb)"/><line class="edge" x1="910" y1="94" x2="910" y2="118" marker-end="url(#sb)"/>
+      <rect class="box" x="690" y="120" width="135" height="44" rx="6"/><text class="el mid" x="757" y="148">many API servers</text>
+      <rect class="box" x="845" y="120" width="135" height="44" rx="6"/><text class="el mid" x="912" y="148">live-message servers</text>
+      <line class="edge" x1="757" y1="164" x2="757" y2="184" marker-end="url(#sb)"/>
+      <rect class="box" x="690" y="186" width="290" height="44" rx="6"/><text class="el mid" x="835" y="214">queue → database + read copies</text>
+    </svg>
+  </div>
+  <div class="boxes">
+    <p><strong>Now, about 100 players.</strong> One small VM is enough because the phones do the hard work: the server gets one short summary per climb, not the sensor data. Weak point: if that one VM stops, the game stops.</p>
+    <p><strong>10,000 players.</strong> Put the database on its own server with a standby copy and backups, add a second app server behind a load balancer. The API needs no code change, because its copies already share news through Valkey.</p>
+    <p><strong>1,000,000 players.</strong> Live messages get their own servers, since one flip would go to about 300,000 phones. Climbs go through a queue per building so busy buildings do not wait on each other, and read copies of the database take the load of screens and leaderboards.</p>
+  </div>
+  <p class="muted">Player numbers are estimates from how often the app talks to the server, not measured load.</p>
+</section>
+</div>
