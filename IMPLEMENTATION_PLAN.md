@@ -679,6 +679,7 @@ Goal: feature complete and operable.
 - Offline and error states everywhere: no network, expired token, 5xx, camera denied, missing sensor.
 - Accessible contribution mode behind a flag and non-shaming elevator wording (agree rules with Ionut).
 - GDPR: in-app privacy notice, export my data, delete my account, under-18 gate.
+- Remote check-in (decided 2026-11-25): pick a building from a list and climb anywhere, home included. New `POST /v1/checkins` method `pick` (`building_id`); check-ins last 24 h (`checkin_ttl_s` 86400); a 24 h cooldown on switching building, for every method (403 `building-locked`). QR stays as the quick check-in at the faculty; the geofence button leaves the app. The `impossible_sequence` flag goes, since the check-in building no longer says where the user is. Contract change reviewed by Ionut. Spec: `cristea/week_5/remote_checkin.md`. The same PR updates the 90-minute and "QR or geofence" lines in sections 1, 2, 3, 5, 6 and the glossary.
 - Classifier tuning pass 2. Thresholds move into a structure that the server `config` table can override via `GET /v1/config`.
 
 **Ionut**
@@ -731,7 +732,7 @@ Exit: signed APK on GitHub Releases; evaluation report with precision and recall
 | 2 | Segmenter v1, replay harness, auth and check-in UI | Auth, check-in, seed data, staging deploy | Sign up, then check in on a device |
 | 3 | Live service, outbox, sync | Segments API, plausibility, claim transaction, Valkey | Real climb becomes a verified claim |
 | 4 | WS manager, building standings and leaderboards UI, history, fallback, tuning 1 | WS hub, event feed and notifications, anti-cheat v2 | Two phones: live flip and notification |
-| 5 | Share cards, GDPR UI, offline states, tuning 2 | Admin panel, config table, battery runs, monitoring, backups, k6 | Feature complete, operable |
+| 5 | Share cards, GDPR UI, offline states, tuning 2, remote check-in | Admin panel, config table, battery runs, monitoring, backups, k6 | Feature complete, operable |
 | 6 | Pilot ground truth, evaluation analysis, UX polish | Pilot ops, metrics, release APK workflow, evaluation charts, freeze, demo infra | Pilot done, final demo |
 
 ---

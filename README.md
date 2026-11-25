@@ -112,6 +112,7 @@ Starting values are ours and tunable from real data: 1 point per verified step, 
 | `contracts/openapi.yaml` | API contract (OpenAPI 3.1) |
 | `contracts/prism/` | How to run the Prism mock of the contract (`npm run mock:api` in the root `package.json`) |
 | `cristea/` | Cristea's tasks and status per week. Week 2: `cristea/week_2/week_2_summary.md` (what was built), `finish_week_2.md` (manual steps to finish) and `tester_guide.pdf` (for testers) |
+| `cristea/week_5/architecture/` | Architecture sheet for the MSA lab: every service, the 13 connections between them, and how the design scales to 10,000 and 1,000,000 players. `FloorWars_architecture_explained.pdf` is the full guide; `architecture.html` is the source of the [interactive version](https://claude.ai/artifact/JhnK9dHsURTWPMQF3wmMXR#sheet) |
 | `docs/` | Trace format and expected values (`trace_format.md`), classifier results (`evaluation.md`), test device log (`devices.md`), VM runbook (`runbook.md`), cost estimate (`cost.md`) |
 | `infra/` | Docker Compose stack, Caddyfile, `deploy.sh`, encrypted secrets. See `infra/README.md` |
 | `fixtures/synthetic/` | Synthetic labelled traces for week 1. Not real data |
