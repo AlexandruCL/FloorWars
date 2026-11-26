@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,7 +8,7 @@ import { clock, pullToRefresh, ReadState, useRead } from '../data/useRead';
 import { useActiveCheckin } from '../checkin/active';
 import type { MainStackParamList } from '../navigation/types';
 import { useGameEvents } from '../realtime/useGameEvents';
-import { BuildingDrawing } from '../standings/BuildingDrawing';
+import { BuildingDrawing, type Replay } from '../standings/BuildingDrawing';
 import { standingsOrder } from '../standings/facade';
 import { fightLine } from '../standings/fight';
 import { Body, Button, colors, Screen, TeamTag, type } from '../ui/parts';
@@ -43,17 +44,33 @@ export function BuildingScreen({ route, navigation }: Props) {
   const { width } = useWindowDimensions();
   const { bottom } = useSafeAreaInsets();
 
-  // A flip here changes the owner and the order: read the standings again.
-  const refetch = standings.refresh;
-  useGameEvents(e => {
-    if (e.type === 'building_flipped' && e.building_id === id) {
-      refetch();
-    }
-  });
-
   const data = standings.data;
   const owner = data?.owner?.code ?? null;
   const teams = data ? standingsOrder(data.teams, owner) : [];
+
+  // A flip here: keep what the building looked like, read the standings again, then replay
+  // the change floor by floor once the new standings arrive (DESIGN.md section 11).
+  const refetch = standings.refresh;
+  const flipFrom = useRef<{ teams: typeof teams; owner: string | null }>(null);
+  const [replay, setReplay] = useState<Replay | null>(null);
+  useGameEvents(e => {
+    if (e.type === 'building_flipped' && e.building_id === id) {
+      flipFrom.current = { teams, owner };
+      refetch();
+    }
+  });
+  useEffect(() => {
+    if (flipFrom.current && data) {
+      const from = flipFrom.current;
+      flipFrom.current = null;
+      setReplay({
+        kind: 'flip',
+        from: from.teams,
+        owner: from.owner,
+        key: Date.now(),
+      });
+    }
+  }, [data]);
   const total = teams.reduce((s, t) => s + t.points, 0);
   const leader = teams[0]?.points ?? 0;
 
@@ -67,6 +84,7 @@ export function BuildingScreen({ route, navigation }: Props) {
           name={name}
           width={width - 32}
           height={240}
+          replay={replay}
         />
         <View style={styles.titleBlock}>
           <Text style={type.title} accessibilityRole="header">

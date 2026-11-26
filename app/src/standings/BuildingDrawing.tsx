@@ -1,6 +1,7 @@
-import type { ReactElement } from 'react';
-import { View } from 'react-native';
-import Svg, { Polygon, Rect, Text as SvgText } from 'react-native-svg';
+import { type ReactElement, useEffect, useRef } from 'react';
+import { Animated, Easing, View } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
+import Svg, { G, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 import { colors, fonts } from '../ui/parts';
 import { teamTone } from '../ui/tone';
 import {
@@ -12,6 +13,62 @@ import {
 } from './facade';
 
 type Team = { code: string; color_hex: string; points: number };
+
+// What the building looked like before, to replay the change floor by floor: a flip (the old
+// standings) or a check-in (nothing lit). A new key starts the replay.
+export type Replay = {
+  kind: 'flip' | 'checkin';
+  from: Team[];
+  owner: string | null;
+  key: number;
+};
+
+const AnimatedG = Animated.createAnimatedComponent(G);
+// DESIGN.md section 11: flip 180 ms a floor, 40 ms apart; check-in 160 ms, 30 ms apart; ease-out.
+const PACE = { flip: [180, 40], checkin: [160, 30] } as const;
+const MAX_FLOORS = 8;
+
+// One opacity per floor, so at most eight values animate, never one per window.
+function useReplay(replay: Replay | null | undefined, floors: number) {
+  const reduce = useReducedMotion();
+  const ops = useRef(
+    Array.from({ length: MAX_FLOORS }, () => new Animated.Value(1)),
+  ).current;
+  const flag = useRef(new Animated.Value(1)).current;
+  const key = replay?.key;
+  const kind = replay?.kind;
+  useEffect(() => {
+    if (key === undefined || !kind) {
+      return;
+    }
+    const used = ops.slice(0, floors);
+    [...used, flag].forEach(v => v.setValue(0));
+    const ease = Easing.bezier(0.23, 1, 0.32, 1);
+    const fade = (v: Animated.Value, duration: number) =>
+      Animated.timing(v, {
+        toValue: 1,
+        duration,
+        easing: ease,
+        useNativeDriver: false,
+      });
+    // Reduced motion: one 150 ms crossfade for the whole building.
+    const run = reduce
+      ? Animated.parallel([...used, flag].map(v => fade(v, 150)))
+      : Animated.parallel([
+          Animated.stagger(
+            PACE[kind][1],
+            used.map(v => fade(v, PACE[kind][0])),
+          ),
+          Animated.sequence([
+            Animated.delay(PACE[kind][1] * (floors - 1)),
+            fade(flag, 200),
+          ]),
+        ]);
+    run.start();
+    return () => run.stop();
+  }, [key, kind, floors, reduce, ops, flag]);
+  return { ops, flag };
+}
 
 const WINDOW_RATIO = { tall: 0.78, square: 1, wide: 1.32 };
 const WINDOW_SIZE = {
@@ -33,6 +90,7 @@ export function BuildingDrawing({
   height,
   name,
   unlit = false,
+  replay,
 }: {
   buildingId: number;
   teams: Team[];
@@ -41,6 +99,7 @@ export function BuildingDrawing({
   height: number;
   name?: string;
   unlit?: boolean;
+  replay?: Replay | null;
 }) {
   const f = facade(buildingId);
   const large = width >= 160;
@@ -129,7 +188,16 @@ export function BuildingDrawing({
 
   const slots = windowSlots(f);
   const lit = unlit ? [] : allocateWindows(teams, slots.length, owner);
-  const tone = new Map(teams.map(t => [t.code, teamTone(t.color_hex)]));
+  const before = replay
+    ? allocateWindows(replay.from, slots.length, replay.owner)
+    : lit;
+  const tone = new Map(
+    [...(replay?.from ?? []), ...teams].map(t => [
+      t.code,
+      teamTone(t.color_hex),
+    ]),
+  );
+  const { ops, flag } = useReplay(replay, f.floors);
   const [sw, sh] = WINDOW_SIZE[f.windows];
   const ww = bw * sw;
   const wh = fh * sh;
@@ -171,6 +239,22 @@ export function BuildingDrawing({
       });
   }
 
+  const windowRect = (
+    s: { floor: number; bay: number },
+    i: number,
+    t: Team | undefined,
+  ) => (
+    <Rect
+      key={i}
+      x={fx + s.bay * bw + (bw - ww) / 2}
+      y={rowY(s.floor) + (fh - wh) / 2}
+      width={ww}
+      height={wh}
+      rx={large ? 1.5 : 0.5}
+      fill={t ? tone.get(t.code)!.tone : colors.window}
+    />
+  );
+
   const label = `${name ? `${name}. ` : ''}${
     unlit ? describeStandings([], null) : describeStandings(teams, owner)
   }`;
@@ -193,19 +277,18 @@ export function BuildingDrawing({
           height={fh * 0.74}
           fill={colors.facadeLight}
         />
-        {slots.map((s, i) => (
-          <Rect
-            key={i}
-            x={fx + s.bay * bw + (bw - ww) / 2}
-            y={rowY(s.floor) + (fh - wh) / 2}
-            width={ww}
-            height={wh}
-            rx={large ? 1.5 : 0.5}
-            fill={lit[i] ? tone.get(lit[i].code)!.tone : colors.window}
-          />
-        ))}
+        {slots.map((s, i) => windowRect(s, i, before[i]))}
+        {/* The new windows, one group per floor, fade in over the old ones from the ground up. */}
+        {replay &&
+          Array.from({ length: f.floors }, (_, floor) => (
+            <AnimatedG key={`f${floor}`} opacity={ops[floor]}>
+              {slots.map(
+                (s, i) => s.floor === floor && windowRect(s, i, lit[i]),
+              )}
+            </AnimatedG>
+          ))}
         {ownerTone && (
-          <>
+          <AnimatedG opacity={replay ? flag : 1}>
             <Rect
               x={poleX}
               y={base - pole}
@@ -232,7 +315,7 @@ export function BuildingDrawing({
                 {ownerTeam!.code}
               </SvgText>
             )}
-          </>
+          </AnimatedG>
         )}
         {bands.map(b => (
           <SvgText
