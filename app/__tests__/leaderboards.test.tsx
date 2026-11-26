@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { api, ApiError } from '../src/api/client';
 import { clearReadCache } from '../src/data/useRead';
 import { FloorSensors } from '../src/native/floorSensors';
-import { LeaderboardsScreen } from '../src/screens/LeaderboardsScreen';
+import { RanksScreen } from '../src/screens/RanksScreen';
 
 jest.mock('../src/api/client', () => ({
   ...jest.requireActual('../src/api/client'),
@@ -51,7 +51,7 @@ const selected = (name: string) =>
   screen.getByRole('radio', { name }).props.accessibilityState.selected;
 
 test('defaults to the active season and the individual board, limit 50', async () => {
-  await render(<LeaderboardsScreen />);
+  await render(<RanksScreen />);
   expect(await screen.findByLabelText('1. Ana, 120 points')).toBeTruthy();
   expect(selected('Season 3')).toBe(true);
   expect(boardCalls()).toEqual([
@@ -60,7 +60,7 @@ test('defaults to the active season and the individual board, limit 50', async (
 });
 
 test('tabs send the right scope and building_id', async () => {
-  await render(<LeaderboardsScreen />);
+  await render(<RanksScreen />);
   await screen.findByLabelText('1. Ana, 120 points');
   await fireEvent.press(screen.getByRole('tab', { name: 'Team' }));
   await screen.findByLabelText('1. Ana, 120 points');
@@ -79,7 +79,7 @@ test('tabs send the right scope and building_id', async () => {
 
 test('building picker defaults to the check-in building, else first by name', async () => {
   native.getActiveCheckin.mockResolvedValue({ building_id: 9 });
-  await render(<LeaderboardsScreen />);
+  await render(<RanksScreen />);
   await fireEvent.press(await screen.findByRole('tab', { name: 'Building' }));
   await screen.findByRole('radio', { name: 'Zeta Hall' });
   await screen.findByText('1');
@@ -92,7 +92,7 @@ test('building picker defaults to the check-in building, else first by name', as
 
 test('without GET /seasons the selector shows only the active season', async () => {
   seasonsResult = () => Promise.reject(new ApiError(404, {}));
-  await render(<LeaderboardsScreen />);
+  await render(<RanksScreen />);
   await screen.findByLabelText('1. Ana, 120 points');
   expect(
     screen.getAllByRole('radio').map(n => n.props.accessibilityLabel ?? ''),
@@ -101,7 +101,7 @@ test('without GET /seasons the selector shows only the active season', async () 
 });
 
 test('choosing another season asks for it', async () => {
-  await render(<LeaderboardsScreen />);
+  await render(<RanksScreen />);
   await screen.findByLabelText('1. Ana, 120 points');
   await fireEvent.press(screen.getByRole('radio', { name: 'Season 2' }));
   await screen.findByLabelText('1. Ana, 120 points');
@@ -114,7 +114,7 @@ test('empty and failure states', async () => {
     season_id: 3,
     entries: [],
   });
-  await render(<LeaderboardsScreen />);
+  await render(<RanksScreen />);
   expect(
     await screen.findByText('No points on this board yet this season.'),
   ).toBeTruthy();
@@ -122,7 +122,7 @@ test('empty and failure states', async () => {
 
   clearReadCache();
   boardResult = () => Promise.reject(new TypeError('Network request failed'));
-  await render(<LeaderboardsScreen />);
+  await render(<RanksScreen />);
   expect(
     await screen.findByText(
       "Can't reach the server. Check your connection, then pull down to retry.",
@@ -132,7 +132,7 @@ test('empty and failure states', async () => {
 
   clearReadCache();
   boardResult = () => Promise.reject(new ApiError(500, {}));
-  await render(<LeaderboardsScreen />);
+  await render(<RanksScreen />);
   expect(
     await screen.findByText(
       'Something went wrong loading this. Pull down to retry.',

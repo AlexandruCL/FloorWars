@@ -1,24 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  Alert,
-  AppState,
-  Platform,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { AppState, Platform, StyleSheet, Text, View } from 'react-native';
+import type { CompositeScreenProps } from '@react-navigation/native';
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { clock, useRead } from '../data/useRead';
 import { localMidnight, todayFigures, todayText } from '../history/today';
-import { revokeRefreshToken } from '../auth/logout';
-import { endSession } from '../auth/session';
 import { hasBarometer } from '../landing/landingScan';
 import { FloorSensors } from '../native/floorSensors';
 import type {
   ActiveCheckin,
   FloorSensorsStatus,
 } from '../native/NativeFloorSensors';
-import type { MainStackParamList } from '../navigation/types';
+import type { MainStackParamList, TabParamList } from '../navigation/types';
 import {
   getSyncState,
   subscribeSync,
@@ -51,29 +44,6 @@ type Snapshot = {
   ignoringBattery: boolean | null;
 };
 const TICK_MS = 30_000;
-
-async function confirmSignOut() {
-  const n = await FloorSensors.getPendingCount().catch(() => 0);
-  Alert.alert(
-    'Sign out?',
-    n > 0
-      ? `${n} ${
-          n === 1 ? 'segment is' : 'segments are'
-        } not uploaded yet and will be deleted.`
-      : 'You will need to sign in again.',
-    [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign out',
-        style: 'destructive',
-        onPress: async () => {
-          await revokeRefreshToken();
-          await endSession();
-        },
-      },
-    ],
-  );
-}
 
 async function read(): Promise<Snapshot> {
   const [status, checkin, pending, battery] = await Promise.allSettled([
@@ -171,9 +141,12 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function HomeScreen({
-  navigation,
-}: NativeStackScreenProps<MainStackParamList, 'Home'>) {
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<TabParamList, 'Climb'>,
+  NativeStackScreenProps<MainStackParamList>
+>;
+
+export function HomeScreen({ navigation }: Props) {
   const { snap, now, refresh } = useSnapshot();
   const sync = useSync();
 
@@ -295,33 +268,12 @@ export function HomeScreen({
           title="Building standings"
           variant="text"
           onPress={() =>
-            navigation.navigate('Standings', {
+            navigation.navigate('Building', {
               buildingId: snap.checkin!.building_id,
             })
           }
         />
       )}
-      <Button
-        title="Leaderboards"
-        variant="text"
-        onPress={() => navigation.navigate('Leaderboards')}
-      />
-      <Button
-        title="Climb history"
-        variant="text"
-        onPress={() => navigation.navigate('History')}
-      />
-      <Button
-        title="How it works"
-        variant="text"
-        onPress={() => navigation.navigate('Onboarding')}
-      />
-      <Button
-        title="Sensor logger"
-        variant="text"
-        onPress={() => navigation.navigate('SensorLogger')}
-      />
-      <Button title="Sign out" onPress={confirmSignOut} variant="danger" />
     </Screen>
   );
 }

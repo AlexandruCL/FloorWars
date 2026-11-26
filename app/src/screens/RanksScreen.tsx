@@ -59,7 +59,7 @@ function Chips<T extends string | number>({
   );
 }
 
-export function LeaderboardsScreen() {
+export function RanksScreen() {
   const [scope, setScope] = useState<Scope>('individual');
   const [season, setSeason] = useState<number | null>(null);
   const [building, setBuilding] = useState<number | null>(null);
@@ -109,7 +109,7 @@ export function LeaderboardsScreen() {
 
   return (
     <Screen refreshControl={pullToRefresh(board)}>
-      <Heading>Leaderboards</Heading>
+      <Heading>Ranks</Heading>
       <Chips
         role="tab"
         items={TABS.map(t => ({ value: t.scope, label: t.label }))}

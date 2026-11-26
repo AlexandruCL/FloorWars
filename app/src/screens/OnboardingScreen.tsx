@@ -25,11 +25,11 @@ export function OnboardingScreen({
 }: NativeStackScreenProps<MainStackParamList, 'Onboarding'>) {
   const done = async () => {
     await markOnboardingSeen().catch(() => {});
-    // First run has no Home underneath; reopened from Home it does.
+    // First run has no tabs underneath; reopened from You it does.
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
-      navigation.replace('Home');
+      navigation.replace('Tabs');
     }
   };
   return (

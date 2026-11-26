@@ -26,8 +26,9 @@ async function openConfirm(pending: number) {
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   await render(<App />);
   await fireEvent.press(await screen.findByText('Skip sign-in (dev)'));
-  await fireEvent.press((await screen.findAllByText('Sign out'))[0]);
-  await screen.findByText('Status');
+  // Sign out lives on the You tab.
+  await fireEvent.press(await screen.findByText('You'));
+  await fireEvent.press(await screen.findByText('Sign out'));
   return alert;
 }
 
@@ -36,7 +37,7 @@ test('confirm shows the pending count and the deletion warning', async () => {
   await jest.requireActual('react').act(async () => {});
   expect(alert).toHaveBeenCalledTimes(1);
   expect(alert.mock.calls[0][1]).toBe(
-    '3 segments are not uploaded yet and will be deleted.',
+    '3 climbs are not uploaded yet and will be deleted.',
   );
 });
 

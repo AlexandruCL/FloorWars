@@ -5,8 +5,8 @@ import { clearReadCache } from '../src/data/useRead';
 import { useGameEvents } from '../src/realtime/useGameEvents';
 import {
   FLIP_ANIMATION_MS,
-  StandingsScreen,
-} from '../src/screens/StandingsScreen';
+  BuildingScreen,
+} from '../src/screens/BuildingScreen';
 import { barSegments } from '../src/standings/bar';
 
 jest.mock('../src/api/client', () => ({
@@ -48,7 +48,7 @@ beforeEach(() => {
 
 const show = (buildingId: number | string = 7) =>
   render(
-    <StandingsScreen {...({ route: { params: { buildingId } } } as any)} />,
+    <BuildingScreen {...({ route: { params: { buildingId } } } as any)} />,
   );
 const flip = (e: object) =>
   act(() => hook.mock.calls[hook.mock.calls.length - 1][0](e));

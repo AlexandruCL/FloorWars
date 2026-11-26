@@ -35,18 +35,17 @@ describe('flow', () => {
     expect(await hasSeenOnboarding()).toBe(true);
   });
 
-  test('not shown again once seen; reopened from Home, and closing it returns to Home', async () => {
+  test('not shown again once seen; reopened from You, and closing it returns to You', async () => {
     await Keychain.setGenericPassword('seen', '1', {
       service: 'floorwars.onboarding',
     });
     await render(<RootNavigator isSignedIn />);
     await screen.findByText('Sync now', {}, { timeout: 5000 });
     expect(screen.queryByText(READ)).toBeNull();
-    await fireEvent.press(
-      await screen.findByText('How it works', {}, { timeout: 5000 }),
-    );
+    await fireEvent.press(await screen.findByText('You'));
+    await fireEvent.press(await screen.findByText('How FloorWars works'));
     await fireEvent.press(await screen.findByText(READ));
-    await screen.findByText('Sync now');
+    await screen.findByText('For testers');
   });
 });
 

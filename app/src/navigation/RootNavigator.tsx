@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
-import { DarkTheme, NavigationContainer } from '@react-navigation/native';
+import {
+  DarkTheme,
+  getStateFromPath,
+  NavigationContainer,
+} from '@react-navigation/native';
 import type { LinkingOptions, Theme } from '@react-navigation/native';
+import {
+  type BottomTabNavigationOptions,
+  createBottomTabNavigator,
+} from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { hasSeenOnboarding } from '../auth/session';
 import { EmailScreen, OtpScreen, TeamScreen } from '../screens/AuthScreens';
@@ -8,32 +16,59 @@ import { CheckinScreen } from '../screens/CheckinScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
 import { HomeScreen } from '../screens/HomeScreen';
 import { LandingScanScreen } from '../screens/LandingScanScreen';
-import { LeaderboardsScreen } from '../screens/LeaderboardsScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { SensorLoggerScreen } from '../screens/SensorLoggerScreen';
-import { StandingsScreen } from '../screens/StandingsScreen';
+import { BuildingScreen } from '../screens/BuildingScreen';
+import { BuildingsScreen } from '../screens/BuildingsScreen';
+import { RanksScreen } from '../screens/RanksScreen';
+import { YouScreen } from '../screens/YouScreen';
 import { colors, fonts } from '../ui/parts';
+import { Pictogram, type PictogramName } from '../ui/Pictogram';
 import type {
   AuthStackParamList,
   MainStackParamList,
   RootStackParamList,
+  TabParamList,
 } from './types';
 
-// The lost-building notification opens floorwars://building/{id} (W4-1). Back from Standings goes Home.
-const linking: LinkingOptions<RootStackParamList> = {
+// The lost-building notification opens floorwars://building/{id} (W4-1): Building on top of the
+// Buildings tab, so Back lands on the list.
+export const linking: LinkingOptions<RootStackParamList> = {
   prefixes: ['floorwars://'],
   config: {
     screens: {
       Main: {
-        initialRouteName: 'Home',
+        initialRouteName: 'Tabs',
         screens: {
-          Standings: {
+          Building: {
             path: 'building/:buildingId',
             parse: { buildingId: Number },
           },
         },
       },
     },
+  },
+  getStateFromPath(path, options) {
+    const state = getStateFromPath(path, options);
+    const building = state?.routes[0]?.state?.routes.find(
+      r => r.name === 'Building',
+    );
+    if (!building) {
+      return state;
+    }
+    return {
+      routes: [
+        {
+          name: 'Main',
+          state: {
+            routes: [
+              { name: 'Tabs', state: { routes: [{ name: 'Buildings' }] } },
+              building,
+            ],
+          },
+        },
+      ],
+    };
   },
 };
 
@@ -65,6 +100,44 @@ const headerOptions = {
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const MainStack = createNativeStackNavigator<MainStackParamList>();
+const Tab = createBottomTabNavigator<TabParamList>();
+
+const tabIcons: Record<keyof TabParamList, PictogramName> = {
+  Climb: 'climb',
+  Buildings: 'buildings',
+  Ranks: 'ranks',
+  You: 'you',
+};
+
+const tabOptions = ({
+  route,
+}: {
+  route: { name: keyof TabParamList };
+}): BottomTabNavigationOptions => ({
+  headerShown: false,
+  tabBarActiveTintColor: colors.chalk,
+  tabBarInactiveTintColor: colors.chalkFaint,
+  tabBarStyle: {
+    backgroundColor: colors.raised,
+    borderTopColor: colors.hairline,
+  },
+  tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 13 },
+  tabBarIcon: ({ color }) => (
+    <Pictogram name={tabIcons[route.name]} color={color} />
+  ),
+});
+
+// Four places, always one tap away; tabs never animate (DESIGN.md sections 4 and 11).
+function TabsNavigator() {
+  return (
+    <Tab.Navigator screenOptions={tabOptions}>
+      <Tab.Screen name="Climb" component={HomeScreen} />
+      <Tab.Screen name="Buildings" component={BuildingsScreen} />
+      <Tab.Screen name="Ranks" component={RanksScreen} />
+      <Tab.Screen name="You" component={YouScreen} />
+    </Tab.Navigator>
+  );
+}
 
 type Props = {
   isSignedIn: boolean;
@@ -111,7 +184,7 @@ function MainNavigator() {
   }
   return (
     <MainStack.Navigator
-      initialRouteName={seen ? 'Home' : 'Onboarding'}
+      initialRouteName={seen ? 'Tabs' : 'Onboarding'}
       screenOptions={headerOptions}
     >
       <MainStack.Screen
@@ -122,9 +195,13 @@ function MainNavigator() {
       <MainStack.Screen
         name="LandingScan"
         component={LandingScanScreen}
-        options={{ title: 'Scan at the stairs' }}
+        options={{ title: 'Scan stair sticker' }}
       />
-      <MainStack.Screen name="Home" component={HomeScreen} />
+      <MainStack.Screen
+        name="Tabs"
+        component={TabsNavigator}
+        options={{ headerShown: false }}
+      />
       <MainStack.Screen
         name="Checkin"
         component={CheckinScreen}
@@ -135,12 +212,15 @@ function MainNavigator() {
         component={SensorLoggerScreen}
         options={{ title: 'Sensor logger' }}
       />
-      <MainStack.Screen name="Standings" component={StandingsScreen} />
-      <MainStack.Screen name="Leaderboards" component={LeaderboardsScreen} />
+      <MainStack.Screen
+        name="Building"
+        component={BuildingScreen}
+        options={{ title: '' }}
+      />
       <MainStack.Screen
         name="History"
         component={HistoryScreen}
-        options={{ title: 'Climb history' }}
+        options={{ title: 'Climbs' }}
       />
     </MainStack.Navigator>
   );

@@ -16,9 +16,9 @@ import { Body, colors, Heading, Screen, type } from '../ui/parts';
 
 export const FLIP_ANIMATION_MS = 600;
 
-export function StandingsScreen({
+export function BuildingScreen({
   route,
-}: NativeStackScreenProps<MainStackParamList, 'Standings'>) {
+}: NativeStackScreenProps<MainStackParamList, 'Building'>) {
   // A deep link delivers the param as a string.
   const id = Number(route.params.buildingId);
   const standings = useRead(`standings:${id}`, () =>

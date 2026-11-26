@@ -14,6 +14,8 @@ import {
   Text,
   View,
 } from 'react-native';
+import { HeaderShownContext } from '@react-navigation/elements';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pictogram } from './Pictogram';
 import { teamTone, type Tone } from './tone';
 
@@ -92,11 +94,17 @@ export function Screen({
   children: ReactNode;
   refreshControl?: ReactElement<RefreshControlProps>;
 }) {
+  // Tab screens have no header above them, so they clear the status bar themselves.
+  const underHeader = useContext(HeaderShownContext);
+  const { top } = useSafeAreaInsets();
   return (
     <ScrollView
       refreshControl={refreshControl}
       style={styles.screen}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[
+        styles.content,
+        !underHeader && { paddingTop: styles.content.paddingTop + top },
+      ]}
       keyboardShouldPersistTaps="handled"
     >
       {children}

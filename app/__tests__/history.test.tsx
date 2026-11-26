@@ -326,21 +326,15 @@ describe('Home', () => {
     ).toBeTruthy();
   });
 
-  test('buttons: standings only with a check-in, then the screens open', async () => {
+  test('standings button only with a check-in, and it opens Building', async () => {
     segments = async () => page([]);
     await show();
     await fireEvent.press(
       await screen.findByRole('button', { name: 'Building standings' }),
     );
-    expect(navigation.navigate).toHaveBeenCalledWith('Standings', {
+    expect(navigation.navigate).toHaveBeenCalledWith('Building', {
       buildingId: 7,
     });
-    await fireEvent.press(screen.getByRole('button', { name: 'Leaderboards' }));
-    expect(navigation.navigate).toHaveBeenCalledWith('Leaderboards');
-    await fireEvent.press(
-      screen.getByRole('button', { name: 'Climb history' }),
-    );
-    expect(navigation.navigate).toHaveBeenCalledWith('History');
     await screen.unmount();
 
     native.getActiveCheckin.mockResolvedValue(null);
@@ -349,6 +343,5 @@ describe('Home', () => {
     expect(
       screen.queryByRole('button', { name: 'Building standings' }),
     ).toBeNull();
-    expect(screen.getByRole('button', { name: 'Leaderboards' })).toBeTruthy();
   });
 });
