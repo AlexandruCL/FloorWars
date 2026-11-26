@@ -1,44 +1,72 @@
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   RefreshControl,
+  SectionList,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { api } from '../api/client';
-import { MESSAGES, ReadState, useRead } from '../data/useRead';
+import { clock, MESSAGES, ReadState, useRead } from '../data/useRead';
+import { ClimbStatus, climbDetail, statusWord } from '../history/ClimbStatus';
 import { reasonText } from '../history/reasons';
-import { fetchSegmentPage, type SegmentRecord } from '../history/today';
-import { Body, colors, Heading, type } from '../ui/parts';
+import {
+  fetchSegmentPage,
+  localMidnight,
+  type SegmentRecord,
+} from '../history/today';
+import { Body, colors, type } from '../ui/parts';
 
-const STATUS = {
-  verified: 'Verified',
-  pending: 'Pending',
-  rejected: 'Rejected',
-};
+// "Today", "Yesterday", else "Monday 23 November".
+export function dayLabel(ms: number, now = Date.now()): string {
+  const day = localMidnight(ms);
+  const today = localMidnight(now);
+  if (day === today) {
+    return 'Today';
+  }
+  if (day === localMidnight(today - 1)) {
+    return 'Yesterday';
+  }
+  return new Date(ms).toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}
 
 function Row({ item, building }: { item: SegmentRecord; building: string }) {
-  const when = new Date(item.started_at).toLocaleString([], {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  const at = clock(Date.parse(item.started_at));
+  const fewer =
+    item.status === 'verified' && item.steps_scored < item.steps
+      ? `${item.steps_scored.toLocaleString('en-US')} steps scored`
+      : null;
+  const reason = item.status === 'rejected' ? reasonText(item.reason) : null;
   return (
-    <View style={styles.row} accessible>
-      <Text style={styles.when}>{when}</Text>
-      <Text style={styles.building}>{building}</Text>
-      <Text style={styles.detail}>
-        {`${item.steps} steps, ${item.ascent_m} m`}
-      </Text>
-      <Text style={styles.detail}>
-        {item.status === 'verified'
-          ? `${STATUS.verified}, ${item.steps_scored} steps scored`
-          : STATUS[item.status]}
-      </Text>
-      {item.status === 'rejected' && (
-        <Text style={styles.reason}>{reasonText(item.reason)}</Text>
-      )}
+    <View
+      style={styles.row}
+      accessible
+      accessibilityLabel={[
+        at,
+        building,
+        climbDetail(item),
+        statusWord(item),
+        fewer,
+        reason,
+      ]
+        .filter(Boolean)
+        .join(', ')}
+    >
+      <Text style={styles.time}>{at}</Text>
+      <View style={styles.body}>
+        <Text style={type.label}>{building}</Text>
+        <Text style={styles.sub}>{climbDetail(item)}</Text>
+        <View style={styles.statusLine}>
+          <ClimbStatus item={item} />
+          {fewer && <Text style={styles.sub}>{fewer}</Text>}
+        </View>
+        {reason && <Text style={styles.reason}>{reason}</Text>}
+      </View>
     </View>
   );
 }
@@ -78,15 +106,31 @@ export function HistoryScreen() {
     first.refresh();
   };
   const items = [...(first.data?.items ?? []), ...more.items];
+  const sections: { title: string; data: SegmentRecord[] }[] = [];
+  for (const item of items) {
+    const title = dayLabel(Date.parse(item.started_at));
+    const last = sections[sections.length - 1];
+    if (last?.title === title) {
+      last.data.push(item);
+    } else {
+      sections.push({ title, data: [item] });
+    }
+  }
   const nameOf = (id: number) =>
     buildings.data?.find(b => b.id === id)?.name ?? `Building ${id}`;
 
   return (
-    <FlatList
+    <SectionList
       testID="history-list"
       style={styles.list}
       contentContainerStyle={styles.content}
-      data={items}
+      sections={sections}
+      stickySectionHeadersEnabled
+      renderSectionHeader={({ section }) => (
+        <Text style={styles.day} accessibilityRole="header">
+          {section.title}
+        </Text>
+      )}
       keyExtractor={s => s.id}
       renderItem={({ item }) => (
         <Row item={item} building={nameOf(item.building_id)} />
@@ -98,7 +142,6 @@ export function HistoryScreen() {
       }
       ListHeaderComponent={
         <View style={styles.head}>
-          <Heading>Climb history</Heading>
           <ReadState read={first} />
         </View>
       }
@@ -122,16 +165,25 @@ export function HistoryScreen() {
 
 const styles = StyleSheet.create({
   list: { flex: 1, backgroundColor: colors.night },
-  content: { padding: 16, paddingTop: 24, gap: 0 },
-  head: { gap: 16, marginBottom: 8 },
+  content: { paddingHorizontal: 16, paddingBottom: 24 },
+  head: { gap: 16 },
+  day: {
+    ...type.meta,
+    color: colors.chalkDim,
+    paddingTop: 16,
+    paddingBottom: 6,
+    backgroundColor: colors.night,
+  },
   row: {
+    flexDirection: 'row',
+    gap: 12,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.hairline,
-    gap: 2,
   },
-  when: type.meta,
-  building: type.label,
-  detail: { ...type.body, color: colors.chalk },
-  reason: type.body,
+  time: { ...type.label, width: 56, fontVariant: ['tabular-nums'] },
+  body: { flex: 1, gap: 2 },
+  sub: { ...type.meta, color: colors.chalkDim },
+  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  reason: { ...type.body, fontSize: 15, lineHeight: 22 },
 });

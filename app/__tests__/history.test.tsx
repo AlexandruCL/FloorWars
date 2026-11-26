@@ -4,7 +4,7 @@ import { clearReadCache } from '../src/data/useRead';
 import { reasonText } from '../src/history/reasons';
 import { localMidnight, todayFigures, todayText } from '../src/history/today';
 import { FloorSensors } from '../src/native/floorSensors';
-import { HistoryScreen } from '../src/screens/HistoryScreen';
+import { dayLabel, HistoryScreen } from '../src/screens/HistoryScreen';
 import { HomeScreen } from '../src/screens/HomeScreen';
 
 jest.mock('../src/api/client', () => ({
@@ -192,7 +192,7 @@ describe('History screen', () => {
     );
   });
 
-  test('rows show date, building, steps, ascent, status and the reason', async () => {
+  test('rows show time, building, steps, ascent, status and the reason', async () => {
     segments = async () =>
       page([
         seg({ id: 'a' }),
@@ -208,10 +208,10 @@ describe('History screen', () => {
     await render(<HistoryScreen />);
     expect(await screen.findAllByText('Library')).toHaveLength(3);
     expect(screen.getByText('Building 99')).toBeTruthy();
-    expect(screen.getAllByText('18 steps, 3 m')).toHaveLength(4);
-    expect(screen.getByText('Verified, 18 steps scored')).toBeTruthy();
+    expect(screen.getAllByText('18 steps, 3.0 m up')).toHaveLength(4);
+    expect(screen.getByText('Counted')).toBeTruthy();
     expect(screen.getByText('Pending')).toBeTruthy();
-    expect(screen.getAllByText('Rejected')).toHaveLength(2);
+    expect(screen.getAllByText('Not counted')).toHaveLength(2);
     expect(
       screen.getByText(
         'The height changed faster or slower than walking up stairs.',
@@ -221,6 +221,22 @@ describe('History screen', () => {
     expect(apiMock).toHaveBeenCalledWith('get', '/me/segments', {
       query: { limit: 50, cursor: undefined },
     });
+  });
+
+  test('fewer steps scored than climbed says so; days get headers', () => {
+    const now = Date.parse('2026-11-26T12:00:00');
+    expect(dayLabel(now - 3600_000, now)).toBe('Today');
+    expect(dayLabel(now - 24 * 3600_000, now)).toBe('Yesterday');
+    expect(dayLabel(Date.parse('2026-11-23T10:00:00'), now)).toBe(
+      'Monday 23 November',
+    );
+  });
+
+  test('a partly scored climb names the scored steps', async () => {
+    segments = async () =>
+      page([seg({ id: 'a', steps: 86, steps_scored: 80 })]);
+    await render(<HistoryScreen />);
+    expect(await screen.findByText('80 steps scored')).toBeTruthy();
   });
 
   test('the next page loads at the end of the list, once', async () => {
