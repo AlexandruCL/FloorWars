@@ -7,7 +7,6 @@ import {
   FLIP_ANIMATION_MS,
   BuildingScreen,
 } from '../src/screens/BuildingScreen';
-import { barSegments } from '../src/standings/bar';
 
 jest.mock('../src/api/client', () => ({
   ...jest.requireActual('../src/api/client'),
@@ -53,15 +52,14 @@ const show = (buildingId: number | string = 7) =>
 const flip = (e: object) =>
   act(() => hook.mock.calls[hook.mock.calls.length - 1][0](e));
 
-test('bar segment widths match the shares, list is most points first', async () => {
-  expect(barSegments([AC, ETC]).map(s => [s.code, s.x, s.width])).toEqual([
-    ['AC', 0, 75],
-    ['ETC', 75, 25],
-  ]);
+test('the drawing names the shares, list is most points first', async () => {
   await show();
   expect(await screen.findByText('Library')).toBeTruthy();
-  expect(screen.getByTestId('bar-AC').props.width).toBe(75);
-  expect(screen.getByTestId('bar-ETC').props.x).toBe(75);
+  expect(
+    screen.getByLabelText(
+      'Library. Owned by AC. AC 75 percent, ETC 25 percent.',
+    ),
+  ).toBeTruthy();
   const labels = screen
     .getAllByLabelText(/points$/)
     .map(n => n.props.accessibilityLabel);

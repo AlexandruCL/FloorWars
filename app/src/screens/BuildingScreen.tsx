@@ -1,17 +1,16 @@
 import { useEffect, useRef } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Rect } from 'react-native-svg';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { api } from '../api/client';
 import { pullToRefresh, ReadState, useRead } from '../data/useRead';
 import type { MainStackParamList } from '../navigation/types';
 import { useGameEvents } from '../realtime/useGameEvents';
-import { barSegments } from '../standings/bar';
+import { BuildingDrawing } from '../standings/BuildingDrawing';
 import { Body, colors, Heading, Screen, type } from '../ui/parts';
 
 export const FLIP_ANIMATION_MS = 600;
@@ -56,10 +55,18 @@ export function BuildingScreen({
   });
 
   const teams = data ? [...data.teams].sort((a, b) => b.points - a.points) : [];
-  const segments = barSegments(teams);
+  const { width } = useWindowDimensions();
 
   return (
     <Screen refreshControl={pullToRefresh(standings)}>
+      <BuildingDrawing
+        buildingId={id}
+        teams={teams}
+        owner={data?.owner?.code ?? null}
+        name={name}
+        width={width - 32}
+        height={240}
+      />
       <Heading>{name}</Heading>
       <ReadState
         read={standings}
@@ -82,25 +89,6 @@ export function BuildingScreen({
             </Body>
           ) : (
             <>
-              <Svg
-                width="100%"
-                height={20}
-                viewBox="0 0 100 20"
-                preserveAspectRatio="none"
-                accessibilityLabel="Share of points by team"
-              >
-                {segments.map(s => (
-                  <Rect
-                    key={s.code}
-                    testID={`bar-${s.code}`}
-                    x={s.x}
-                    y={0}
-                    width={s.width}
-                    height={20}
-                    fill={s.color}
-                  />
-                ))}
-              </Svg>
               {teams.map(t => (
                 <View
                   key={t.team_id}
