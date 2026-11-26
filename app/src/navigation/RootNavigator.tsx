@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import type { LinkingOptions } from '@react-navigation/native';
+import { DarkTheme, NavigationContainer } from '@react-navigation/native';
+import type { LinkingOptions, Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { hasSeenOnboarding } from '../auth/session';
 import { EmailScreen, OtpScreen, TeamScreen } from '../screens/AuthScreens';
@@ -12,6 +12,7 @@ import { LeaderboardsScreen } from '../screens/LeaderboardsScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { SensorLoggerScreen } from '../screens/SensorLoggerScreen';
 import { StandingsScreen } from '../screens/StandingsScreen';
+import { colors, fonts } from '../ui/parts';
 import type {
   AuthStackParamList,
   MainStackParamList,
@@ -36,6 +37,31 @@ const linking: LinkingOptions<RootStackParamList> = {
   },
 };
 
+// Headers, cards and the back arrow in the night palette; fontWeight stays normal so Android
+// does not fake a bolder cut of the custom fonts.
+const theme: Theme = {
+  dark: true,
+  colors: {
+    ...DarkTheme.colors,
+    primary: colors.chalk,
+    background: colors.night,
+    card: colors.night,
+    text: colors.chalk,
+    border: colors.hairline,
+  },
+  fonts: {
+    regular: { fontFamily: fonts.regular, fontWeight: 'normal' },
+    medium: { fontFamily: fonts.medium, fontWeight: 'normal' },
+    bold: { fontFamily: fonts.display, fontWeight: 'normal' },
+    heavy: { fontFamily: fonts.display, fontWeight: 'normal' },
+  },
+};
+
+// The native header ignores theme fonts, so the title face is set here.
+const headerOptions = {
+  headerTitleStyle: { fontFamily: fonts.display, fontSize: 24 },
+};
+
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const MainStack = createNativeStackNavigator<MainStackParamList>();
@@ -54,7 +80,10 @@ function AuthNavigator({
   onDevSkipSignIn,
 }: Pick<Props, 'needsTeam' | 'onSignedIn' | 'onDevSkipSignIn'>) {
   return (
-    <AuthStack.Navigator initialRouteName={needsTeam ? 'Team' : 'Email'}>
+    <AuthStack.Navigator
+      initialRouteName={needsTeam ? 'Team' : 'Email'}
+      screenOptions={headerOptions}
+    >
       <AuthStack.Screen name="Email" options={{ title: 'Sign in' }}>
         {props => <EmailScreen {...props} onDevSkipSignIn={onDevSkipSignIn} />}
       </AuthStack.Screen>
@@ -81,7 +110,10 @@ function MainNavigator() {
     return null;
   }
   return (
-    <MainStack.Navigator initialRouteName={seen ? 'Home' : 'Onboarding'}>
+    <MainStack.Navigator
+      initialRouteName={seen ? 'Home' : 'Onboarding'}
+      screenOptions={headerOptions}
+    >
       <MainStack.Screen
         name="Onboarding"
         component={OnboardingScreen}
@@ -122,7 +154,10 @@ export function RootNavigator({
 }: Props) {
   return (
     // Off while the Auth stack shows, so a link then is dropped.
-    <NavigationContainer linking={{ ...linking, enabled: isSignedIn }}>
+    <NavigationContainer
+      theme={theme}
+      linking={{ ...linking, enabled: isSignedIn }}
+    >
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
         {isSignedIn ? (
           <RootStack.Screen name="Main" component={MainNavigator} />

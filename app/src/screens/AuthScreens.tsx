@@ -26,6 +26,7 @@ import {
   Heading,
   inputStyle,
   Screen,
+  type,
 } from '../ui/parts';
 
 type Team = components['schemas']['Team'];
@@ -53,7 +54,7 @@ function Check({
         accessibilityLabel={label}
         value={value}
         onValueChange={onChange}
-        trackColor={{ true: colors.accent, false: colors.line }}
+        trackColor={{ true: colors.chalkDim, false: colors.edge }}
       />
       <Text style={styles.checkLabel}>{label}</Text>
     </View>
@@ -114,7 +115,7 @@ export function EmailScreen({
           setError(null);
         }}
         placeholder="name@university.ro"
-        placeholderTextColor={colors.muted}
+        placeholderTextColor={colors.chalkFaint}
         style={inputStyle}
         value={email}
       />
@@ -199,7 +200,7 @@ export function OtpScreen({ navigation, route }: Nav<'Otp'>) {
           setError(null);
         }}
         placeholder="123456"
-        placeholderTextColor={colors.muted}
+        placeholderTextColor={colors.chalkFaint}
         style={[inputStyle, styles.code]}
         value={code}
       />
@@ -282,7 +283,7 @@ export function TeamScreen({ onDone }: { onDone: () => void }) {
       <Screen>
         <ActivityIndicator
           accessibilityLabel="Loading teams"
-          color={colors.accent}
+          color={colors.chalk}
         />
       </Screen>
     );
@@ -334,20 +335,20 @@ export function TeamScreen({ onDone }: { onDone: () => void }) {
 
 const styles = StyleSheet.create({
   check: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48 },
-  checkLabel: { flex: 1, fontSize: 16, color: colors.ink },
-  code: { fontSize: 28, letterSpacing: 8 },
+  checkLabel: { ...type.body, flex: 1, color: colors.chalk },
+  code: { fontSize: 28, letterSpacing: 8, fontVariant: ['tabular-nums'] },
   team: {
     minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
     paddingHorizontal: 14,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: '#FFFFFF',
+    borderColor: colors.hairline,
+    backgroundColor: colors.raised,
   },
-  teamSelected: { borderWidth: 2, borderColor: colors.accent },
+  teamSelected: { borderWidth: 2, borderColor: colors.chalk },
   swatch: { width: 24, height: 24, borderRadius: 12 },
-  teamCode: { fontSize: 18, fontWeight: '600', color: colors.ink },
+  teamCode: type.heading,
 });

@@ -36,7 +36,7 @@ export function LandingScanScreen({ navigation, deps = deviceLibs }: Props) {
   if (checkin === undefined) {
     return (
       <Screen>
-        <ActivityIndicator accessibilityLabel="Loading" color={colors.accent} />
+        <ActivityIndicator accessibilityLabel="Loading" color={colors.chalk} />
       </Screen>
     );
   }
@@ -128,6 +128,6 @@ const styles = StyleSheet.create({
     height: 320,
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: colors.ink,
+    backgroundColor: colors.night,
   },
 });

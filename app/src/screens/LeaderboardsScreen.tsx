@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api/client';
 import { pullToRefresh, ReadState, useRead } from '../data/useRead';
 import { FloorSensors } from '../native/floorSensors';
-import { Body, colors, Heading, Screen } from '../ui/parts';
+import { Body, colors, Heading, Screen, type } from '../ui/parts';
 
 type Scope = 'individual' | 'team' | 'building';
 const TABS: { scope: Scope; label: string }[] = [
@@ -173,22 +173,27 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 16,
     justifyContent: 'center',
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: colors.edge,
   },
-  chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  chipText: { fontSize: 16, color: colors.ink },
-  chipTextOn: { fontSize: 16, fontWeight: '600', color: colors.onAccent },
+  chipOn: { backgroundColor: colors.chalk, borderColor: colors.chalk },
+  chipText: { ...type.body, color: colors.chalk },
+  chipTextOn: { ...type.label, color: colors.night },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.line,
+    borderBottomColor: colors.hairline,
   },
-  rank: { width: 32, fontSize: 18, color: colors.muted },
-  name: { flex: 1, fontSize: 18, fontWeight: '600', color: colors.ink },
-  points: { fontSize: 18, color: colors.ink },
+  rank: {
+    ...type.label,
+    width: 32,
+    color: colors.chalkFaint,
+    fontVariant: ['tabular-nums'],
+  },
+  name: { ...type.label, flex: 1 },
+  points: { ...type.label, fontVariant: ['tabular-nums'] },
 });

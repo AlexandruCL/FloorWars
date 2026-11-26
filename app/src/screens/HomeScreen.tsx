@@ -25,7 +25,15 @@ import {
   syncNow,
   type SyncState,
 } from '../sync/syncWorker';
-import { Body, Button, colors, ErrorText, Heading, Screen } from '../ui/parts';
+import {
+  Body,
+  Button,
+  colors,
+  ErrorText,
+  Heading,
+  Screen,
+  type,
+} from '../ui/parts';
 import {
   lastSyncText,
   minutesLeftMs,
@@ -322,11 +330,11 @@ const styles = StyleSheet.create({
   row: {
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.line,
+    borderBottomColor: colors.hairline,
     gap: 2,
   },
-  label: { fontSize: 14, color: colors.muted },
-  value: { fontSize: 18, fontWeight: '600', color: colors.ink },
+  label: type.meta,
+  value: { ...type.label, fontSize: 18 },
   hint: { gap: 12, marginTop: 8 },
   today: { gap: 2 },
 });

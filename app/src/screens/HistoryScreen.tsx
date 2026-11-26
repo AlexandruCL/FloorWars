@@ -11,7 +11,7 @@ import { api } from '../api/client';
 import { MESSAGES, ReadState, useRead } from '../data/useRead';
 import { reasonText } from '../history/reasons';
 import { fetchSegmentPage, type SegmentRecord } from '../history/today';
-import { Body, colors, Heading } from '../ui/parts';
+import { Body, colors, Heading, type } from '../ui/parts';
 
 const STATUS = {
   verified: 'Verified',
@@ -111,7 +111,7 @@ export function HistoryScreen() {
       }
       ListFooterComponent={
         more.busy ? (
-          <ActivityIndicator color={colors.accent} />
+          <ActivityIndicator color={colors.chalk} />
         ) : more.failed ? (
           <Text style={styles.reason}>{MESSAGES.error}</Text>
         ) : undefined
@@ -121,17 +121,17 @@ export function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  list: { flex: 1, backgroundColor: colors.paper },
-  content: { padding: 24, paddingTop: 32, gap: 0 },
+  list: { flex: 1, backgroundColor: colors.night },
+  content: { padding: 16, paddingTop: 24, gap: 0 },
   head: { gap: 16, marginBottom: 8 },
   row: {
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.line,
+    borderBottomColor: colors.hairline,
     gap: 2,
   },
-  when: { fontSize: 14, color: colors.muted },
-  building: { fontSize: 18, fontWeight: '600', color: colors.ink },
-  detail: { fontSize: 16, color: colors.ink },
-  reason: { fontSize: 15, lineHeight: 22, color: colors.muted },
+  when: type.meta,
+  building: type.label,
+  detail: { ...type.body, color: colors.chalk },
+  reason: type.body,
 });

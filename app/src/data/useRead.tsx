@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { ActivityIndicator } from 'react-native';
 import { ApiError } from '../api/client';
-import { colors } from '../ui/parts';
+import { colors, type } from '../ui/parts';
 
 // Reads are cached in memory per key and lost on app restart (Cristea's decision, 2026-11-17).
 const cache = new Map<string, { value: unknown; at: number }>();
@@ -126,7 +126,7 @@ export function ReadState({
   if (read.loading) {
     return (
       <View accessibilityLabel="Loading" style={styles.center}>
-        <ActivityIndicator color={colors.accent} />
+        <ActivityIndicator color={colors.chalk} />
       </View>
     );
   }
@@ -145,6 +145,6 @@ export function ReadState({
 
 const styles = StyleSheet.create({
   center: { paddingVertical: 24, alignItems: 'center' },
-  stale: { fontSize: 14, color: colors.muted },
-  failure: { fontSize: 15, lineHeight: 22, color: colors.error },
+  stale: type.meta,
+  failure: { ...type.body, color: colors.bad },
 });

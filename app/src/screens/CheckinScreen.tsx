@@ -139,7 +139,7 @@ export function CheckinScreen({ navigation, deps = deviceLibs }: Props) {
         <>
           <ActivityIndicator
             accessibilityLabel="Checking in"
-            color={colors.accent}
+            color={colors.chalk}
             size="large"
           />
           <Body>
@@ -190,6 +190,6 @@ const styles = StyleSheet.create({
     height: 320,
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: colors.ink,
+    backgroundColor: colors.night,
   },
 });

@@ -8,16 +8,73 @@ import {
   Text,
 } from 'react-native';
 
-// Warm paper background, near-black ink tinted to match, one stair-sign orange accent.
+// Night palette (DESIGN.md section 5). Colour belongs to the teams; the chrome is night neutrals and chalk.
 export const colors = {
-  paper: '#F6F2EC',
-  ink: '#241E19',
-  muted: '#625A52',
-  line: '#CFC6BA',
-  accent: '#B8430F',
-  onAccent: '#FFFFFF',
-  error: '#A31515',
+  night: '#0A0E16',
+  raised: '#141A24',
+  sunken: '#202732',
+  hairline: '#2D333E',
+  edge: '#666C78',
+  chalk: '#EEF0F4',
+  chalkDim: '#B4BBC6',
+  chalkFaint: '#8D94A0',
+  facade: '#1C2330',
+  facadeLight: '#29313E',
+  window: '#11161F',
+  ok: '#61DA92',
+  warn: '#F8C655',
+  bad: '#F9786A',
 };
+
+// Android loads each file in android/app/src/main/assets/fonts by its name; never add fontWeight
+// next to these, or Android fakes a bolder cut.
+export const fonts = {
+  stencil: 'BigShouldersStencilDisplay-Black',
+  display: 'BigShouldersDisplay-ExtraBold',
+  regular: 'Barlow-Regular',
+  medium: 'Barlow-Medium',
+  semibold: 'Barlow-SemiBold',
+};
+
+// Type roles (DESIGN.md section 6).
+export const type = StyleSheet.create({
+  display: {
+    fontFamily: fonts.stencil,
+    fontSize: 64,
+    lineHeight: 60,
+    color: colors.chalk,
+  },
+  title: {
+    fontFamily: fonts.display,
+    fontSize: 34,
+    lineHeight: 36,
+    color: colors.chalk,
+  },
+  heading: {
+    fontFamily: fonts.display,
+    fontSize: 24,
+    lineHeight: 28,
+    color: colors.chalk,
+  },
+  body: {
+    fontFamily: fonts.regular,
+    fontSize: 16,
+    lineHeight: 25,
+    color: colors.chalkDim,
+  },
+  label: {
+    fontFamily: fonts.semibold,
+    fontSize: 16,
+    lineHeight: 22,
+    color: colors.chalk,
+  },
+  meta: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.chalkFaint,
+  },
+});
 
 export function Screen({
   children,
@@ -85,9 +142,7 @@ export function Button({
       ]}
     >
       {busy ? (
-        <ActivityIndicator
-          color={secondary ? colors.accent : colors.onAccent}
-        />
+        <ActivityIndicator color={secondary ? colors.chalk : colors.night} />
       ) : (
         <Text
           style={secondary ? styles.buttonTextSecondary : styles.buttonText}
@@ -102,34 +157,31 @@ export function Button({
 export const inputStyle = {
   minHeight: 52,
   borderWidth: 1,
-  borderColor: colors.line,
-  borderRadius: 8,
+  borderColor: colors.edge,
+  borderRadius: 12,
   paddingHorizontal: 14,
+  fontFamily: fonts.medium,
   fontSize: 18,
-  color: colors.ink,
-  backgroundColor: '#FFFFFF',
+  color: colors.chalk,
+  backgroundColor: colors.sunken,
 } as const;
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.paper },
-  content: { padding: 24, paddingTop: 32, gap: 16 },
-  heading: { fontSize: 28, fontWeight: '700', color: colors.ink },
-  body: { fontSize: 16, lineHeight: 24, color: colors.muted, maxWidth: 520 },
-  error: { fontSize: 15, lineHeight: 22, color: colors.error },
+  screen: { flex: 1, backgroundColor: colors.night },
+  content: { padding: 16, paddingTop: 24, gap: 16 },
+  heading: type.title,
+  body: { ...type.body, maxWidth: 520 },
+  error: { ...type.body, color: colors.bad },
   button: {
-    minHeight: 52,
-    borderRadius: 8,
+    minHeight: 48,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
-  buttonPrimary: { backgroundColor: colors.accent },
-  buttonSecondary: { borderWidth: 1, borderColor: colors.accent },
+  buttonPrimary: { backgroundColor: colors.chalk },
+  buttonSecondary: { borderWidth: 1, borderColor: colors.edge },
   buttonOff: { opacity: 0.5 },
-  buttonText: { fontSize: 17, fontWeight: '600', color: colors.onAccent },
-  buttonTextSecondary: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: colors.accent,
-  },
+  buttonText: { ...type.label, color: colors.night },
+  buttonTextSecondary: type.label,
 });

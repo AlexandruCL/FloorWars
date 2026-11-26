@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, AppState, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  AppState,
+  StatusBar,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { api } from './src/api/client';
 import {
@@ -68,12 +74,13 @@ function App() {
   if (stage === 'loading') {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator accessibilityLabel="Loading" color={colors.accent} />
+        <ActivityIndicator accessibilityLabel="Loading" color={colors.chalk} />
       </View>
     );
   }
   return (
     <SafeAreaProvider>
+      <StatusBar barStyle="light-content" />
       <RootNavigator
         isSignedIn={stage === 'in'}
         needsTeam={stage === 'needsTeam'}
@@ -85,7 +92,7 @@ function App() {
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, justifyContent: 'center', backgroundColor: colors.paper },
+  loading: { flex: 1, justifyContent: 'center', backgroundColor: colors.night },
 });
 
 export default App;

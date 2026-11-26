@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import Share from 'react-native-share';
 import { FloorSensors, requestPermissions } from '../native/floorSensors';
+import { colors, fonts } from '../ui/parts';
 
 export const LABELS = [
   'stairs_up',
@@ -210,30 +211,34 @@ export function SensorLoggerScreen() {
   );
 }
 
-const ink = '#1b1f24';
+const ink = colors.chalk;
 
 const styles = StyleSheet.create({
-  screen: { backgroundColor: '#ffffff' },
+  screen: { backgroundColor: colors.night },
   content: { padding: 16, gap: 16 },
   group: { gap: 8 },
-  groupTitle: { color: ink, fontSize: 16, fontWeight: '600' },
+  groupTitle: { color: ink, fontSize: 16, fontFamily: fonts.semibold },
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   choice: {
     minHeight: 44,
     paddingHorizontal: 14,
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#8a939e',
+    borderColor: colors.edge,
     borderRadius: 8,
   },
   choiceSelected: { backgroundColor: ink, borderColor: ink },
   choiceDisabled: { opacity: 0.5 },
-  choiceTextSelected: { color: '#ffffff', fontSize: 15 },
-  text: { color: ink, fontSize: 15 },
+  choiceTextSelected: {
+    color: colors.night,
+    fontSize: 15,
+    fontFamily: fonts.medium,
+  },
+  text: { color: ink, fontSize: 15, fontFamily: fonts.medium },
   timer: {
     color: ink,
     fontSize: 56,
-    fontWeight: '300',
+    fontFamily: fonts.medium,
     fontVariant: ['tabular-nums'],
     textAlign: 'center',
     marginTop: 8,
@@ -246,8 +251,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   // Red marks the live recording state; nothing else on the screen uses it.
-  stop: { backgroundColor: '#b3261e' },
-  primaryText: { color: '#ffffff', fontSize: 17, fontWeight: '600' },
+  stop: { backgroundColor: colors.bad },
+  primaryText: {
+    color: colors.night,
+    fontSize: 17,
+    fontFamily: fonts.semibold,
+  },
   secondary: {
     minHeight: 48,
     borderRadius: 8,
@@ -256,5 +265,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  error: { color: '#b3261e', fontSize: 15 },
+  error: { color: colors.bad, fontSize: 15, fontFamily: fonts.medium },
 });
