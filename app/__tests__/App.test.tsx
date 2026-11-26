@@ -14,19 +14,19 @@ beforeEach(async () => {
 test('App starts on the Auth stack', async () => {
   await render(<App />);
   expect(await screen.findByText('Send code')).toBeTruthy();
-  expect(screen.queryByText('Status')).toBeNull();
+  expect(screen.queryByText('Climb')).toBeNull();
 });
 
 test('signed-in users get the Main stack', async () => {
   await render(<RootNavigator isSignedIn />);
-  expect(screen.getAllByText('Status').length).toBeGreaterThan(0);
+  expect((await screen.findAllByText('Climb')).length).toBeGreaterThan(0);
   expect(screen.queryByText('Send code')).toBeNull();
 });
 
 test('dev skip sign-in opens the Main stack', async () => {
   await render(<App />);
   await fireEvent.press(await screen.findByText('Skip sign-in (dev)'));
-  expect(screen.getAllByText('Status').length).toBeGreaterThan(0);
+  expect((await screen.findAllByText('Climb')).length).toBeGreaterThan(0);
 });
 
 test('stored tokens and a chosen team restore straight into Main', async () => {
@@ -41,14 +41,14 @@ test('stored tokens and a chosen team restore straight into Main', async () => {
   });
   try {
     await render(<App />);
-    expect((await screen.findAllByText('Status')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Climb')).length).toBeGreaterThan(0);
   } finally {
     globalThis.fetch = realFetch;
   }
 });
 
-// The Home screen heading is "Home" now and "Status" once the status screen lands.
-const HOME = /^(Home|Status)$/;
+// The Climb tab is home.
+const HOME = /^Climb$/;
 
 describe('season check at start', () => {
   const realFetch = globalThis.fetch;

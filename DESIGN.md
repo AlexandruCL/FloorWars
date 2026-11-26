@@ -88,13 +88,13 @@ Stack screens (native push)
   Scan sticker    camera, landing sticker (no barometer)
   How it works    three steps
   Sensor logger   tester tool
-Sheets (native formSheet)
+Sheets (bottom sheet over a scrim)
   Pick a building, Confirm check-in, Season
 ```
 
 The deep link `floorwars://building/{id}` opens Building on top of the Buildings tab, so Back lands on the list.
 
-New dependency: `@react-navigation/bottom-tabs` 7.x, matching `@react-navigation/native` 7.5.1. Sheets use `presentation: 'formSheet'` from the existing native stack (react-native-screens 4.30).
+New dependency: `@react-navigation/bottom-tabs` 7.x, matching `@react-navigation/native` 7.5.1. Sheets are a React Native `Modal` (`Sheet` in `app/src/ui/parts.tsx`). The native `formSheet` from react-native-screens 4.30 was tried first: on Android it dropped taps on its rows and would not open a second time, so it is not used.
 
 ## 5. Colour
 
@@ -335,7 +335,7 @@ Every animation passed four checks: how often it is seen, what it is for, whethe
 | Press on any button or row | Tens a day | Feedback | Scale to 0.97 on press-in, 100 ms; back on release, 160 ms; ease-out `(0.23, 1, 0.32, 1)` |
 | Tab switch | 100+ a day | None | No animation |
 | Push and pop | Tens a day | Spatial | Native stack default |
-| Sheets | Occasional | Spatial | Native formSheet |
+| Sheets | Occasional | Spatial | Slide up from the bottom over a scrim |
 | Flip in the building on screen | Rare | State, delight | New colours replace old floor by floor from the ground up, 180 ms per floor, 40 ms apart, ease-out; flag crossfades and rises 6 dp in 200 ms; whole thing under 600 ms |
 | Check-in success | About daily | Delight | Windows go from unlit to lit floor by floor, 160 ms each, 30 ms apart |
 | Flip banner | Occasional | Spatial | Slides down 220 ms ease-out; leaves upward 160 ms; a fast upward flick dismisses it |

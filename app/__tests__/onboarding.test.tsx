@@ -10,7 +10,12 @@ import {
 } from '../src/screens/OnboardingScreen';
 
 const sensors = FloorSensors as unknown as Record<string, jest.Mock>;
-const READ = "I've read this";
+const READ = 'Start climbing';
+// Steps 1 and 2 end in Next; the last one in Start climbing.
+const toLastStep = async () => {
+  await fireEvent.press(await screen.findByText('Next', {}, { timeout: 5000 }));
+  await fireEvent.press(await screen.findByText('Next'));
+};
 
 beforeEach(async () => {
   await Keychain.resetGenericPassword({ service: 'floorwars.onboarding' });
@@ -21,9 +26,9 @@ beforeEach(async () => {
 describe('flow', () => {
   test('shown first, then Home, and the flag is stored', async () => {
     await render(<RootNavigator isSignedIn />);
-    await screen.findByText(READ, {}, { timeout: 5000 });
-    await fireEvent.press(screen.getByText(READ));
-    await screen.findByText('Sync now');
+    await toLastStep();
+    await fireEvent.press(await screen.findByText(READ));
+    await screen.findByText('Climb');
     expect(await hasSeenOnboarding()).toBe(true);
   });
 
@@ -35,18 +40,18 @@ describe('flow', () => {
     expect(await hasSeenOnboarding()).toBe(true);
   });
 
-  test('not shown again once seen; reopened from Home, and closing it returns to Home', async () => {
+  test('not shown again once seen; reopened from You, and closing it returns to You', async () => {
     await Keychain.setGenericPassword('seen', '1', {
       service: 'floorwars.onboarding',
     });
     await render(<RootNavigator isSignedIn />);
-    await screen.findByText('Sync now', {}, { timeout: 5000 });
+    await screen.findByText('Climb', {}, { timeout: 5000 });
     expect(screen.queryByText(READ)).toBeNull();
-    await fireEvent.press(
-      await screen.findByText('How it works', {}, { timeout: 5000 }),
-    );
+    await fireEvent.press(await screen.findByText('You'));
+    await fireEvent.press(await screen.findByText('How FloorWars works'));
+    await toLastStep();
     await fireEvent.press(await screen.findByText(READ));
-    await screen.findByText('Sync now');
+    await screen.findByText('For testers');
   });
 });
 
@@ -77,6 +82,9 @@ describe('manufacturer', () => {
     });
     const navigation = { canGoBack: () => true, goBack: jest.fn() };
     await render(<OnboardingScreen {...({ navigation } as any)} />);
+    expect(screen.getByText('1 of 3')).toBeTruthy();
+    await toLastStep();
+    expect(screen.getByText('3 of 3')).toBeTruthy();
     screen.getByText(/Background usage limits/);
     expect(screen.queryByText(/Manage apps/)).toBeNull();
     await fireEvent.press(screen.getByText('Open battery settings'));

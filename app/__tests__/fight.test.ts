@@ -1,0 +1,95 @@
+import { seasonText } from '../src/data/myTeam';
+import { fightLine, ownerLine, pointsText } from '../src/standings/fight';
+
+const AC = { code: 'AC', points: 412 };
+const ETC = { code: 'ETC', points: 280 };
+
+test('the owner leads', () => {
+  expect(fightLine([ETC, AC], 'AC')).toBe(
+    'AC owns it and leads ETC by 132 points.',
+  );
+});
+
+test('your team chases the owner', () => {
+  expect(fightLine([AC, ETC], 'AC', 'ETC')).toBe(
+    'AC owns it. ETC needs 133 points to take it.',
+  );
+  // Your team with no points here gets the owner's lead instead.
+  expect(fightLine([AC, ETC], 'AC', 'MEC')).toBe(
+    'AC owns it and leads ETC by 132 points.',
+  );
+});
+
+test('a tie keeps the owner', () => {
+  expect(
+    fightLine(
+      [
+        { code: 'AC', points: 310 },
+        { code: 'ETC', points: 310 },
+      ],
+      'ETC',
+    ),
+  ).toBe('Tied at 310 points. ETC keeps it until someone pulls ahead.');
+});
+
+test('nobody, alone, and an owner that fell behind', () => {
+  expect(fightLine([AC], null)).toBe('Nobody owns it yet.');
+  expect(fightLine([], 'AC')).toBe(
+    'No team has points here in the last 7 days. Climb the stairs to claim it.',
+  );
+  expect(fightLine([AC], 'AC')).toBe(
+    'AC owns it. No other team has points here this week.',
+  );
+  expect(fightLine([AC, ETC], 'ETC')).toBe(
+    'ETC owns it, but AC leads by 132 points.',
+  );
+});
+
+test('points are counted in words and grouped', () => {
+  expect(pointsText(1)).toBe('1 point');
+  expect(pointsText(0)).toBe('0 points');
+  expect(pointsText(12480)).toBe('12,480 points');
+});
+
+test('season end as a weekday this week, as a date later', () => {
+  const now = Date.parse('2026-11-26T12:00:00Z');
+  const season = (ends_at: string) => ({ id: 3, starts_at: '', ends_at });
+  expect(seasonText(season('2026-11-30T00:00:00Z'), now)).toMatch(
+    /^Season 3, ends (Sunday|Monday)$/,
+  );
+  expect(seasonText(season('2026-12-14T00:00:00Z'), now)).toMatch(
+    /^Season 3, ends 1[34] December$/,
+  );
+});
+
+describe('ownerLine', () => {
+  const t = (code: string, points: number) => ({ code, points });
+  test('the list cases from the mockup', () => {
+    expect(ownerLine([t('AC', 412), t('ETC', 280)], 'AC')).toEqual({
+      code: 'AC',
+      text: 'leads by 132',
+    });
+    expect(ownerLine([t('AC', 310), t('ETC', 310)], 'AC')).toEqual({
+      code: 'AC',
+      text: 'tied at 310, keeps it',
+    });
+    expect(ownerLine([t('AC', 96)], 'AC')).toEqual({
+      code: 'AC',
+      text: 'only team with points',
+    });
+    expect(ownerLine([], null)).toEqual({
+      code: null,
+      text: 'Open, no points this week',
+    });
+  });
+  test('no owner yet shows the leader; an owner that fell behind says so', () => {
+    expect(ownerLine([t('ETC', 9), t('AC', 12)], null)).toEqual({
+      code: 'AC',
+      text: 'leads by 3',
+    });
+    expect(ownerLine([t('ETC', 1200), t('AC', 12)], 'AC')).toEqual({
+      code: 'AC',
+      text: 'behind ETC by 1,188',
+    });
+  });
+});

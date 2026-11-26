@@ -36,7 +36,7 @@ export function LandingScanScreen({ navigation, deps = deviceLibs }: Props) {
   if (checkin === undefined) {
     return (
       <Screen>
-        <ActivityIndicator accessibilityLabel="Loading" color={colors.accent} />
+        <ActivityIndicator accessibilityLabel="Loading" color={colors.chalk} />
       </Screen>
     );
   }
@@ -93,7 +93,11 @@ export function LandingScanScreen({ navigation, deps = deviceLibs }: Props) {
           <View style={styles.camera}>
             <deps.ScannerView onScan={onScan} />
           </View>
-          <Button title="Cancel" secondary onPress={() => setScanning(false)} />
+          <Button
+            title="Cancel"
+            variant="text"
+            onPress={() => setScanning(false)}
+          />
         </>
       )}
       {result &&
@@ -128,6 +132,6 @@ const styles = StyleSheet.create({
     height: 320,
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: colors.ink,
+    backgroundColor: colors.night,
   },
 });

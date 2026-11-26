@@ -1,13 +1,9 @@
-import { act, render, screen } from '@testing-library/react-native';
-import { withTiming } from 'react-native-reanimated';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { api, ApiError } from '../src/api/client';
 import { clearReadCache } from '../src/data/useRead';
 import { useGameEvents } from '../src/realtime/useGameEvents';
-import {
-  FLIP_ANIMATION_MS,
-  StandingsScreen,
-} from '../src/screens/StandingsScreen';
-import { barSegments } from '../src/standings/bar';
+import { FloorSensors } from '../src/native/floorSensors';
+import { BuildingScreen } from '../src/screens/BuildingScreen';
 
 jest.mock('../src/api/client', () => ({
   ...jest.requireActual('../src/api/client'),
@@ -18,6 +14,11 @@ jest.mock('../src/realtime/useGameEvents', () => ({
 }));
 const apiMock = api as unknown as jest.Mock;
 const hook = useGameEvents as jest.Mock;
+const native = FloorSensors as unknown as Record<string, jest.Mock>;
+const navigation = {
+  navigate: jest.fn(),
+  addListener: jest.fn(() => () => {}),
+};
 
 const AC = { team_id: 1, code: 'AC', color_hex: '#112233', points: 30 };
 const ETC = { team_id: 2, code: 'ETC', color_hex: '#445566', points: 10 };
@@ -41,6 +42,9 @@ beforeEach(() => {
     if (path === '/buildings') {
       return [{ id: 7, name: 'Library' }];
     }
+    if (path !== '/buildings/{id}/standings') {
+      throw new TypeError('Network request failed');
+    }
     standingsCalls++;
     return standingsResult();
   });
@@ -48,48 +52,51 @@ beforeEach(() => {
 
 const show = (buildingId: number | string = 7) =>
   render(
-    <StandingsScreen {...({ route: { params: { buildingId } } } as any)} />,
+    <BuildingScreen
+      {...({ route: { params: { buildingId } }, navigation } as any)}
+    />,
   );
 const flip = (e: object) =>
   act(() => hook.mock.calls[hook.mock.calls.length - 1][0](e));
 
-test('bar segment widths match the shares, list is most points first', async () => {
-  expect(barSegments([AC, ETC]).map(s => [s.code, s.x, s.width])).toEqual([
-    ['AC', 0, 75],
-    ['ETC', 75, 25],
-  ]);
+test('the drawing names the shares, list is most points first', async () => {
   await show();
   expect(await screen.findByText('Library')).toBeTruthy();
-  expect(screen.getByTestId('bar-AC').props.width).toBe(75);
-  expect(screen.getByTestId('bar-ETC').props.x).toBe(75);
+  expect(
+    screen.getByLabelText(
+      'Library. Owned by AC. AC 75 percent, ETC 25 percent.',
+    ),
+  ).toBeTruthy();
   const labels = screen
-    .getAllByLabelText(/points$/)
+    .getAllByLabelText(/ points, /)
     .map(n => n.props.accessibilityLabel);
-  expect(labels).toEqual(['AC: 30 points', 'ETC: 10 points']);
+  expect(labels).toEqual([
+    'AC: 30 points, 75 percent, holds it',
+    'ETC: 10 points, 25 percent, needs 21 to take it',
+  ]);
 });
 
 test('owner heading, with and without an owner', async () => {
   await show();
-  expect(await screen.findByText('Owned by AC')).toBeTruthy();
+  expect(await screen.findByText(/^Owned by AC since /)).toBeTruthy();
   await screen.unmount();
   clearReadCache();
   standingsResult = async () => standings({ owner: null, claimed_at: null });
   await show();
-  expect(await screen.findByText('Nobody owns this building yet')).toBeTruthy();
+  expect(await screen.findByText('Nobody owns it yet')).toBeTruthy();
 });
 
 test('a deep-link id arrives as a string', async () => {
   await show('7');
-  await screen.findByText('Owned by AC');
+  await screen.findByText(/^Owned by AC since /);
   expect(apiMock).toHaveBeenCalledWith('get', '/buildings/{id}/standings', {
     path: { id: 7 },
   });
 });
 
-test('a flip for this building animates the owner colour, then refetches', async () => {
-  jest.useFakeTimers();
+test('a flip for this building refetches the standings', async () => {
   await show();
-  await screen.findByText('Owned by AC');
+  await screen.findByText(/^Owned by AC since /);
   expect(standingsCalls).toBe(1);
   await flip({
     type: 'building_flipped',
@@ -98,21 +105,13 @@ test('a flip for this building animates the owner colour, then refetches', async
     to_team: 'ETC',
     at: 'x',
   });
-  expect(withTiming).toHaveBeenCalledWith('#445566', {
-    duration: FLIP_ANIMATION_MS,
-  });
-  expect(standingsCalls).toBe(1);
-  await act(async () => {
-    jest.advanceTimersByTime(FLIP_ANIMATION_MS);
-  });
+  await act(async () => {});
   expect(standingsCalls).toBe(2);
-  jest.useRealTimers();
 });
 
 test('a flip for another building does nothing', async () => {
-  jest.useFakeTimers();
   await show();
-  await screen.findByText('Owned by AC');
+  await screen.findByText(/^Owned by AC since /);
   await flip({
     type: 'building_flipped',
     building_id: 8,
@@ -121,12 +120,49 @@ test('a flip for another building does nothing', async () => {
     at: 'x',
   });
   await flip({ type: 'season_state', paused: false, ends_at: 'x' });
-  await act(async () => {
-    jest.advanceTimersByTime(5 * FLIP_ANIMATION_MS);
-  });
-  expect(withTiming).not.toHaveBeenCalled();
+  await act(async () => {});
   expect(standingsCalls).toBe(1);
-  jest.useRealTimers();
+});
+
+test('your team is marked and the sticky bar checks in', async () => {
+  apiMock.mockImplementation(async (_m: string, path: string) => {
+    switch (path) {
+      case '/buildings':
+        return [{ id: 7, name: 'Library' }];
+      case '/seasons/active':
+        return { id: 1, starts_at: '', ends_at: '' };
+      case '/me/season-stats':
+        return { season_id: 1, team_id: 2 };
+      case '/teams':
+        return [
+          { id: 1, code: 'AC', color_hex: '#112233' },
+          { id: 2, code: 'ETC', color_hex: '#445566' },
+        ];
+    }
+    return standingsResult();
+  });
+  await show();
+  expect(await screen.findByText('Your team')).toBeTruthy();
+  expect(
+    screen.getByText('AC owns it. ETC needs 21 points to take it.'),
+  ).toBeTruthy();
+  await fireEvent.press(screen.getByText('Check in here'));
+  expect(navigation.navigate).toHaveBeenCalledWith('Checkin');
+});
+
+test('checked in here: the bar says so instead of offering a check-in', async () => {
+  native.getActiveCheckin.mockResolvedValue({
+    checkin_id: 'c',
+    building_id: 7,
+    building_name: null,
+    valid_until_ms: Date.now() + 74 * 60000 - 1000,
+  });
+  await show();
+  expect(
+    await screen.findByText("You're climbing here, 74 min left"),
+  ).toBeTruthy();
+  expect(screen.queryByText('Check in here')).toBeNull();
+  native.getActiveCheckin.mockResolvedValue(null);
 });
 
 test('empty, loading, offline, 404 and other error states', async () => {
@@ -169,9 +205,8 @@ test('empty, loading, offline, 404 and other error states', async () => {
 });
 
 test('a failed refresh shows the cached copy with its label', async () => {
-  jest.useFakeTimers();
   await show();
-  await screen.findByText('Owned by AC');
+  await screen.findByText(/^Owned by AC since /);
   standingsResult = () =>
     Promise.reject(new TypeError('Network request failed'));
   await flip({
@@ -181,14 +216,10 @@ test('a failed refresh shows the cached copy with its label', async () => {
     to_team: 'ETC',
     at: 'x',
   });
-  await act(async () => {
-    jest.advanceTimersByTime(FLIP_ANIMATION_MS);
-  });
-  expect(screen.getByText('Owned by AC')).toBeTruthy();
   expect(
-    screen.getByText(
+    await screen.findByText(
       /^Last updated \d{1,2}[:.]\d{2}.*\. Can't reach the server\.$/,
     ),
   ).toBeTruthy();
-  jest.useRealTimers();
+  expect(screen.getByText(/^Owned by AC since /)).toBeTruthy();
 });

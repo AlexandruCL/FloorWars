@@ -4,7 +4,7 @@ import { clearReadCache } from '../src/data/useRead';
 import { reasonText } from '../src/history/reasons';
 import { localMidnight, todayFigures, todayText } from '../src/history/today';
 import { FloorSensors } from '../src/native/floorSensors';
-import { HistoryScreen } from '../src/screens/HistoryScreen';
+import { dayLabel, HistoryScreen } from '../src/screens/HistoryScreen';
 import { HomeScreen } from '../src/screens/HomeScreen';
 
 jest.mock('../src/api/client', () => ({
@@ -192,7 +192,7 @@ describe('History screen', () => {
     );
   });
 
-  test('rows show date, building, steps, ascent, status and the reason', async () => {
+  test('rows show time, building, steps, ascent, status and the reason', async () => {
     segments = async () =>
       page([
         seg({ id: 'a' }),
@@ -208,10 +208,10 @@ describe('History screen', () => {
     await render(<HistoryScreen />);
     expect(await screen.findAllByText('Library')).toHaveLength(3);
     expect(screen.getByText('Building 99')).toBeTruthy();
-    expect(screen.getAllByText('18 steps, 3 m')).toHaveLength(4);
-    expect(screen.getByText('Verified, 18 steps scored')).toBeTruthy();
+    expect(screen.getAllByText('18 steps, 3.0 m up')).toHaveLength(4);
+    expect(screen.getByText('Counted')).toBeTruthy();
     expect(screen.getByText('Pending')).toBeTruthy();
-    expect(screen.getAllByText('Rejected')).toHaveLength(2);
+    expect(screen.getAllByText('Not counted')).toHaveLength(2);
     expect(
       screen.getByText(
         'The height changed faster or slower than walking up stairs.',
@@ -221,6 +221,22 @@ describe('History screen', () => {
     expect(apiMock).toHaveBeenCalledWith('get', '/me/segments', {
       query: { limit: 50, cursor: undefined },
     });
+  });
+
+  test('fewer steps scored than climbed says so; days get headers', () => {
+    const now = Date.parse('2026-11-26T12:00:00');
+    expect(dayLabel(now - 3600_000, now)).toBe('Today');
+    expect(dayLabel(now - 24 * 3600_000, now)).toBe('Yesterday');
+    expect(dayLabel(Date.parse('2026-11-23T10:00:00'), now)).toBe(
+      'Monday 23 November',
+    );
+  });
+
+  test('a partly scored climb names the scored steps', async () => {
+    segments = async () =>
+      page([seg({ id: 'a', steps: 86, steps_scored: 80 })]);
+    await render(<HistoryScreen />);
+    expect(await screen.findByText('80 steps scored')).toBeTruthy();
   });
 
   test('the next page loads at the end of the list, once', async () => {
@@ -269,86 +285,54 @@ describe('History screen', () => {
   });
 });
 
-describe('Home', () => {
+describe('Climb today', () => {
   const navigation = {
     navigate: jest.fn(),
     addListener: jest.fn(() => () => {}),
   };
   let segments: () => Promise<unknown>;
   beforeEach(() => {
-    native.getActiveCheckin.mockResolvedValue({
-      checkin_id: 'c',
-      building_id: 7,
-      building_name: 'Library',
-      valid_until_ms: NOW + 3600_000,
+    native.getActiveCheckin.mockResolvedValue(null);
+    apiMock.mockImplementation(async (_m: string, path: string) => {
+      if (path === '/me/segments') {
+        return segments();
+      }
+      throw new TypeError('Network request failed');
     });
-    apiMock.mockImplementation(async () => segments());
   });
   const show = () => render(<HomeScreen {...({ navigation } as any)} />);
 
-  test('loading', async () => {
-    segments = () => new Promise(() => {});
-    await show();
-    expect(screen.getByText('Verified today: loading')).toBeTruthy();
-  });
-
-  test('the figures', async () => {
+  test('the figures count only verified climbs since midnight', async () => {
     segments = async () =>
       page([
-        seg({ started_at: at(NOW - 1000), steps_scored: 12, ascent_m: 3 }),
+        seg({ started_at: at(NOW - 1000), steps_scored: 42, ascent_m: 3 }),
         seg({ started_at: at(NOW - 2000), status: 'pending', steps_scored: 0 }),
         seg({ started_at: at(MIDNIGHT - 1000), steps_scored: 50 }),
       ]);
     await show();
-    expect(
-      await screen.findByText('Verified today: 12 steps, 3.0 m'),
-    ).toBeTruthy();
+    expect(await screen.findByText('42 verified steps, 3.0 m up')).toBeTruthy();
+    expect(screen.getByText('2')).toBeTruthy();
   });
 
   test('unavailable with no cache', async () => {
     segments = offline;
     await show();
-    expect(await screen.findByText('Verified today: unavailable')).toBeTruthy();
+    expect(
+      await screen.findByText("Today's climbs can't be loaded right now."),
+    ).toBeTruthy();
     expect(screen.queryByText(/Last updated/)).toBeNull();
   });
 
   test('unavailable with the cached value and its label', async () => {
     segments = async () => page([seg({ steps_scored: 12, ascent_m: 3 })]);
     await show();
-    await screen.findByText('Verified today: 12 steps, 3.0 m');
+    await screen.findByText('12 verified steps, 3.0 m up');
     await screen.unmount();
     segments = offline;
     await show();
-    expect(await screen.findByText('Verified today: unavailable')).toBeTruthy();
-    expect(screen.getByText('Verified today: 12 steps, 3.0 m')).toBeTruthy();
     expect(
-      screen.getByText(/^Last updated .+\. Can't reach the server\.$/),
+      await screen.findByText(/^Last updated .+\. Can't reach the server\.$/),
     ).toBeTruthy();
-  });
-
-  test('buttons: standings only with a check-in, then the screens open', async () => {
-    segments = async () => page([]);
-    await show();
-    await fireEvent.press(
-      await screen.findByRole('button', { name: 'Building standings' }),
-    );
-    expect(navigation.navigate).toHaveBeenCalledWith('Standings', {
-      buildingId: 7,
-    });
-    await fireEvent.press(screen.getByRole('button', { name: 'Leaderboards' }));
-    expect(navigation.navigate).toHaveBeenCalledWith('Leaderboards');
-    await fireEvent.press(
-      screen.getByRole('button', { name: 'Climb history' }),
-    );
-    expect(navigation.navigate).toHaveBeenCalledWith('History');
-    await screen.unmount();
-
-    native.getActiveCheckin.mockResolvedValue(null);
-    await show();
-    await screen.findByText('Verified today: 0 steps, 0.0 m');
-    expect(
-      screen.queryByRole('button', { name: 'Building standings' }),
-    ).toBeNull();
-    expect(screen.getByRole('button', { name: 'Leaderboards' })).toBeTruthy();
+    expect(screen.getByText('12 verified steps, 3.0 m up')).toBeTruthy();
   });
 });

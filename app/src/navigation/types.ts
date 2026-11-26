@@ -6,12 +6,18 @@ export type AuthStackParamList = {
   Team: undefined;
 };
 
+export type TabParamList = {
+  Climb: undefined;
+  Buildings: undefined;
+  Ranks: undefined;
+  You: undefined;
+};
+
 export type MainStackParamList = {
-  Home: undefined;
+  Tabs: NavigatorScreenParams<TabParamList> | undefined;
   Checkin: undefined;
   SensorLogger: undefined;
-  Standings: { buildingId: number };
-  Leaderboards: undefined;
+  Building: { buildingId: number };
   History: undefined;
   LandingScan: undefined;
   Onboarding: undefined;
