@@ -1,5 +1,5 @@
 import { seasonText } from '../src/data/myTeam';
-import { fightLine, pointsText } from '../src/standings/fight';
+import { fightLine, ownerLine, pointsText } from '../src/standings/fight';
 
 const AC = { code: 'AC', points: 412 };
 const ETC = { code: 'ETC', points: 280 };
@@ -60,4 +60,36 @@ test('season end as a weekday this week, as a date later', () => {
   expect(seasonText(season('2026-12-14T00:00:00Z'), now)).toMatch(
     /^Season 3, ends 1[34] December$/,
   );
+});
+
+describe('ownerLine', () => {
+  const t = (code: string, points: number) => ({ code, points });
+  test('the list cases from the mockup', () => {
+    expect(ownerLine([t('AC', 412), t('ETC', 280)], 'AC')).toEqual({
+      code: 'AC',
+      text: 'leads by 132',
+    });
+    expect(ownerLine([t('AC', 310), t('ETC', 310)], 'AC')).toEqual({
+      code: 'AC',
+      text: 'tied at 310, keeps it',
+    });
+    expect(ownerLine([t('AC', 96)], 'AC')).toEqual({
+      code: 'AC',
+      text: 'only team with points',
+    });
+    expect(ownerLine([], null)).toEqual({
+      code: null,
+      text: 'Open, no points this week',
+    });
+  });
+  test('no owner yet shows the leader; an owner that fell behind says so', () => {
+    expect(ownerLine([t('ETC', 9), t('AC', 12)], null)).toEqual({
+      code: 'AC',
+      text: 'leads by 3',
+    });
+    expect(ownerLine([t('ETC', 1200), t('AC', 12)], 'AC')).toEqual({
+      code: 'AC',
+      text: 'behind ETC by 1,188',
+    });
+  });
 });

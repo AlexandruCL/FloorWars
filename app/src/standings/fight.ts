@@ -44,3 +44,35 @@ export function fightLine(
     holder.points - rival.points,
   )}.`;
 }
+
+// The short owner line in the Buildings list: whose tag to show and what follows it.
+export function ownerLine(
+  teams: Scored[],
+  owner: string | null,
+): { code: string | null; text: string } {
+  const list = standingsOrder(teams, owner);
+  if (list.length === 0) {
+    return { code: null, text: 'Open, no points this week' };
+  }
+  const top = list.find(t => t.code === owner) ?? list[0];
+  const rival = list.find(t => t.code !== top.code);
+  const n = (v: number) => v.toLocaleString('en-US');
+  if (!rival) {
+    return { code: top.code, text: 'only team with points' };
+  }
+  if (rival.points === top.points) {
+    return {
+      code: top.code,
+      text: owner
+        ? `tied at ${n(top.points)}, keeps it`
+        : `tied at ${n(top.points)}`,
+    };
+  }
+  if (rival.points > top.points) {
+    return {
+      code: top.code,
+      text: `behind ${rival.code} by ${n(rival.points - top.points)}`,
+    };
+  }
+  return { code: top.code, text: `leads by ${n(top.points - rival.points)}` };
+}

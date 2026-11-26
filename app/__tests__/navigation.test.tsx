@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { api } from '../src/api/client';
 import { markOnboardingSeen } from '../src/auth/session';
 import { clearReadCache } from '../src/data/useRead';
+import { FloorSensors } from '../src/native/floorSensors';
 import { linking, RootNavigator } from '../src/navigation/RootNavigator';
 
 jest.mock('../src/api/client', () => ({
@@ -42,8 +43,8 @@ test('four tabs, Climb first', async () => {
 test('Buildings lists every building by name and a row opens Building', async () => {
   await render(<RootNavigator isSignedIn />);
   await fireEvent.press(await screen.findByText('Buildings'));
-  const alpha = await screen.findByRole('button', { name: 'Alpha Tower' });
-  const zeta = screen.getByRole('button', { name: 'Zeta Hall' });
+  const alpha = await screen.findByRole('button', { name: /^Alpha Tower/ });
+  const zeta = screen.getByRole('button', { name: /^Zeta Hall/ });
   // Sorted by name: Alpha before Zeta although the API sent Zeta first.
   const order = screen
     .getAllByRole('button')
@@ -101,4 +102,52 @@ test('a building link opens Building on top of the Buildings tab', () => {
 
 test('other links are left alone', () => {
   expect(linking.getStateFromPath!('nowhere', linking.config)).toBeUndefined();
+});
+
+test('Buildings: your building first, owner lines and the held tally', async () => {
+  const native = FloorSensors as unknown as Record<string, jest.Mock>;
+  native.getActiveCheckin.mockResolvedValue({
+    checkin_id: 'c',
+    building_id: 9,
+    building_name: 'Zeta Hall',
+    valid_until_ms: Date.now() + 3600_000,
+  });
+  apiMock.mockImplementation(
+    async (_m: string, path: string, opts?: { path: { id: number } }) => {
+      if (path === '/buildings') {
+        return buildings;
+      }
+      if (path === '/buildings/{id}/standings' && opts?.path.id === 9) {
+        return {
+          building_id: 9,
+          season_id: 1,
+          owner: { id: 1, code: 'AC', color_hex: '#1E88E5' },
+          claimed_at: null,
+          teams: [
+            { team_id: 2, code: 'ETC', color_hex: '#E53935', points: 280 },
+            { team_id: 1, code: 'AC', color_hex: '#1E88E5', points: 412 },
+          ],
+        };
+      }
+      if (path === '/buildings/{id}/standings') {
+        return { building_id: 4, season_id: 1, owner: null, teams: [] };
+      }
+      throw new TypeError('Network request failed');
+    },
+  );
+  await render(<RootNavigator isSignedIn />);
+  await fireEvent.press(await screen.findByText('Buildings'));
+  const zeta = await screen.findByRole('button', {
+    name: "Zeta Hall, AC leads by 132, You're here",
+  });
+  const alpha = screen.getByRole('button', {
+    name: 'Alpha Tower, Open, no points this week',
+  });
+  const order = screen
+    .getAllByRole('button')
+    .filter(b => b === alpha || b === zeta);
+  expect(order).toEqual([zeta, alpha]);
+  expect(screen.getByLabelText('AC holds 1')).toBeTruthy();
+  expect(screen.getByText('1 open')).toBeTruthy();
+  native.getActiveCheckin.mockResolvedValue(null);
 });

@@ -1,6 +1,11 @@
+import { useCallback, useEffect, useState } from 'react';
 import { PermissionsAndroid } from 'react-native';
 import FloorSensors from '../native/NativeFloorSensors';
-import { requestPermissions } from '../native/floorSensors';
+import {
+  FloorSensors as FloorSensorsApi,
+  requestPermissions,
+} from '../native/floorSensors';
+import type { ActiveCheckin } from '../native/NativeFloorSensors';
 import type { Checkin } from './state';
 
 // Hands the check-in to the native service, which stores it, attributes climbs to it and runs the
@@ -32,4 +37,22 @@ export async function setActiveCheckin(
     .catch(() => {
       // A failed prompt keeps the stored check-in; detection starts at the next app start.
     });
+}
+
+// The active check-in, null when none or expired, read again whenever the screen comes into view.
+export function useActiveCheckin(navigation: {
+  addListener: (event: 'focus', fn: () => void) => () => void;
+}): ActiveCheckin | null {
+  const [checkin, setCheckin] = useState<ActiveCheckin | null>(null);
+  const read = useCallback(() => {
+    FloorSensorsApi.getActiveCheckin().then(
+      c => setCheckin(c && c.valid_until_ms > Date.now() ? c : null),
+      () => setCheckin(null),
+    );
+  }, []);
+  useEffect(() => {
+    read();
+    return navigation.addListener('focus', read);
+  }, [navigation, read]);
+  return checkin;
 }

@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api/client';
 import { useMe } from '../data/myTeam';
 import { clock, pullToRefresh, ReadState, useRead } from '../data/useRead';
-import { FloorSensors } from '../native/floorSensors';
-import type { ActiveCheckin } from '../native/NativeFloorSensors';
+import { useActiveCheckin } from '../checkin/active';
 import type { MainStackParamList } from '../navigation/types';
 import { useGameEvents } from '../realtime/useGameEvents';
 import { BuildingDrawing } from '../standings/BuildingDrawing';
@@ -30,19 +28,6 @@ function sinceText(iso: string, now = Date.now()): string {
       });
 }
 
-// The active check-in, re-read whenever the screen comes back into view.
-function useCheckin(navigation: Props['navigation']) {
-  const [checkin, setCheckin] = useState<ActiveCheckin | null>(null);
-  const read = useCallback(() => {
-    FloorSensors.getActiveCheckin().then(setCheckin, () => setCheckin(null));
-  }, []);
-  useEffect(() => {
-    read();
-    return navigation.addListener('focus', read);
-  }, [navigation, read]);
-  return checkin;
-}
-
 // One building: the drawing, who holds it, every team's points and what it takes to win it
 // (DESIGN.md section 10).
 export function BuildingScreen({ route, navigation }: Props) {
@@ -54,7 +39,7 @@ export function BuildingScreen({ route, navigation }: Props) {
   const buildings = useRead('buildings', () => api('get', '/buildings'));
   const name = buildings.data?.find(b => b.id === id)?.name ?? `Building ${id}`;
   const mine = useMe().data?.team?.code ?? null;
-  const checkin = useCheckin(navigation);
+  const here = useActiveCheckin(navigation);
   const { width } = useWindowDimensions();
   const { bottom } = useSafeAreaInsets();
 
@@ -71,10 +56,6 @@ export function BuildingScreen({ route, navigation }: Props) {
   const teams = data ? standingsOrder(data.teams, owner) : [];
   const total = teams.reduce((s, t) => s + t.points, 0);
   const leader = teams[0]?.points ?? 0;
-  const here =
-    checkin?.building_id === id && minutesLeftMs(checkin, Date.now()) > 0
-      ? checkin
-      : null;
 
   return (
     <View style={styles.fill}>
@@ -184,7 +165,7 @@ export function BuildingScreen({ route, navigation }: Props) {
       </Screen>
       {/* Sticky action bar: the one primary action on this screen. */}
       <View style={[styles.bar, { paddingBottom: 16 + bottom }]}>
-        {here ? (
+        {here?.building_id === id ? (
           <Text style={[type.label, styles.center]}>
             {`You're climbing here, ${minutesLeftMs(
               here,
