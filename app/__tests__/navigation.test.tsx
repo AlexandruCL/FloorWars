@@ -151,3 +151,31 @@ test('Buildings: your building first, owner lines and the held tally', async () 
   expect(screen.getByText('1 open')).toBeTruthy();
   native.getActiveCheckin.mockResolvedValue(null);
 });
+
+test('a season picked in the sheet reaches the Ranks tab', async () => {
+  apiMock.mockImplementation(async (_m: string, path: string) => {
+    switch (path) {
+      case '/seasons/active':
+        return { id: 3, starts_at: '', ends_at: '2026-12-07T00:00:00Z' };
+      case '/seasons':
+        return [
+          { id: 3, starts_at: '', ends_at: '' },
+          { id: 2, starts_at: '', ends_at: '' },
+        ];
+      case '/leaderboards':
+        return { scope: 'individual', season_id: 3, entries: [] };
+      case '/buildings':
+        return buildings;
+    }
+    throw new TypeError('Network request failed');
+  });
+  await render(<RootNavigator isSignedIn />);
+  await fireEvent.press(await screen.findByText('Ranks'));
+  await fireEvent.press(
+    await screen.findByRole('button', { name: 'Season 3. Change season' }),
+  );
+  await fireEvent.press(await screen.findByText('Season 2'));
+  expect(
+    await screen.findByRole('button', { name: 'Season 2. Change season' }),
+  ).toBeTruthy();
+});

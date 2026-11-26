@@ -11,6 +11,7 @@ import {
   type RefreshControlProps,
   ScrollView,
   StyleSheet,
+  Modal,
   Text,
   View,
 } from 'react-native';
@@ -285,6 +286,86 @@ export function TeamTag({
   );
 }
 
+// One choice out of a few, such as the Ranks board (DESIGN.md section 8).
+export function Segmented<T extends string>({
+  items,
+  selected,
+  onSelect,
+}: {
+  items: { value: T; label: string }[];
+  selected: T;
+  onSelect: (v: T) => void;
+}) {
+  return (
+    <View style={styles.track} accessibilityRole="tablist">
+      {items.map(i => {
+        const on = i.value === selected;
+        return (
+          <Pressable
+            key={i.value}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}
+            onPress={() => onSelect(i.value)}
+            style={[styles.segment, on && styles.segmentOn]}
+          >
+            <Text
+              style={[
+                type.label,
+                { color: on ? colors.chalk : colors.chalkDim },
+              ]}
+              numberOfLines={1}
+            >
+              {i.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+// A bottom sheet over a scrim: tap outside or Back closes it. shortcut: RN Modal, not the native
+// formSheet DESIGN.md names, which on Android dropped taps on its rows and stuck after closing
+// (react-native-screens 4.30); revisit when screens fixes formSheet on Android.
+export function Sheet({
+  visible,
+  title,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const { bottom } = useSafeAreaInsets();
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.sheetRoot}>
+        <Pressable
+          style={styles.scrim}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+        />
+        <View style={[styles.sheet, { paddingBottom: 16 + bottom }]}>
+          <Text style={type.heading} accessibilityRole="header">
+            {title}
+          </Text>
+          {children}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // A status that needs the player: one sentence and the action that fixes it.
 export function Notice({
   kind = 'warn',
@@ -382,6 +463,36 @@ const styles = StyleSheet.create({
   tag: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  track: {
+    flexDirection: 'row',
+    gap: 4,
+    padding: 4,
+    borderRadius: 12,
+    backgroundColor: colors.raised,
+  },
+  segment: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    paddingHorizontal: 4,
+  },
+  segmentOn: { backgroundColor: colors.sunken, borderColor: colors.edge },
+  sheetRoot: { flex: 1, justifyContent: 'flex-end' },
+  scrim: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  sheet: {
+    gap: 16,
+    padding: 16,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    backgroundColor: colors.raised,
   },
   notice: {
     flexDirection: 'row',
