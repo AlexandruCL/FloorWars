@@ -46,7 +46,9 @@ export function BuildingDrawing({
   const large = width >= 160;
   const pole = large ? 22 : Math.max(5, Math.round(height * 0.08));
   const flagH = large ? 15 : Math.max(3, Math.round(height * 0.06));
-  const availW = width - (large ? LABEL_GUTTER : 0);
+  // Room for band codes on the right only when windows are lit.
+  const labelled = large && !unlit && teams.some(t => t.points > 0);
+  const availW = width - (labelled ? LABEL_GUTTER : 0);
   const ratio = WINDOW_RATIO[f.windows];
   const fh = Math.max(
     3,

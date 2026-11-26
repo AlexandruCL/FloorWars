@@ -33,7 +33,7 @@ beforeEach(async () => {
 
 test('four tabs, Climb first', async () => {
   await render(<RootNavigator isSignedIn />);
-  expect((await screen.findAllByText('Status')).length).toBeGreaterThan(0);
+  await screen.findAllByText('Climb');
   for (const tab of ['Climb', 'Buildings', 'Ranks', 'You']) {
     expect(screen.getByText(tab)).toBeTruthy();
   }

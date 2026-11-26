@@ -23,7 +23,7 @@ describe('flow', () => {
     await render(<RootNavigator isSignedIn />);
     await screen.findByText(READ, {}, { timeout: 5000 });
     await fireEvent.press(screen.getByText(READ));
-    await screen.findByText('Sync now');
+    await screen.findByText('Climb');
     expect(await hasSeenOnboarding()).toBe(true);
   });
 
@@ -40,7 +40,7 @@ describe('flow', () => {
       service: 'floorwars.onboarding',
     });
     await render(<RootNavigator isSignedIn />);
-    await screen.findByText('Sync now', {}, { timeout: 5000 });
+    await screen.findByText('Climb', {}, { timeout: 5000 });
     expect(screen.queryByText(READ)).toBeNull();
     await fireEvent.press(await screen.findByText('You'));
     await fireEvent.press(await screen.findByText('How FloorWars works'));

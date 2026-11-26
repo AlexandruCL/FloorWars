@@ -34,14 +34,14 @@ export function problemText(kind: NonNullable<ProblemKind>, sync: SyncState) {
   switch (kind) {
     case 'stuck':
       return sync.stuck?.kind === 'device-unknown'
-        ? 'This phone is not registered to your account, so uploads are paused. Your segments are kept. Sign out and back in, or update the app.'
-        : 'The server refused an upload and the app cannot fix it by retrying. Your segments are kept. Update the app.';
+        ? 'This phone is not registered to your account, so uploads are paused. Your climbs are kept. Sign out and back in, or update the app.'
+        : 'The server refused an upload and the app cannot fix it by retrying. Your climbs are kept. Update the app.';
     case 'offline':
-      return 'No connection to the server. Segments upload on their own when it is back.';
+      return 'No connection to the server. Climbs upload on their own when it is back.';
     case 'signed_out':
       return 'You are signed out, so nothing uploads.';
     case 'error':
-      return 'The last upload did not finish. Segments are kept and will be tried again.';
+      return 'The last upload did not finish. Climbs are kept and will be tried again.';
   }
 }
 

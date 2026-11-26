@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   DarkTheme,
   getStateFromPath,
@@ -22,7 +22,9 @@ import { BuildingScreen } from '../screens/BuildingScreen';
 import { BuildingsScreen } from '../screens/BuildingsScreen';
 import { RanksScreen } from '../screens/RanksScreen';
 import { YouScreen } from '../screens/YouScreen';
-import { colors, fonts } from '../ui/parts';
+import { useMe } from '../data/myTeam';
+import { AccentContext, colors, fonts } from '../ui/parts';
+import { teamTone } from '../ui/tone';
 import { Pictogram, type PictogramName } from '../ui/Pictogram';
 import type {
   AuthStackParamList,
@@ -176,6 +178,12 @@ function AuthNavigator({
 function MainNavigator() {
   // Shown once, right after the team choice; null until the stored flag is read.
   const [seen, setSeen] = useState<boolean | null>(null);
+  const me = useMe();
+  const team = me.data?.team;
+  const accent = useMemo(
+    () => (team ? teamTone(team.color_hex) : null),
+    [team],
+  );
   useEffect(() => {
     hasSeenOnboarding().then(setSeen, () => setSeen(true));
   }, []);
@@ -183,46 +191,49 @@ function MainNavigator() {
     return null;
   }
   return (
-    <MainStack.Navigator
-      initialRouteName={seen ? 'Tabs' : 'Onboarding'}
-      screenOptions={headerOptions}
-    >
-      <MainStack.Screen
-        name="Onboarding"
-        component={OnboardingScreen}
-        options={{ title: 'How it works' }}
-      />
-      <MainStack.Screen
-        name="LandingScan"
-        component={LandingScanScreen}
-        options={{ title: 'Scan stair sticker' }}
-      />
-      <MainStack.Screen
-        name="Tabs"
-        component={TabsNavigator}
-        options={{ headerShown: false }}
-      />
-      <MainStack.Screen
-        name="Checkin"
-        component={CheckinScreen}
-        options={{ title: 'Check in' }}
-      />
-      <MainStack.Screen
-        name="SensorLogger"
-        component={SensorLoggerScreen}
-        options={{ title: 'Sensor logger' }}
-      />
-      <MainStack.Screen
-        name="Building"
-        component={BuildingScreen}
-        options={{ title: '' }}
-      />
-      <MainStack.Screen
-        name="History"
-        component={HistoryScreen}
-        options={{ title: 'Climbs' }}
-      />
-    </MainStack.Navigator>
+    // Your team's tone is the app's only accent once the team is known.
+    <AccentContext.Provider value={accent}>
+      <MainStack.Navigator
+        initialRouteName={seen ? 'Tabs' : 'Onboarding'}
+        screenOptions={headerOptions}
+      >
+        <MainStack.Screen
+          name="Onboarding"
+          component={OnboardingScreen}
+          options={{ title: 'How it works' }}
+        />
+        <MainStack.Screen
+          name="LandingScan"
+          component={LandingScanScreen}
+          options={{ title: 'Scan stair sticker' }}
+        />
+        <MainStack.Screen
+          name="Tabs"
+          component={TabsNavigator}
+          options={{ headerShown: false }}
+        />
+        <MainStack.Screen
+          name="Checkin"
+          component={CheckinScreen}
+          options={{ title: 'Check in' }}
+        />
+        <MainStack.Screen
+          name="SensorLogger"
+          component={SensorLoggerScreen}
+          options={{ title: 'Sensor logger' }}
+        />
+        <MainStack.Screen
+          name="Building"
+          component={BuildingScreen}
+          options={{ title: '' }}
+        />
+        <MainStack.Screen
+          name="History"
+          component={HistoryScreen}
+          options={{ title: 'Climbs' }}
+        />
+      </MainStack.Navigator>
+    </AccentContext.Provider>
   );
 }
 

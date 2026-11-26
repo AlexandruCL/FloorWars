@@ -380,7 +380,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.hairline,
   },
   tag: {
-    alignSelf: 'flex-start',
     justifyContent: 'center',
     alignItems: 'center',
   },

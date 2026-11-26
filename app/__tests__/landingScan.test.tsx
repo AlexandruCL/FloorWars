@@ -92,19 +92,21 @@ describe('Home', () => {
     addListener: jest.fn(() => () => {}),
   };
   const home = () => render(<HomeScreen {...({ navigation } as any)} />);
-  test('scan entry only without a barometer, and it replaces the detection rows', async () => {
+  // Home also reads the server; offline here, so only the native status matters.
+  beforeEach(() => apiMock.mockRejectedValue(new TypeError('offline')));
+  test('scan entry only without a barometer, and it replaces the detection line', async () => {
     g.__DEV__ = false;
     native.getStatus.mockResolvedValue(status(false));
     await home();
-    await fireEvent.press(await screen.findByText('Scan at the stairs'));
+    await fireEvent.press(await screen.findByText('Scan stair sticker'));
     expect(navigation.navigate).toHaveBeenCalledWith('LandingScan');
-    expect(screen.queryByText('Detection')).toBeNull();
+    expect(screen.queryByText(/^Detection/)).toBeNull();
   });
-  test('with a barometer: detection rows, no scan entry', async () => {
+  test('with a barometer: detection line, no scan entry', async () => {
     g.__DEV__ = false;
     await home();
-    await screen.findByText('Detection');
-    expect(screen.queryByText('Scan at the stairs')).toBeNull();
+    await screen.findByText(/^Detection on\./);
+    expect(screen.queryByText('Scan stair sticker')).toBeNull();
   });
 });
 

@@ -269,79 +269,54 @@ describe('History screen', () => {
   });
 });
 
-describe('Home', () => {
+describe('Climb today', () => {
   const navigation = {
     navigate: jest.fn(),
     addListener: jest.fn(() => () => {}),
   };
   let segments: () => Promise<unknown>;
   beforeEach(() => {
-    native.getActiveCheckin.mockResolvedValue({
-      checkin_id: 'c',
-      building_id: 7,
-      building_name: 'Library',
-      valid_until_ms: NOW + 3600_000,
+    native.getActiveCheckin.mockResolvedValue(null);
+    apiMock.mockImplementation(async (_m: string, path: string) => {
+      if (path === '/me/segments') {
+        return segments();
+      }
+      throw new TypeError('Network request failed');
     });
-    apiMock.mockImplementation(async () => segments());
   });
   const show = () => render(<HomeScreen {...({ navigation } as any)} />);
 
-  test('loading', async () => {
-    segments = () => new Promise(() => {});
-    await show();
-    expect(screen.getByText('Verified today: loading')).toBeTruthy();
-  });
-
-  test('the figures', async () => {
+  test('the figures count only verified climbs since midnight', async () => {
     segments = async () =>
       page([
-        seg({ started_at: at(NOW - 1000), steps_scored: 12, ascent_m: 3 }),
+        seg({ started_at: at(NOW - 1000), steps_scored: 42, ascent_m: 3 }),
         seg({ started_at: at(NOW - 2000), status: 'pending', steps_scored: 0 }),
         seg({ started_at: at(MIDNIGHT - 1000), steps_scored: 50 }),
       ]);
     await show();
-    expect(
-      await screen.findByText('Verified today: 12 steps, 3.0 m'),
-    ).toBeTruthy();
+    expect(await screen.findByText('42 verified steps, 3.0 m up')).toBeTruthy();
+    expect(screen.getByText('2')).toBeTruthy();
   });
 
   test('unavailable with no cache', async () => {
     segments = offline;
     await show();
-    expect(await screen.findByText('Verified today: unavailable')).toBeTruthy();
+    expect(
+      await screen.findByText("Today's climbs can't be loaded right now."),
+    ).toBeTruthy();
     expect(screen.queryByText(/Last updated/)).toBeNull();
   });
 
   test('unavailable with the cached value and its label', async () => {
     segments = async () => page([seg({ steps_scored: 12, ascent_m: 3 })]);
     await show();
-    await screen.findByText('Verified today: 12 steps, 3.0 m');
+    await screen.findByText('12 verified steps, 3.0 m up');
     await screen.unmount();
     segments = offline;
     await show();
-    expect(await screen.findByText('Verified today: unavailable')).toBeTruthy();
-    expect(screen.getByText('Verified today: 12 steps, 3.0 m')).toBeTruthy();
     expect(
-      screen.getByText(/^Last updated .+\. Can't reach the server\.$/),
+      await screen.findByText(/^Last updated .+\. Can't reach the server\.$/),
     ).toBeTruthy();
-  });
-
-  test('standings button only with a check-in, and it opens Building', async () => {
-    segments = async () => page([]);
-    await show();
-    await fireEvent.press(
-      await screen.findByRole('button', { name: 'Building standings' }),
-    );
-    expect(navigation.navigate).toHaveBeenCalledWith('Building', {
-      buildingId: 7,
-    });
-    await screen.unmount();
-
-    native.getActiveCheckin.mockResolvedValue(null);
-    await show();
-    await screen.findByText('Verified today: 0 steps, 0.0 m');
-    expect(
-      screen.queryByRole('button', { name: 'Building standings' }),
-    ).toBeNull();
+    expect(screen.getByText('12 verified steps, 3.0 m up')).toBeTruthy();
   });
 });
