@@ -68,7 +68,7 @@ export function OnboardingScreen({
       <Body>{batterySteps((Platform.constants as any)?.Manufacturer)}</Body>
       <Button
         title="Open battery settings"
-        secondary
+        variant="text"
         onPress={() => FloorSensors.openBatteryOptimizationSettings()}
       />
       <Button title="I've read this" onPress={done} />

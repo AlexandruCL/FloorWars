@@ -118,7 +118,11 @@ export function CheckinScreen({ navigation, deps = deviceLibs }: Props) {
             location instead.
           </Body>
           <Button title="Scan entrance code" onPress={startScan} />
-          <Button title="Use my location" secondary onPress={useLocation} />
+          <Button
+            title="Use my location"
+            variant="text"
+            onPress={useLocation}
+          />
         </>
       )}
       {phase.name === 'scanning' && (
@@ -130,7 +134,7 @@ export function CheckinScreen({ navigation, deps = deviceLibs }: Props) {
           <Body>Hold the phone so the whole code is in the frame.</Body>
           <Button
             title="Cancel"
-            secondary
+            variant="text"
             onPress={() => setPhase({ name: 'idle' })}
           />
         </>
@@ -169,14 +173,14 @@ export function CheckinScreen({ navigation, deps = deviceLibs }: Props) {
             title={
               phase.method === 'qr' ? 'Scan again' : 'Try my location again'
             }
-            secondary={phase.kind === 'denied'}
+            variant={phase.kind === 'denied' ? 'text' : 'primary'}
             onPress={phase.method === 'qr' ? startScan : useLocation}
           />
           <Button
             title={
               phase.method === 'qr' ? 'Use my location' : 'Scan entrance code'
             }
-            secondary
+            variant="text"
             onPress={phase.method === 'qr' ? useLocation : startScan}
           />
         </>

@@ -133,7 +133,7 @@ export function EmailScreen({
         onChange={setTerms}
       />
       <ErrorText message={invalid ?? error} />
-      <Button title="Send code" onPress={submit} busy={busy} />
+      <Button title="Send code" onPress={submit} busy={busy} wide />
       {DEV_SKIP_SIGN_IN && onDevSkipSignIn && (
         <NativeButton title="Skip sign-in (dev)" onPress={onDevSkipSignIn} />
       )}
@@ -206,12 +206,12 @@ export function OtpScreen({ navigation, route }: Nav<'Otp'>) {
       />
       <ErrorText message={error} />
       {notice && <Body>{notice}</Body>}
-      <Button title="Verify" onPress={verify} busy={busy} />
+      <Button title="Verify" onPress={verify} busy={busy} wide />
       <Button
         title="Send a new code"
         onPress={resend}
         disabled={busy}
-        secondary
+        variant="text"
       />
     </Screen>
   );
@@ -302,7 +302,7 @@ export function TeamScreen({ onDone }: { onDone: () => void }) {
       <Screen>
         <Heading>Pick your team</Heading>
         <Body>No teams are set up yet. Check back soon.</Body>
-        <Button title="Check again" onPress={load} secondary />
+        <Button title="Check again" onPress={load} variant="text" />
       </Screen>
     );
   }
@@ -328,6 +328,7 @@ export function TeamScreen({ onDone }: { onDone: () => void }) {
         onPress={join}
         busy={joining}
         disabled={selected === null}
+        wide
       />
     </Screen>
   );

@@ -218,7 +218,7 @@ export function HomeScreen({
       ) : unreadable ? (
         <>
           <ErrorText message="Could not read the sensor service. Close and reopen the app." />
-          <Button title="Try again" onPress={refresh} secondary />
+          <Button title="Try again" onPress={refresh} variant="text" />
         </>
       ) : (
         <>
@@ -269,7 +269,7 @@ export function HomeScreen({
               </Body>
               <Button
                 title="Open battery settings"
-                secondary
+                variant="text"
                 onPress={() => FloorSensors.openBatteryOptimizationSettings()}
               />
             </View>
@@ -281,7 +281,7 @@ export function HomeScreen({
       <Button title="Sync now" busy={sync.running} onPress={() => syncNow()} />
       <Button
         title="Check in"
-        secondary
+        variant="text"
         onPress={() => navigation.navigate('Checkin')}
       />
       {noBarometer && (
@@ -293,7 +293,7 @@ export function HomeScreen({
       {snap?.checkin && (
         <Button
           title="Building standings"
-          secondary
+          variant="text"
           onPress={() =>
             navigation.navigate('Standings', {
               buildingId: snap.checkin!.building_id,
@@ -303,25 +303,25 @@ export function HomeScreen({
       )}
       <Button
         title="Leaderboards"
-        secondary
+        variant="text"
         onPress={() => navigation.navigate('Leaderboards')}
       />
       <Button
         title="Climb history"
-        secondary
+        variant="text"
         onPress={() => navigation.navigate('History')}
       />
       <Button
         title="How it works"
-        secondary
+        variant="text"
         onPress={() => navigation.navigate('Onboarding')}
       />
       <Button
         title="Sensor logger"
-        secondary
+        variant="text"
         onPress={() => navigation.navigate('SensorLogger')}
       />
-      <Button title="Sign out" onPress={confirmSignOut} secondary />
+      <Button title="Sign out" onPress={confirmSignOut} variant="danger" />
     </Screen>
   );
 }
