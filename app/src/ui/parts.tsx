@@ -16,6 +16,13 @@ import {
   View,
 } from 'react-native';
 import { HeaderShownContext } from '@react-navigation/elements';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pictogram } from './Pictogram';
 import { teamTone, type Tone } from './tone';
@@ -133,6 +140,27 @@ export function ErrorText({ message }: { message: string | null }) {
   ) : null;
 }
 
+// Press feedback (DESIGN.md section 11): scale to 0.97 in 100 ms, back in 160 ms, ease-out.
+// Reduced motion keeps only the pressed colour.
+const PRESS_EASING = Easing.bezier(0.23, 1, 0.32, 1);
+function usePressScale() {
+  const reduce = useReducedMotion();
+  const scale = useSharedValue(1);
+  const style = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+  const to = (value: number, duration: number) => {
+    if (!reduce) {
+      scale.value = withTiming(value, { duration, easing: PRESS_EASING });
+    }
+  };
+  return {
+    style,
+    onPressIn: () => to(0.97, 100),
+    onPressOut: () => to(1, 160),
+  };
+}
+
 // Your team's tone, the app's only accent (DESIGN.md section 5). Null before a team is known: chalk.
 export const AccentContext = createContext<Tone | null>(null);
 
@@ -154,6 +182,7 @@ export function Button({
   wide?: boolean;
 }) {
   const accent = useContext(AccentContext);
+  const press = usePressScale();
   const off = disabled || busy;
   const primary = variant === 'primary';
   const fill = primary
@@ -169,24 +198,30 @@ export function Button({
     ? colors.bad
     : colors.chalk;
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      accessibilityState={{ disabled: !!off, busy: !!busy }}
-      disabled={off}
-      onPress={onPress}
-      style={[
-        primary ? styles.primary : styles.textButton,
-        wide && styles.wide,
-        fill !== undefined && { backgroundColor: fill },
-      ]}
+    <Animated.View
+      style={[styles.pressWrap, wide && styles.wideWrap, press.style]}
     >
-      {/* The label keeps its width while the spinner shows, so the button does not jump. */}
-      <Text style={[type.label, { color: ink }, busy && styles.hidden]}>
-        {title}
-      </Text>
-      {busy && <ActivityIndicator style={styles.spinner} color={ink} />}
-    </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        accessibilityState={{ disabled: !!off, busy: !!busy }}
+        disabled={off}
+        onPress={onPress}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        style={[
+          primary ? styles.primary : styles.textButton,
+          wide && styles.wide,
+          fill !== undefined && { backgroundColor: fill },
+        ]}
+      >
+        {/* The label keeps its width while the spinner shows, so the button does not jump. */}
+        <Text style={[type.label, { color: ink }, busy && styles.hidden]}>
+          {title}
+        </Text>
+        {busy && <ActivityIndicator style={styles.spinner} color={ink} />}
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -204,6 +239,7 @@ export function Row({
   onPress?: () => void;
   danger?: boolean;
 }) {
+  const press = usePressScale();
   const body = (
     <>
       <View style={styles.rowText}>
@@ -219,13 +255,17 @@ export function Row({
     </>
   );
   return onPress ? (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-    >
-      {body}
-    </Pressable>
+    <Animated.View style={press.style}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onPress}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      >
+        {body}
+      </Pressable>
+    </Animated.View>
   ) : (
     <View style={styles.row}>{body}</View>
   );
@@ -415,21 +455,21 @@ const styles = StyleSheet.create({
   heading: type.title,
   body: { ...type.body, maxWidth: 520 },
   error: { ...type.body, color: colors.bad },
+  pressWrap: { alignSelf: 'flex-start' },
+  wideWrap: { alignSelf: 'stretch' },
   primary: {
     minHeight: 48,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
-    alignSelf: 'flex-start',
   },
   textButton: {
     minHeight: 48,
     justifyContent: 'center',
     paddingHorizontal: 12,
-    alignSelf: 'flex-start',
   },
-  wide: { alignSelf: 'stretch', alignItems: 'center' },
+  wide: { alignItems: 'center' },
   hidden: { opacity: 0 },
   spinner: { position: 'absolute' },
   row: {
