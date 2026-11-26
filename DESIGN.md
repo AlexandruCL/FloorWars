@@ -278,7 +278,13 @@ Live: a flip for this building replays the drawing (section 11) and the rows mov
 - Success: back on Climb, the building's windows light from the ground up (section 11).
 - `403 building-locked`: "You switched building at 14:20 yesterday. You can switch again at 14:20 today."
 
-This uses the Week 5 remote check-in (`method: pick`, 24 h check-ins, 24 h switch lock). Until it ships, Pick a building opens the Buildings tab and only the QR path checks in.
+This uses the Week 5 remote check-in (`method: pick`, 24 h check-ins, 24 h switch lock).
+
+Before Week 5 ships, the redesign keeps today's check-in rules:
+
+- Check-ins last 90 minutes ("Checked in, 74 min left") and there is no switch lock, so the locked lines and the confirm sheet wait for Week 5.
+- Pick a building opens the Buildings tab, and Check in here on Building opens the check-in screen.
+- The check-in screen keeps both of today's methods: **Scan entrance code** as the primary button and **Use my location** as a text button.
 
 ### Ranks (tab 3)
 
@@ -372,7 +378,7 @@ The smallest path, each step shippable:
 2. Components in `parts.tsx`: Button variants, Row, TeamTag, Notice, pictograms. Remove the outlined button.
 3. Navigation: bottom tabs, move Home's rows into You, Leaderboards becomes Ranks, Standings becomes Building, deep link updated.
 4. The building drawing (section 9) with its tests.
-5. Screens in order of use: Climb, Building, Buildings, Ranks, You, History, check-in sheets (with remote check-in), How it works, sign-in.
+5. Screens in order of use: Climb, Building, Buildings, Ranks, You, History, the check-in screen restyled with today's methods (the pick and confirm sheets come with remote check-in in Week 5), How it works, sign-in.
 6. Motion (section 11).
 
 Tests that change with the new labels and structure: `HomeScreen`, `history`, `leaderboards`, `onboarding`, `signout`, `standings`, `checkin`, `AuthScreens`, `landingScan` and `App` in `app/__tests__`.
