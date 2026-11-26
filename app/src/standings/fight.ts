@@ -13,6 +13,9 @@ export function fightLine(
   mine: string | null = null,
 ): string {
   const list = standingsOrder(teams, owner);
+  if (list.length === 0) {
+    return 'No team has points here in the last 7 days. Climb the stairs to claim it.';
+  }
   const holder = list.find(t => t.code === owner);
   if (!owner || !holder) {
     return 'Nobody owns it yet.';

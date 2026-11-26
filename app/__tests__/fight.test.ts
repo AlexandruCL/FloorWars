@@ -34,7 +34,9 @@ test('a tie keeps the owner', () => {
 
 test('nobody, alone, and an owner that fell behind', () => {
   expect(fightLine([AC], null)).toBe('Nobody owns it yet.');
-  expect(fightLine([], 'AC')).toBe('Nobody owns it yet.');
+  expect(fightLine([], 'AC')).toBe(
+    'No team has points here in the last 7 days. Climb the stairs to claim it.',
+  );
   expect(fightLine([AC], 'AC')).toBe(
     'AC owns it. No other team has points here this week.',
   );
