@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Animated, { Easing, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api/client';
 import { useMe } from '../data/myTeam';
@@ -15,6 +16,11 @@ import { Body, Button, colors, Screen, TeamTag, type } from '../ui/parts';
 import { minutesLeftMs } from './homeStatus';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'Building'>;
+
+// Rows move to their new order after a flip instead of jumping (DESIGN.md section 11).
+const REORDER = LinearTransition.duration(200).easing(
+  Easing.bezier(0.77, 0, 0.175, 1),
+);
 
 // "Tuesday 14:02" within the last week, "12 November" before that.
 function sinceText(iso: string, now = Date.now()): string {
@@ -129,7 +135,8 @@ export function BuildingScreen({ route, navigation }: Props) {
                   : (leader - t.points + 1).toLocaleString('en-US');
               const yours = t.code === mine;
               return (
-                <View
+                <Animated.View
+                  layout={REORDER}
                   key={t.code}
                   style={[styles.row, styles.bodyRow, yours && styles.yours]}
                   accessible
@@ -169,7 +176,7 @@ export function BuildingScreen({ route, navigation }: Props) {
                   >
                     {take}
                   </Text>
-                </View>
+                </Animated.View>
               );
             })}
           </View>

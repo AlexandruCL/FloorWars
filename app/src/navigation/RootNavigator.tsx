@@ -23,6 +23,7 @@ import { BuildingsScreen } from '../screens/BuildingsScreen';
 import { RanksScreen } from '../screens/RanksScreen';
 import { YouScreen } from '../screens/YouScreen';
 import { useMe } from '../data/myTeam';
+import { FlipBanner } from '../realtime/FlipBanner';
 import { AccentContext, colors, fonts } from '../ui/parts';
 import { teamTone } from '../ui/tone';
 import { Pictogram, type PictogramName } from '../ui/Pictogram';
@@ -233,6 +234,7 @@ function MainNavigator() {
           options={{ title: 'Climbs' }}
         />
       </MainStack.Navigator>
+      <FlipBanner />
     </AccentContext.Provider>
   );
 }

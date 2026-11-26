@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
   Platform,
@@ -20,7 +20,7 @@ import {
   FLOOR_EQUIVALENT_LABEL,
   floorEquivalent,
 } from '../scoring/floorEquivalent';
-import { BuildingDrawing } from '../standings/BuildingDrawing';
+import { BuildingDrawing, type Replay } from '../standings/BuildingDrawing';
 import { standingsOrder } from '../standings/facade';
 import { fightLine } from '../standings/fight';
 import { hasBarometer } from '../landing/landingScan';
@@ -161,10 +161,12 @@ function YourBuilding({
   checkin,
   mine,
   navigation,
+  replay,
 }: {
   checkin: ActiveCheckin;
   mine: string | null;
   navigation: Nav;
+  replay: Replay | null;
 }) {
   const id = checkin.building_id;
   const { width } = useWindowDimensions();
@@ -190,6 +192,7 @@ function YourBuilding({
         name={name}
         width={width - 32}
         height={200}
+        replay={replay}
       />
       <Text style={styles.name} accessibilityRole="header">
         {name}
@@ -312,6 +315,25 @@ export function HomeScreen({ navigation }: Props) {
   const checkin =
     snap?.checkin && minutesLeftMs(snap.checkin, now) > 0 ? snap.checkin : null;
 
+  // A new check-in lights the windows from the ground up; the first read after opening only
+  // records the current one, so a launch does not replay it (DESIGN.md section 11).
+  const seenCheckin = useRef<string | null | undefined>(undefined);
+  const [lightUp, setLightUp] = useState<Replay | null>(null);
+  const checkinId = snap ? checkin?.checkin_id ?? null : undefined;
+  useEffect(() => {
+    if (checkinId === undefined) {
+      return;
+    }
+    if (
+      seenCheckin.current !== undefined &&
+      checkinId &&
+      checkinId !== seenCheckin.current
+    ) {
+      setLightUp({ kind: 'checkin', from: [], owner: null, key: Date.now() });
+    }
+    seenCheckin.current = checkinId;
+  }, [checkinId]);
+
   // Status speaks only when something needs the player, most urgent first, at most two.
   const notices: NoticeProps[] = [];
   if (snap && !unreadable) {
@@ -397,6 +419,7 @@ export function HomeScreen({ navigation }: Props) {
                 checkin={checkin}
                 mine={team?.code ?? null}
                 navigation={navigation}
+                replay={lightUp}
               />
               <View style={styles.checkin}>
                 <View style={styles.grow}>

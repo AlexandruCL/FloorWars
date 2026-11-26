@@ -100,5 +100,6 @@ jest.mock('react-native-reanimated', () => {
     withTiming: jest.fn(value => value),
     Easing: { bezier: () => t => t },
     useReducedMotion: () => false,
+    LinearTransition: { duration: () => ({ easing: () => ({}) }) },
   };
 });
