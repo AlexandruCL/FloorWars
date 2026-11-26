@@ -1,5 +1,12 @@
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Linking, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Linking,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { api, ApiError } from '../api/client';
 import { setActiveCheckin } from '../checkin/active';
@@ -15,7 +22,15 @@ import {
   type Phase,
 } from '../checkin/state';
 import type { MainStackParamList } from '../navigation/types';
-import { Body, Button, colors, ErrorText, Heading, Screen } from '../ui/parts';
+import {
+  Body,
+  Button,
+  colors,
+  ErrorText,
+  Heading,
+  Screen,
+  type,
+} from '../ui/parts';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'Checkin'> & {
   deps?: CheckinDeps;
@@ -34,6 +49,7 @@ async function buildingName(id: number): Promise<string | null> {
 
 export function CheckinScreen({ navigation, deps = deviceLibs }: Props) {
   const [phase, setPhase] = useState<Phase>({ name: 'idle' });
+  const { bottom } = useSafeAreaInsets();
   // The scanner fires on every frame that holds a code; only the first one counts.
   const busy = useRef(false);
 
@@ -108,11 +124,28 @@ export function CheckinScreen({ navigation, deps = deviceLibs }: Props) {
   };
 
   const { ScannerView } = deps;
+  // Full-screen dark camera with one line (DESIGN.md section 10).
+  if (phase.name === 'scanning') {
+    return (
+      <View style={styles.cameraScreen}>
+        <ScannerView onScan={onScan} />
+        <View style={[styles.cameraBar, { paddingBottom: 16 + bottom }]}>
+          <Text style={styles.cameraLine}>
+            Point the camera at the code by the entrance.
+          </Text>
+          <Button
+            title="Cancel"
+            variant="text"
+            onPress={() => setPhase({ name: 'idle' })}
+          />
+        </View>
+      </View>
+    );
+  }
   return (
     <Screen>
       {phase.name === 'idle' && (
         <>
-          <Heading>Check in</Heading>
           <Body>
             Scan the code at the building entrance. No code in sight? Use your
             location instead.
@@ -122,20 +155,6 @@ export function CheckinScreen({ navigation, deps = deviceLibs }: Props) {
             title="Use my location"
             variant="text"
             onPress={useLocation}
-          />
-        </>
-      )}
-      {phase.name === 'scanning' && (
-        <>
-          <Heading>Scan the code</Heading>
-          <View style={styles.camera}>
-            <ScannerView onScan={onScan} />
-          </View>
-          <Body>Hold the phone so the whole code is in the frame.</Body>
-          <Button
-            title="Cancel"
-            variant="text"
-            onPress={() => setPhase({ name: 'idle' })}
           />
         </>
       )}
@@ -190,10 +209,17 @@ export function CheckinScreen({ navigation, deps = deviceLibs }: Props) {
 }
 
 const styles = StyleSheet.create({
-  camera: {
-    height: 320,
-    borderRadius: 8,
-    overflow: 'hidden',
+  cameraScreen: { flex: 1, backgroundColor: colors.night },
+  cameraBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    gap: 4,
+    paddingTop: 16,
+    paddingHorizontal: 16,
     backgroundColor: colors.night,
   },
+  cameraLine: { ...type.body, color: colors.chalk, textAlign: 'center' },
 });
