@@ -33,15 +33,13 @@ async function fillEmail(value: string, confirm = true) {
   await render(<EmailScreen {...props} />);
   await fireEvent.changeText(screen.getByLabelText('University e-mail'), value);
   if (confirm) {
-    await fireEvent(
-      screen.getByLabelText('I am 18 or older'),
-      'valueChange',
-      true,
+    await fireEvent.press(
+      screen.getByRole('checkbox', { name: 'I am 18 or older' }),
     );
-    await fireEvent(
-      screen.getByLabelText('I accept the terms and privacy notice'),
-      'valueChange',
-      true,
+    await fireEvent.press(
+      screen.getByRole('checkbox', {
+        name: 'I accept the terms and privacy notice',
+      }),
     );
   }
   await fireEvent.press(screen.getByText('Send code'));
@@ -192,7 +190,7 @@ describe('TeamScreen', () => {
     const onDone = jest.fn();
     await render(<TeamScreen onDone={onDone} />);
     await fireEvent.press(await screen.findByText('MEC'));
-    await fireEvent.press(screen.getByText('Join team'));
+    await fireEvent.press(screen.getByText('Join MEC'));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(apiMock).toHaveBeenCalledWith('post', '/seasons/{id}/join', {
       path: { id: 7 },
@@ -215,7 +213,7 @@ describe('TeamScreen', () => {
     const onDone = jest.fn();
     await render(<TeamScreen onDone={onDone} />);
     await fireEvent.press(await screen.findByText('AC'));
-    await fireEvent.press(screen.getByText('Join team'));
+    await fireEvent.press(screen.getByText('Join AC'));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(await getChosenSeason()).toBe(7);
   });
@@ -236,21 +234,28 @@ describe('TeamScreen', () => {
     const onDone = jest.fn();
     await render(<TeamScreen onDone={onDone} />);
     await fireEvent.press(await screen.findByText('AC'));
-    await fireEvent.press(screen.getByText('Join team'));
+    await fireEvent.press(screen.getByText('Join AC'));
     expect(await screen.findByText(/season is not running/)).toBeTruthy();
     expect(onDone).not.toHaveBeenCalled();
     expect(await hasChosenTeam()).toBe(false);
   });
+
+  test('the join button names the picked team and waits for a pick', async () => {
+    loaded();
+    await render(<TeamScreen onDone={jest.fn()} />);
+    const before = await screen.findByRole('button', { name: 'Pick a team' });
+    expect(before.props.accessibilityState.disabled).toBe(true);
+    await fireEvent.press(screen.getByRole('radio', { name: 'MEC' }));
+    expect(screen.getByRole('button', { name: 'Join MEC' })).toBeTruthy();
+  });
 });
 
 describe('stale validation errors', () => {
-  test('consent error clears when a switch changes, not on the next submit', async () => {
+  test('consent error clears when a checkbox changes, not on the next submit', async () => {
     await fillEmail('a@student.ro', false);
     expect(screen.getByText(/18 or older and accept the terms/)).toBeTruthy();
-    await fireEvent(
-      screen.getByLabelText('I am 18 or older'),
-      'valueChange',
-      true,
+    await fireEvent.press(
+      screen.getByRole('checkbox', { name: 'I am 18 or older' }),
     );
     expect(screen.queryByText(/18 or older and accept the terms/)).toBeNull();
   });

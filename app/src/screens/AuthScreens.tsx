@@ -4,7 +4,6 @@ import {
   StyleSheet,
   Button as NativeButton,
   Pressable,
-  Switch,
   Text,
   TextInput,
   View,
@@ -18,11 +17,15 @@ import { markTeamChosen, saveTokens } from '../auth/session';
 import { DEV_SKIP_SIGN_IN } from '../config/devFlags';
 import { FloorSensorsDebug } from '../native/FloorSensorsDebug';
 import type { AuthStackParamList } from '../navigation/types';
+import { BuildingDrawing } from '../standings/BuildingDrawing';
+import { Pictogram } from '../ui/Pictogram';
+import { teamTone } from '../ui/tone';
 import {
   Body,
   Button,
   colors,
   ErrorText,
+  fonts,
   Heading,
   inputStyle,
   Screen,
@@ -30,6 +33,15 @@ import {
 } from '../ui/parts';
 
 type Team = components['schemas']['Team'];
+
+// Neutral lit windows for the sign-in skyline: [id, width, height].
+const SKYLINE: [number, number, number][] = [
+  [14, 76, 96],
+  [12, 60, 150],
+  [8, 104, 120],
+  [5, 76, 100],
+];
+const LIT = [{ code: '', color_hex: '#B4BBC6', points: 1 }];
 type Nav<K extends keyof AuthStackParamList> = NativeStackScreenProps<
   AuthStackParamList,
   K
@@ -49,15 +61,18 @@ function Check({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <View style={styles.check}>
-      <Switch
-        accessibilityLabel={label}
-        value={value}
-        onValueChange={onChange}
-        trackColor={{ true: colors.chalkDim, false: colors.edge }}
-      />
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: value }}
+      onPress={() => onChange(!value)}
+      style={styles.check}
+    >
+      <View style={[styles.box, value && styles.boxOn]}>
+        {value && <Pictogram name="check" size={18} color={colors.night} />}
+      </View>
       <Text style={styles.checkLabel}>{label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -100,8 +115,25 @@ export function EmailScreen({
 
   return (
     <Screen>
-      <Heading>Climb for your faculty</Heading>
+      {/* A strip of neutral lit buildings; the wordmark is type only until a real logo exists. */}
+      <View style={styles.skyline} accessibilityElementsHidden>
+        {SKYLINE.map(([id, w, h]) => (
+          <BuildingDrawing
+            key={id}
+            buildingId={id}
+            teams={LIT}
+            owner={null}
+            width={w}
+            height={h}
+          />
+        ))}
+      </View>
+      <Text style={styles.wordmark}>FloorWars</Text>
+      <Text style={styles.signTitle} accessibilityRole="header">
+        Climb for your faculty
+      </Text>
       <Body>Enter your university e-mail. We send you a 6-digit code.</Body>
+      <Text style={styles.fieldLabel}>University e-mail</Text>
       <TextInput
         accessibilityLabel="University e-mail"
         autoCapitalize="none"
@@ -255,6 +287,7 @@ export function TeamScreen({ onDone }: { onDone: () => void }) {
     load();
   }, [load]);
 
+  const pickedCode = data?.teams.find(t => t.id === selected)?.code;
   const join = async () => {
     if (!data || selected === null) {
       return;
@@ -310,21 +343,29 @@ export function TeamScreen({ onDone }: { onDone: () => void }) {
     <Screen>
       <Heading>Pick your team</Heading>
       <Body>One team per season. You cannot change it later.</Body>
-      {data.teams.map(t => (
-        <Pressable
-          key={t.id}
-          accessibilityRole="radio"
-          accessibilityState={{ selected: selected === t.id }}
-          onPress={() => setSelected(t.id)}
-          style={[styles.team, selected === t.id && styles.teamSelected]}
-        >
-          <View style={[styles.swatch, { backgroundColor: t.color_hex }]} />
-          <Text style={styles.teamCode}>{t.code}</Text>
-        </Pressable>
-      ))}
+      <View style={styles.grid} accessibilityRole="radiogroup">
+        {data.teams.map(t => {
+          const { tone, ink } = teamTone(t.color_hex);
+          const on = selected === t.id;
+          return (
+            <Pressable
+              key={t.id}
+              accessibilityRole="radio"
+              accessibilityLabel={t.code}
+              accessibilityState={{ selected: on }}
+              onPress={() => setSelected(t.id)}
+              style={[styles.tile, on && styles.tileOn]}
+            >
+              <View style={[styles.tileFill, { backgroundColor: tone }]}>
+                <Text style={[styles.tileCode, { color: ink }]}>{t.code}</Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
       <ErrorText message={error} />
       <Button
-        title="Join team"
+        title={pickedCode ? `Join ${pickedCode}` : 'Pick a team'}
         onPress={join}
         busy={joining}
         disabled={selected === null}
@@ -338,18 +379,50 @@ const styles = StyleSheet.create({
   check: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48 },
   checkLabel: { ...type.body, flex: 1, color: colors.chalk },
   code: { fontSize: 28, letterSpacing: 8, fontVariant: ['tabular-nums'] },
-  team: {
-    minHeight: 56,
-    flexDirection: 'row',
+  box: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: colors.edge,
     alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    backgroundColor: colors.raised,
+    justifyContent: 'center',
   },
-  teamSelected: { borderWidth: 2, borderColor: colors.chalk },
-  swatch: { width: 24, height: 24, borderRadius: 12 },
-  teamCode: type.heading,
+  boxOn: { backgroundColor: colors.chalk, borderColor: colors.chalk },
+  skyline: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  wordmark: {
+    fontFamily: fonts.display,
+    fontSize: 52,
+    lineHeight: 52,
+    color: colors.chalk,
+    marginTop: 12,
+  },
+  signTitle: { ...type.title, fontSize: 28, lineHeight: 30 },
+  fieldLabel: {
+    ...type.meta,
+    fontFamily: fonts.semibold,
+    color: colors.chalkDim,
+    marginBottom: -10,
+  },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+  tile: {
+    width: '47%',
+    flexGrow: 1,
+    borderRadius: 11,
+    borderWidth: 3,
+    borderColor: 'transparent',
+  },
+  tileOn: { borderColor: colors.chalk },
+  tileFill: {
+    height: 106,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tileCode: { fontFamily: fonts.display, fontSize: 48, lineHeight: 52 },
 });
