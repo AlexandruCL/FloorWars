@@ -16,6 +16,9 @@
 			wrap json
 		}
 	}
+
+	# rate_limit is not in Caddy's default handler order; it must run before the proxy.
+	order rate_limit before reverse_proxy
 }
 
 (security_headers) {
@@ -39,9 +42,20 @@
 	@internal path /metrics /metrics/*
 	respond @internal 404
 
-	# TODO (Week 5, plan 7.4/7.11): per-IP request limits. Needs a Caddy build with the
-	# rate_limit plugin (github.com/mholt/caddy-ratelimit) via xcaddy; the stock caddy:2
-	# image has no rate limiter. Per-user limits are a Valkey token bucket in the API.
+	# Per-IP limit on the unauthenticated auth paths only (decision Q13, 2026-11-28). Players on
+	# the faculty Wi-Fi share one NAT address, so 120/min is for the whole faculty; authenticated
+	# paths have per-user Valkey buckets in the API instead. Over the limit: 429 + Retry-After.
+	# Needs the custom image (infra/caddy/Dockerfile); the stock caddy:2 refuses this file.
+	rate_limit {
+		zone auth_per_ip {
+			match {
+				path /v1/auth/otp /v1/auth/verify /v1/auth/refresh
+			}
+			key {remote_host}
+			events 120
+			window 1m
+		}
+	}
 
 	# FastAPI buffers the whole body before it checks the token, and the app has no size limit
 	# of its own, so the cap lives here. 1MB is 1,000,000 bytes. Over it: 413 from this proxy.

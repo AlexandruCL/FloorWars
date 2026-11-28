@@ -13,6 +13,9 @@ name: floorwars-local
 
 services:
   caddy:
+    image: floorwars-caddy:local
+    build:
+      context: ./caddy
     ports: !override
       - "127.0.0.1:8080:80"
       - "127.0.0.1:8443:443"

@@ -16,7 +16,9 @@ x-logging: &logging
 
 services:
   caddy:
-    image: caddy:2
+    # Own image with caddy-ratelimit (infra/caddy/Dockerfile), built in CI. :main is the newest
+    # build of main; the stock caddy:2 cannot read the Caddyfile (rate_limit).
+    image: ${CADDY_IMAGE:-ghcr.io/alexandrucl/floorwars-caddy}:${CADDY_TAG:-main}
     restart: unless-stopped
     ports:
       - "80:80"
