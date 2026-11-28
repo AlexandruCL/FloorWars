@@ -353,6 +353,7 @@ After each item, one line: `W5-n done | verify: <command> → <summary line> | c
   - Q12c: pgBackRest 2.60.x in our own Postgres image (postgis 18-3.6 plus PGDG `pgbackrest`), built in CI to GHCR.
   - Q12d: custom Caddy (`caddy:2.11.x-builder` plus `mholt/caddy-ratelimit` pinned by commit SHA) built in CI to GHCR; `aquasecurity/trivy-action` v0.36.0 pinned by commit SHA `ed142fd0673e97e23eac54620cfb913e5ce36c25`; k6 1.8.3 as a local tool only.
   - 2026-11-28 (W5-0): `sqlalchemy[asyncio]` approved, so `greenlet` 3.5.6 (MIT AND PSF-2.0) is locked. Reason: `sqladmin` imports `sqlalchemy.ext.asyncio` and fails without greenlet, which SQLAlchemy 2.1 no longer installs by default.
+  - 2026-11-28 (W5-1): fraud flags are resolved with a note stored in `fraud_flag.resolution_note` (text, null allowed, at most 500 characters, migration `0008_w5_admin`), exported in `MyDataExport.fraud_flags` (contract wording `cd90939`), never written to logs. Reason: plan 5.1 had no column, and a note about a user is personal data that belongs in their export.
   - Q13: Caddy per-IP limits only on `/v1/auth/otp`, `/v1/auth/verify`, `/v1/auth/refresh`, 120 per minute per IP.
 - **Pair and phone checks:** the Week 4 pair check and exit, the battery runs, the 9.3 threshold check, the share card from a real session. Not claimed until done.
 - **Surprises from the deploy:** field names, time zones, auth edges, memory.
