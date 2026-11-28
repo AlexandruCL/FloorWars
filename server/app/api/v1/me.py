@@ -1,4 +1,4 @@
-"""``GET /v1/me/segments`` and ``GET /v1/me/season-stats``: the caller's own data.
+"""``GET /v1/me/segments``, ``/v1/me/season-stats``, ``/v1/me/export`` and ``DELETE /v1/me``.
 
 Problem types (404): ``season-not-found``, ``no-active-season``. ``pending`` is never returned
 (pending rows live on the phone). Rejected segments past the 200-per-hour cap are not stored, so
@@ -6,16 +6,16 @@ the history cannot show them.
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, ConfigDict
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, Limiter
 from app.api.problems import problem_doc
 from app.constants import MAX_ID
-from app.me import segments, stats
+from app.me import gdpr, segments, stats
 from app.teams import service as teams_service
 from app.valkey import ValkeyClient
 
@@ -128,3 +128,31 @@ def get_season_stats(
         teams_service.require_season(db, season_id)
     vk: ValkeyClient | None = getattr(request.app.state, "valkey", None)
     return SeasonStatsOut.model_validate(stats.stats(db, vk, user.id, season_id))
+
+
+@router.get(
+    "/me/export",
+    responses={
+        401: problem_doc("Missing or invalid access token."),
+        429: problem_doc("More than 3 exports in an hour."),
+        503: problem_doc("The rate limiter is unavailable."),
+    },
+    operation_id="exportMyData",
+)
+def export_my_data(user: CurrentUser, db: DbSession, limiter: Limiter) -> dict[str, object]:
+    """Everything stored about the caller (``MyDataExport``)."""
+    gdpr.take_export_token(limiter, user.id)
+    return gdpr.export_user(db, user.id)
+
+
+@router.delete(
+    "/me",
+    status_code=204,
+    response_class=Response,
+    responses={401: problem_doc("Missing or invalid access token.")},
+    operation_id="deleteMe",
+)
+def delete_me(request: Request, user: CurrentUser, db: DbSession) -> Response:
+    """Delete the caller's account (``app.me.gdpr.delete_user``)."""
+    gdpr.delete_user(db, request.app.state.valkey, user.id, datetime.now(UTC))
+    return Response(status_code=204)
