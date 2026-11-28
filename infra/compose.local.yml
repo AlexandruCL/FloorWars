@@ -59,6 +59,7 @@ services:
 
 volumes:
   pgdata-local: {}
+  backup-textfile: {} # also declared by the W5-7 branch in docker-compose.yml; maps merge
 
 secrets:
   discord_webhook_url:

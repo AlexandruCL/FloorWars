@@ -348,7 +348,7 @@ volumes:
   grafana-data: {}
   loki-data: {}
   alloy-data: {}
-  backup-textfile: {} # W5-7 writes floorwars_backup.prom here; node-exporter reads it
+  # backup-textfile: declared by the W5-7 branch (postgres writes /textfile/floorwars_backup.prom)
 
 # Files written by deploy.sh (SOPS-decrypted, mode 0400) into SECRETS_DIR on tmpfs.
 secrets:
