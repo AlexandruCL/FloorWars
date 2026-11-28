@@ -141,6 +141,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/seasons/{id}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Final results of a closed season
+         * @description The snapshot written once when the season closed (after ends_at). It never changes afterwards.
+         *     404 while the season is still running or has not been closed yet, and for an unknown id.
+         */
+        get: operations["getSeasonResults"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/seasons/{id}/join": {
         parameters: {
             query?: never;
@@ -384,7 +405,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** GDPR export of the user's data */
+        /**
+         * GDPR export of the user's data
+         * @description One JSON document with everything stored about the caller. Token hashes, sign-in code hashes
+         *     and other users' data are never included. At most 3 exports per user per hour.
+         */
         get: operations["exportMyData"];
         put?: never;
         post?: never;
@@ -406,7 +431,11 @@ export interface paths {
         post?: never;
         /**
          * GDPR account deletion
-         * @description Deletes the user. Foreign keys cascade, so this removes all user-owned rows.
+         * @description Deletes the user. Foreign keys cascade, so this removes all user-owned rows. In the same
+         *     transaction the user's points are subtracted from their teams' building scores and the owners
+         *     of the affected buildings are recomputed, so a building can flip (a building_flipped event is
+         *     published as for a claim). The user disappears from the leaderboards, and the user's open
+         *     sockets are closed. The access token stops working at once (401 afterwards).
          */
         delete: operations["deleteMe"];
         options?: never;
@@ -520,6 +549,57 @@ export interface components {
             starts_at: string;
             /** Format: date-time */
             ends_at: string;
+            /**
+             * @description True while an admin has paused the season: climbs are rejected with season_inactive and
+             *     landing scans answer 403 until it resumes. Missing means false (optional in 0.10.0,
+             *     required in a later version).
+             */
+            paused?: boolean;
+        };
+        /** @description The snapshot written once when a season closes. */
+        SeasonResults: {
+            season_id: number;
+            /** Format: date-time */
+            closed_at: string;
+            /** @description Every team of the season, best rank first. Ties share a rank (competition rank). */
+            teams: components["schemas"]["SeasonTeamResult"][];
+            /** @description Every building and its owner when the season closed, by building_id. */
+            buildings: components["schemas"]["SeasonBuildingResult"][];
+        };
+        SeasonTeamResult: {
+            team_id: number;
+            code: string;
+            points: number;
+            buildings_owned: number;
+            rank: number;
+        };
+        SeasonBuildingResult: {
+            building_id: number;
+            /** @description Null when no team owned the building at the close. */
+            owner_team_id: number | null;
+        };
+        /**
+         * @description Everything stored about the caller (GDPR access). Each list holds the caller's rows only, as
+         *     plain JSON objects with the stored columns; timestamps are UTC ISO 8601. Never included: token
+         *     hashes, sign-in code hashes, other users' data.
+         */
+        MyDataExport: {
+            /** Format: date-time */
+            exported_at: string;
+            /** @description id, email, display_name, created_at, terms_accepted_at, age_confirmed_at. */
+            user: Record<string, never>;
+            /** @description The devices that signed in (id, model, has_barometer, last_seen_at, created_at). */
+            devices: Record<string, never>[];
+            /** @description Season and team of each join. */
+            memberships: Record<string, never>[];
+            /** @description Building, method and the validity window (valid_from, valid_to). Coordinates are never stored. */
+            checkins: Record<string, never>[];
+            /** @description Every stored climb segment with its status, reason and points. */
+            segments: Record<string, never>[];
+            /** @description Every landing scan with its building, points and scanned_at. */
+            landing_scans: Record<string, never>[];
+            /** @description Anti-cheat flags on the user's segments (rule, created_at, resolved_at, resolution_note, the admin's note or null). */
+            fraud_flags: Record<string, never>[];
         };
         JoinRequest: {
             team_id: number;
@@ -1112,6 +1192,31 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    getSeasonResults: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["SeasonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The season's final results. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeasonResults"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
     joinSeason: {
         parameters: {
             query?: never;
@@ -1458,18 +1563,18 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Inferred: one JSON document with everything stored about the user. Shape to be agreed. */
+            /** @description Everything stored about the user. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["MyDataExport"];
                 };
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     deleteMe: {
