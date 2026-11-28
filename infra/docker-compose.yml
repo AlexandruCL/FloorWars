@@ -111,18 +111,25 @@ services:
     logging: *logging
 
   postgres:
-    image: postgis/postgis:18-3.6
+    # Own image: postgis 18-3.6 plus pgBackRest (infra/postgres/Dockerfile), built in CI.
+    image: ${POSTGRES_IMAGE:-ghcr.io/alexandrucl/floorwars-postgres}:${POSTGRES_TAG:-main}
     restart: unless-stopped
     environment:
       POSTGRES_DB: floorwars
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      # WAL archiving to Azure Blob (plan 7.7) is on only when the account is set (infra/.env).
+      BACKUP_AZURE_ACCOUNT: ${BACKUP_AZURE_ACCOUNT:-}
+      BACKUP_AZURE_CONTAINER: ${BACKUP_AZURE_CONTAINER:-floorwars-backup}
     secrets:
       - postgres_password
+      - pgbackrest_azure_key
+      - pgbackrest_cipher_pass
     # PG 18 images keep PGDATA at /var/lib/postgresql/18/docker; mount the parent so a
     # future major upgrade (pg_upgrade --link) can live next to it. DATA_DIR is the
     # encrypted Azure data disk.
     volumes:
       - ${DATA_DIR:-/srv/floorwars/data}/postgres:/var/lib/postgresql
+      - backup-textfile:/textfile # backup-age metric, read by node_exporter
     shm_size: 256m
     networks:
       - data
@@ -190,6 +197,7 @@ volumes:
   caddy-data: {}
   caddy-config: {}
   valkey-data: {}
+  backup-textfile: {} # floorwars_backup.prom, written by infra/backup/backup.sh
 
 # Files written by deploy.sh (SOPS-decrypted, mode 0400) into SECRETS_DIR on tmpfs.
 secrets:
@@ -201,6 +209,10 @@ secrets:
     file: ${SECRETS_DIR:-/run/secrets/floorwars}/postgres_password
   valkey_password:
     file: ${SECRETS_DIR:-/run/secrets/floorwars}/valkey_password
+  pgbackrest_azure_key:
+    file: ${SECRETS_DIR:-/run/secrets/floorwars}/pgbackrest_azure_key
+  pgbackrest_cipher_pass:
+    file: ${SECRETS_DIR:-/run/secrets/floorwars}/pgbackrest_cipher_pass
   jwt_signing_key:
     file: ${SECRETS_DIR:-/run/secrets/floorwars}/jwt_signing_key
   qr_hmac_key:

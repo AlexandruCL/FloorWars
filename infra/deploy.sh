@@ -184,7 +184,11 @@ checkout() {
 # Owner of each decrypted secret file inside SECRETS_DIR (files are bind-mounted as is).
 secret_owner() {
   case "$1" in
-    postgres_password | valkey_password) echo "999:999" ;; # postgres / valkey image users
+    postgres_password | valkey_password | pgbackrest_*) echo "999:999" ;; # postgres / valkey image users
+    # Caddy keeps no DAC_OVERRIDE (cap_drop ALL), so root cannot read another owner's 0400 file.
+    grafana_basic_hash) echo "0:0" ;;                      # caddy (root)
+    grafana_admin_password) echo "472:472" ;;              # grafana image user
+    discord_webhook_url | exporter_db_password) echo "65534:65534" ;; # alertmanager, postgres_exporter (nobody)
     *) echo "10001:10001" ;;                               # api (and later worker) image user
   esac
 }

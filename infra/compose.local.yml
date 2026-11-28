@@ -38,6 +38,9 @@ services:
     image: floorwars-api:local
 
   postgres:
+    image: floorwars-postgres:local
+    build:
+      context: ./postgres
     volumes: !override
       - pgdata-local:/var/lib/postgresql
 
@@ -50,6 +53,11 @@ secrets:
   valkey_url:
     file: ./local-secrets/valkey_url
   postgres_password:
+    file: ./local-secrets/postgres_password
+  # Dummies: BACKUP_AZURE_ACCOUNT is unset locally, so archiving stays off and these are unread.
+  pgbackrest_azure_key:
+    file: ./local-secrets/postgres_password
+  pgbackrest_cipher_pass:
     file: ./local-secrets/postgres_password
   valkey_password:
     file: ./local-secrets/valkey_password
