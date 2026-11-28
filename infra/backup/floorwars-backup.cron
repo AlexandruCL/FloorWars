@@ -1,0 +1,4 @@
+# Install: sudo install -m 0644 /srv/floorwars/repo/infra/backup/floorwars-backup.cron /etc/cron.d/floorwars-backup
+# Weekly full (Sunday 02:00 UTC), daily differential (the other days). Output: backup.log.
+0 2 * * 0   root /srv/floorwars/repo/infra/backup/backup.sh full >>/srv/floorwars/backup.log 2>&1
+0 2 * * 1-6 root /srv/floorwars/repo/infra/backup/backup.sh diff >>/srv/floorwars/backup.log 2>&1
