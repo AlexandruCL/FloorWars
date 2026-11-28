@@ -154,6 +154,13 @@ Order:
 3. Create the worktrees from `contract/w5-server`, start the agents.
 4. W5-10 after the code branches merge; W5-11 last.
 
+Start notes (lead, 2026-11-28; add them to each agent's start prompt):
+
+- All agents: only one local compose stack or Docker image build at a time on Ionut's PC; message `w5-lead` and wait for the go before bringing one up.
+- `w5-admin`: build `GET /config` and the admin config view against today's eight `ClassifierConfig` names, kept in one place, because Cristea may rename them.
+- `w5-ops-sec`: resolve the Trivy commit SHA yourself (`gh api repos/aquasecurity/trivy-action/git/ref/tags/v0.36.0`, following an annotated tag to its commit) before pinning; the value in Q12d came from a lookup agent.
+- `w5-gdpr`: REST auth already loads the user row (`api/deps.py` `current_user`), so a deleted user's token answers 401 at once; only the sockets need the hub close.
+
 Rules for this session: as in Week 4 (start each agent with its item IDs, worktree path and the absolute path of this prompt; re-run every verify yourself and break each guarded rule once; ask Ionut with `Skill("grilling")` for every Blocked question; each agent uses its own Postgres and Valkey containers on its own ports and stops them when done). Merge order: Cristea's `feat/remote-checkin` first (decided 2026-11-28, Q1), then admin, jobs, gdpr, ops-sec, monitor, docs.
 
 Commands:
@@ -323,7 +330,7 @@ After each item, one line: `W5-n done | verify: <command> → <summary line> | c
   - Contract `d6fec9f` on `contract/w5-server` (PR #97, Cristea reviews): 0.10.0-draft, `Season.paused`, `GET /seasons/{id}/results`, `MyDataExport` (+429, 503), `DELETE /me` scores; openapi-spec-validator OK, app `apiContract` 3 passed, server 771 passed. `ClassifierConfig` names still to add (Blocked on Cristea).
   - Dependencies `8233778` on the same branch: pytest 771 passed, alembic check clean, API image builds and imports them.
   - Agent files `w5-admin`, `w5-jobs`, `w5-gdpr`, `w5-ops-sec`, `w5-ops-monitor`, `w5-docs` written; the five `w4-*` files deleted. Migration names: Cristea `0007`, `0008_w5_admin`, `0009_w5_jobs` (agents start from `0006_landing_scan`; the lead re-chains at merge).
-- **Blocked:** one line each, the question and the recommendation. Expect at least: VM reachability and the Week 4 deploy; Cristea's review of contract 0.10.0 and his `ClassifierConfig` names; team IPs for the allowlist; the Discord webhook; the backup storage account; Cristea's phones for the pair check and the battery runs.
+- **Blocked:** one line each, the question and the recommendation. Open now (2026-11-28): Ionut merges #96; `npm ci` in `app/`; VM reachability, memory and deployed commit; the Week 4 deploy; Cristea's `ClassifierConfig` names and the battery toggle build; merge order if `feat/remote-checkin` is not ready when `feat/w5-admin` is (recommendation: admin and jobs merge first, Cristea re-chains `0007` onto the new head). Expect at least: VM reachability and the Week 4 deploy; Cristea's review of contract 0.10.0 and his `ClassifierConfig` names; team IPs for the allowlist; the Discord webhook; the backup storage account; Cristea's phones for the pair check and the battery runs.
 - **Decisions:** Ionut's answers only, one line each, dated, with the reason. You make no entries of your own. Decided 2026-11-28 (launch questions, each the recommendation):
   - Q1: Cristea builds remote check-in (server and app) on `feat/remote-checkin`; Ionut reviews; it merges first, its migration is `0007`.
   - Q2: contract 0.10.0 holds all five (`Season.paused` optional, `GET /seasons/{id}/results`, `MyDataExport`, the `DELETE /me` description, Cristea's `ClassifierConfig` names), one commit, Cristea reviews.
