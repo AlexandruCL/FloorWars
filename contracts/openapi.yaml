@@ -1,11 +1,17 @@
 openapi: 3.1.0
 info:
   title: FloorWars API
-  version: 0.9.0-draft
+  version: 0.10.0-draft
   description: |
     Approved by both members on 2026-10-21. Every later change is a PR reviewed by the other member.
 
     Changelog:
+    - 0.10.0-draft (2026-11-28): Season gains paused (optional boolean, missing means false), so a
+      cold start can show the "season paused" banner without the socket. New GET /seasons/{id}/results
+      (the snapshot taken when a season closes; 404 until then), for the season results screen.
+      GET /me/export returns a named MyDataExport document and lists 429 (3 exports per user per hour)
+      and 503. DELETE /me states what happens to team scores: the user's points are subtracted and
+      the owners of the affected buildings are recomputed, which can flip a building.
     - 0.9.0-draft (2026-11-20): GET /me/season-stats answers 404 when no season_id is given and no
       season is active, or when the given season_id does not exist. GET /me/season-stats,
       GET /me/segments and GET /me/events list 422 for invalid query parameters; POST /landing-scans
@@ -243,6 +249,26 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Season' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /seasons/{id}/results:
+    get:
+      tags: [teams]
+      operationId: getSeasonResults
+      summary: Final results of a closed season
+      description: |
+        The snapshot written once when the season closed (after ends_at). It never changes afterwards.
+        404 while the season is still running or has not been closed yet, and for an unknown id.
+      parameters:
+        - $ref: '#/components/parameters/SeasonId'
+      responses:
+        '200':
+          description: The season's final results.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeasonResults' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /seasons/{id}/join:
     post:
@@ -557,22 +583,30 @@ paths:
       tags: [me]
       operationId: exportMyData
       summary: GDPR export of the user's data
+      description: |
+        One JSON document with everything stored about the caller. Token hashes, sign-in code hashes
+        and other users' data are never included. At most 3 exports per user per hour.
       responses:
         '200':
-          description: 'Inferred: one JSON document with everything stored about the user. Shape to be agreed.'
+          description: Everything stored about the user.
           content:
             application/json:
-              schema:
-                type: object
-                additionalProperties: true
+              schema: { $ref: '#/components/schemas/MyDataExport' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /me:
     delete:
       tags: [me]
       operationId: deleteMe
       summary: GDPR account deletion
-      description: Deletes the user. Foreign keys cascade, so this removes all user-owned rows.
+      description: |
+        Deletes the user. Foreign keys cascade, so this removes all user-owned rows. In the same
+        transaction the user's points are subtracted from their teams' building scores and the owners
+        of the affected buildings are recomputed, so a building can flip (a building_flipped event is
+        published as for a claim). The user disappears from the leaderboards, and the user's open
+        sockets are closed. The access token stops working at once (401 afterwards).
       responses:
         '204':
           description: Deleted.
@@ -778,6 +812,89 @@ components:
         id: { type: integer, minimum: 1 }
         starts_at: { type: string, format: date-time }
         ends_at: { type: string, format: date-time }
+        paused:
+          type: boolean
+          description: |
+            True while an admin has paused the season: climbs are rejected with season_inactive and
+            landing scans answer 403 until it resumes. Missing means false (optional in 0.10.0,
+            required in a later version).
+
+    SeasonResults:
+      type: object
+      description: The snapshot written once when a season closes.
+      required: [season_id, closed_at, teams, buildings]
+      properties:
+        season_id: { type: integer, minimum: 1 }
+        closed_at: { type: string, format: date-time }
+        teams:
+          type: array
+          description: Every team of the season, best rank first. Ties share a rank (competition rank).
+          items: { $ref: '#/components/schemas/SeasonTeamResult' }
+        buildings:
+          type: array
+          description: Every building and its owner when the season closed, by building_id.
+          items: { $ref: '#/components/schemas/SeasonBuildingResult' }
+      unevaluatedProperties: false
+
+    SeasonTeamResult:
+      type: object
+      required: [team_id, code, points, buildings_owned, rank]
+      properties:
+        team_id: { type: integer, minimum: 1 }
+        code: { type: string }
+        points: { type: integer, minimum: 0 }
+        buildings_owned: { type: integer, minimum: 0 }
+        rank: { type: integer, minimum: 1 }
+      unevaluatedProperties: false
+
+    SeasonBuildingResult:
+      type: object
+      required: [building_id, owner_team_id]
+      properties:
+        building_id: { type: integer, minimum: 1 }
+        owner_team_id:
+          type: [integer, 'null']
+          minimum: 1
+          description: Null when no team owned the building at the close.
+      unevaluatedProperties: false
+
+    MyDataExport:
+      type: object
+      description: |
+        Everything stored about the caller (GDPR access). Each list holds the caller's rows only, as
+        plain JSON objects with the stored columns; timestamps are UTC ISO 8601. Never included: token
+        hashes, sign-in code hashes, other users' data.
+      required: [exported_at, user, devices, memberships, checkins, segments, landing_scans, fraud_flags]
+      properties:
+        exported_at: { type: string, format: date-time }
+        user:
+          type: object
+          description: id, email, display_name, created_at, terms_accepted_at, age_confirmed_at.
+        devices:
+          type: array
+          description: The devices that signed in (id, model, has_barometer, last_seen_at, created_at).
+          items: { type: object }
+        memberships:
+          type: array
+          description: Season and team of each join.
+          items: { type: object }
+        checkins:
+          type: array
+          description: Building, method and the validity window (valid_from, valid_to). Coordinates are never stored.
+          items: { type: object }
+        segments:
+          type: array
+          description: Every stored climb segment with its status, reason and points.
+          items: { type: object }
+        landing_scans:
+          type: array
+          description: Every landing scan with its building, points and scanned_at.
+          items: { type: object }
+        fraud_flags:
+          type: array
+          description: Anti-cheat flags on the user's segments (rule, created_at, resolved_at).
+          items: { type: object }
+      unevaluatedProperties: false
 
     JoinRequest:
       type: object
