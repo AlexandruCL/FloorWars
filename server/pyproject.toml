@@ -10,7 +10,8 @@ dependencies = [
     "pydantic>=2.14.1",
     "pydantic-settings>=2.16.1",
     "python-json-logger>=4.2.0",
-    "sqlalchemy>=2.1.6",
+    # [asyncio] pulls greenlet, which sqladmin imports through sqlalchemy.ext.asyncio (approved 2026-11-28).
+    "sqlalchemy[asyncio]>=2.1.6",
     "alembic>=1.20.1",
     "geoalchemy2>=0.20.0",
     "psycopg[binary]>=3.3.6",
@@ -20,6 +21,12 @@ dependencies = [
     "httpx>=0.28.1",
     # Valkey client for the rate-limit token buckets. Approved 2026-10-31.
     "valkey==6.2.0",
+    # Week 5, approved 2026-11-28 (Ionut, Q12a): admin panel, its session cookie, scheduled jobs, metrics.
+    "sqladmin==0.32.0",
+    "itsdangerous==2.2.0",
+    # The redis transport talks to Valkey; kombu has no valkey transport yet. Tasks must be idempotent.
+    "celery[redis]==5.7.0",
+    "prometheus-client==0.26.0",
 ]
 
 [dependency-groups]
