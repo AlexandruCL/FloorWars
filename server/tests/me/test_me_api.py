@@ -276,3 +276,9 @@ def test_stats_count_landing_scan_points(make_app, valkey: bool) -> None:  # typ
     assert body["rank"] == 1
     etc = client.get("/v1/me/season-stats", headers=_headers(client, world, "ETC")).json()
     assert etc["rank"] == 2
+
+
+def test_segments_cursor_is_bounded(client: TestClient) -> None:
+    world = seed(client)
+    r = client.get(f"/v1/me/segments?cursor={'A' * 257}", headers=_headers(client, world))
+    assert r.status_code == 422

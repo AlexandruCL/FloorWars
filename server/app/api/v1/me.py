@@ -74,7 +74,7 @@ class SeasonStatsOut(BaseModel):
 def list_my_segments(
     user: CurrentUser,
     db: DbSession,
-    cursor: str | None = None,
+    cursor: Annotated[str | None, Query(max_length=256)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> SegmentPageOut:
     """The caller's stored segments, newest ``started_at`` first."""
