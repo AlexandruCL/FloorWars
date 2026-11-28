@@ -137,7 +137,14 @@ Same model as Week 4 (Ionut, 2026-11-19; OPEN for Week 5, launch question 9): th
 | `w5-ops-monitor` | W5-6, W5-8 | `<root>-w5/monitor`, `feat/w5-monitoring` | sonnet, medium | `server/app/metrics.py`, `server/app/main.py` (`/metrics` route only), `infra/monitoring/*`, the monitoring services in compose, the Grafana block of the Caddyfile, `tools/k6/*` |
 | `w5-docs` | docs for every item | `<root>-w5/docs`, `docs/w5-server-status` | sonnet, low | `README.md`, `server/README.md`, `IMPLEMENTATION_PLAN.md`, `docs/*` (runbook, evaluation, privacy) |
 
-`<root>` is `C:/Users/Ionut/Desktop/sem1_an4/msa/FloorWars`. W5-10 uses the three existing reviewer agents. `infra/docker-compose.yml` is shared by three agents (each adds its own service block): merge order admin, jobs, monitor; the later branch rebases and resolves.
+`<root>` is `C:/Users/Ionut/Desktop/sem1_an4/msa/FloorWars`. W5-10 uses the three existing reviewer agents.
+
+Shared files (additive edits only, each agent adds its own lines and touches no one else's; the later branch in the merge order rebases and resolves):
+
+- `infra/docker-compose.yml`: admin (`admin` service), jobs (`worker`), monitor (monitoring services).
+- `server/app/db/models.py`: admin (`user.is_admin`, `season.paused`, `ClassifierConfig`), jobs (`SeasonResult`, `season.closed_at`, `game_event.txid`), Cristea's remote check-in (`CHECKIN_METHODS` and its constraint).
+- `server/app/config.py`: admin (session secret, team IPs if not Caddy-only), jobs (Celery broker index), Cristea's remote check-in (`checkin_ttl_s`, `building_switch_cooldown_s`).
+- `server/pyproject.toml`, `server/uv.lock`: nobody; the lead's dependency commit in W5-0 holds them all. An agent that finds it needs another dependency lists it under Blocked.
 
 Order:
 
@@ -183,12 +190,13 @@ Infra items also run `docker compose -f infra/docker-compose.yml -f infra/compos
 - [ ] Ionut, on the VM: the deployed commit, and `docker stats --no-stream` plus `free -m` (memory headroom for launch question 5).
 - [ ] Week 4 deploy (Ionut, runbook section 14): backup, pull, migrations to `0006`, partition CLI, both replicas together, then `/healthz` 200; `/v1/seasons`, `/v1/me/events`, `POST /v1/landing-scans` 401 without a token; a bad-token WS through Caddy 401; `tools/e2e/e2e_check.py --upload` once against the VM. Write surprises in section 4.
 - [ ] Contract commit on `contract/w5-server`, version `0.10.0-draft` with a changelog line, `schema.ts` regenerated, Cristea reviews. Contents per launch question 2 (recommendations below, nothing used until Ionut answers):
-  - `Season` gains `paused` (boolean, required), so `GET /seasons/active` and `GET /seasons` show it after a cold start.
+  - `Season` gains `paused` (boolean, **optional** in 0.10.0, "missing means false"), so `GET /seasons/active` and `GET /seasons` show it after a cold start. Optional because the column arrives with W5-1 after this commit, and `app/__tests__/contract/samples.ts` types a `Season` sample that a required field would break; it becomes required in a later contract version once deployed.
   - `GET /seasons/{id}/results` (`getSeasonResults`): 200 `SeasonResults` (`season_id`, `closed_at`, `teams`: `team_id`, `code`, `points`, `buildings_owned`, `rank`; `buildings`: `building_id`, `owner_team_id` or null), 404 when the season is unknown or not closed yet, 401.
   - `GET /me/export`: a named schema `MyDataExport` replacing "to be agreed" (sections: `user`, `devices`, `memberships`, `checkins`, `segments`, `landing_scans`, `fraud_flags`, `exported_at`; tokens and OTP hashes never exported).
   - `DELETE /me`: description of what happens to team scores (launch question 6); 204 and 401 stay.
   - `ClassifierConfig`: field names as Cristea's pass-2 structure names them (asked through Ionut); no longer "Inferred".
   - Version bump coordinated with Cristea's remote check-in PR: whichever merges second takes the next minor.
+- [ ] Dependency commit on `contract/w5-server`, after launch question 12: every approved Python dependency (`sqladmin`, `celery`, `prometheus-client`, …) added to `server/pyproject.toml` and `server/uv.lock` in one commit, before the worktrees exist, so no agent edits the lockfile. `uv` is not installed on this PC: regenerate the lock the way `1c7c3df` (jsonschema) did, and CI's `uv sync --frozen` must pass.
 - [ ] Write the six agent files of section 3.1 (frontmatter `name`, `description`, `tools`, `model`; body: items, worktree, branch, owned files, "read `<root>/Ionut/prompt_week5.md` by absolute path, sections 0, 1, 2, your items, the seam and section 4", verify commands, "you cannot ask Ionut: list questions under Blocked with your recommendation and carry on"). Restart; create the worktrees.
 - Verify: `cd app && npm run generate:api && npx jest __tests__/apiContract` on `contract/w5-server`, and the server verify commands.
 - Done when: the baseline is recorded, the launch questions are answered, the VM answers and runs `main` (or the cause is written down and Ionut has decided how to go on), the contract commit passes, and the worktrees and agents exist.
@@ -237,13 +245,13 @@ Infra items also run `docker compose -f infra/docker-compose.yml -f infra/compos
 
 ### W5-5 Security pass (`w5-ops-sec`)
 
-- [ ] Caddy per-IP limits: a custom Caddy image built with `xcaddy` and `github.com/mholt/caddy-ratelimit` (approval), pinned, built in CI and pushed to GHCR like the API image. Limits OPEN; recommendation: `/v1/auth/*` 30 per minute per IP, other `/v1/*` 300 per minute per IP, WS upgrades 20 per minute per IP; 429. The per-user Valkey buckets stay.
+- [ ] Caddy per-IP limits: a custom Caddy image built with `xcaddy` and `github.com/mholt/caddy-ratelimit` (approval), pinned, built in CI and pushed to GHCR like the API image. Limits OPEN (launch question 13). Pilot players on the faculty Wi-Fi share one NAT address, so a per-IP limit counts the whole faculty as one client. Recommendation: per-IP limits only on unauthenticated paths (`/v1/auth/otp`, `/v1/auth/verify`, `/v1/auth/refresh`) at 120 per minute per IP, nothing per IP on authenticated paths (the per-user Valkey buckets already cover them); 429.
 - [ ] CORS: the app is native and the admin panel is same-origin, so no CORS middleware (browsers get no `Access-Control-Allow-Origin`). A test asserts the header is absent. Recorded in plan 7.11.
 - [ ] Validation bounds: a sweep of every request model for numeric and string bounds (the Week 4 bounds commit is the pattern); add what is missing, contract-additive only.
 - [ ] Secrets: `git log -p` scan for keys with the approved scanner (OPEN tool; recommendation: GitHub secret scanning, already on for public repos, no new tool); the `infra/secrets/*.enc.env` stay encrypted.
 - [ ] Dependency scan: `.github/dependabot.yml` for `uv`, `npm`, `github-actions`, `docker` (GitHub built-in, no new tool).
 - [ ] Trivy gate: the Trivy GitHub Action (approval, pinned by commit SHA) scans the API image in `server.yml` and fails on `CRITICAL` and `HIGH` with a fix available; findings without a fix go into `.trivyignore` with a reason and a date.
-- Verify: the verify commands, CI green on the branch, and the local stack once: 31 auth requests in a minute from one IP get a 429.
+- Verify: the verify commands, CI green on the branch, and the local stack once: one request over the auth limit in a minute from one IP gets a 429.
 - Done when: CI is green with the Trivy step, and the rate limit is shown on the local stack.
 
 ### W5-6 Monitoring (`w5-ops-monitor`)
@@ -306,7 +314,8 @@ After each item, one line: `W5-n done | verify: <command> → <summary line> | c
   9. Execution model: as Week 4 (lead plus six `w5-*` agents in worktrees), and the five `w4-*` agent files deleted. Recommendation: yes.
   10. Backup target (Azure Blob, second EU region) and load-test target (local stack). Recommendation: as written.
   11. Battery runs: does Cristea's build with the service toggle exist, and when are the phones free?
-  12. The dependency and image list of section 1, looked up on the day (licence, last release).
+  12. The dependency and image list of section 1, looked up on the day (licence, last release). The approved Python ones go in the lead's dependency commit.
+  13. Caddy per-IP limits with the faculty NAT in mind (W5-5). Recommendation: unauthenticated auth paths only, 120 per minute per IP.
 - **Blocked:** one line each, the question and the recommendation. Expect at least: VM reachability and the Week 4 deploy; Cristea's review of contract 0.10.0 and his `ClassifierConfig` names; team IPs for the allowlist; the Discord webhook; the backup storage account; Cristea's phones for the pair check and the battery runs.
 - **Decisions:** Ionut's answers only, one line each, dated, with the reason. You make no entries of your own.
 - **Pair and phone checks:** the Week 4 pair check and exit, the battery runs, the 9.3 threshold check, the share card from a real session. Not claimed until done.
