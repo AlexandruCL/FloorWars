@@ -158,6 +158,14 @@ def record_verified(
     )
 
 
+def remove_user(vk: Commands, season_id: int, user_id: object) -> None:
+    """After a committed account deletion (``DELETE /me``): the next read rebuilds the season from
+    the database, which no longer holds the user's points, so the team and building boards lose
+    them too. The user's member goes now, because board keys never expire."""
+    mark_stale(vk, season_id)
+    vk.execute("ZREM", users_key(season_id), str(user_id))
+
+
 def _flip_event(flip: FlipLike) -> dict[str, object]:
     return {
         "type": "building_flipped",
@@ -303,6 +311,7 @@ __all__ = [
     "publish_flip",
     "rebuild",
     "record_verified",
+    "remove_user",
     "teams_key",
     "top",
     "users_key",
