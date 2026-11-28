@@ -9,6 +9,9 @@ local socket whose user joined the event's season (``app.events.feed.visible``, 
 The hub never awaits a socket: each socket has a bounded queue, and a socket whose queue is
 full (a slow or stuck client) is closed with 1008, not waited for. At most
 ``MAX_SOCKETS_PER_USER`` sockets per user in this process; a new one closes the oldest with 1008.
+
+``DELETE /me`` publishes the user id on ``CLOSE_CHANNEL`` after its commit; every process closes
+that user's local sockets with 1008 (``close_user``).
 """
 
 import asyncio
@@ -33,6 +36,7 @@ SUBSCRIBE_WAIT_S = 2.0
 POLL_S = 1.0  # get_message wait; between waits the client's health check may ping Valkey
 HEALTH_CHECK_S = 30
 RETRY_MAX_S = 30.0
+CLOSE_CHANNEL = "fw:close-user"  # message: the id of a deleted user whose sockets must close
 
 # A queued item: (event_id, JSON text) to send, or a close code.
 Item = tuple[int, str] | int
@@ -91,6 +95,16 @@ class Hub:
     def count(self, user_id: uuid.UUID) -> int:
         return len(self._users.get(user_id, []))
 
+    def close_user(self, raw: bytes | str) -> None:
+        """Close every local socket of the user id in ``raw`` with 1008."""
+        try:
+            user_id = uuid.UUID(raw.decode() if isinstance(raw, bytes) else raw)
+        except (ValueError, UnicodeDecodeError):
+            logger.warning("unreadable message on the close channel")
+            return
+        for conn in self._users.pop(user_id, []):
+            conn.kick(CLOSE_POLICY)
+
     def dispatch(self, raw: bytes | str) -> None:
         """Fan one published message out to the local sockets that may see it."""
         try:
@@ -123,12 +137,16 @@ class Hub:
             )
             pubsub = client.pubsub(ignore_subscribe_messages=True)
             try:
-                await pubsub.subscribe(EVENTS_CHANNEL)
+                await pubsub.subscribe(EVENTS_CHANNEL, CLOSE_CHANNEL)
                 self.subscribed.set()
                 delay = 1.0
                 while True:
                     message = await pubsub.get_message(timeout=POLL_S)
-                    if message is not None and message["type"] == "message":
+                    if message is None or message["type"] != "message":
+                        continue
+                    if message["channel"] in (CLOSE_CHANNEL, CLOSE_CHANNEL.encode()):
+                        self.close_user(message["data"])
+                    else:
                         self.dispatch(message["data"])
             except asyncio.CancelledError:
                 raise
