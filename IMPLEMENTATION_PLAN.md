@@ -357,7 +357,7 @@ Shared operating model (PDF, host changed by us from Oracle to Azure): one team-
 - Docker Engine and Compose v2. Four networks: `edge` (only Caddy), `app` (API and workers), `data` (Postgres and Valkey, `internal: true`, no route to the internet), `monitoring` (exporters). Staging is, for now, the same compose project as production on the one VM (decision 2026-10-31, `docs/runbook.md` section 12); a separate staging project or VM comes back if the credit allows.
 - Encryption at rest: database and data live on a separate encrypted cloud disk (Azure managed disk with platform-managed or customer keys). The PDF used LUKS because the host was a bare VM; the cloud disk encryption replaces it. Backups are encrypted independently.
 
-Containers: `caddy`, `api` (two replicas), `worker` (Celery), `scheduler` (Celery beat), `admin` (SQLAdmin), `postgres`, `valkey`, plus the monitoring stack (Prometheus, Grafana, Loki, Alloy, Alertmanager, node_exporter, cAdvisor, postgres_exporter). Only Caddy publishes ports. The admin panel is reachable only from team IPs (Caddy `remote_ip` matcher) and also requires an admin role in the JWT. Grafana is published through Caddy behind an IP allowlist plus basic auth.
+Containers: `caddy`, `api` (two replicas), `worker` (Celery), `scheduler` (Celery beat), `admin` (SQLAdmin), `postgres`, `valkey`, plus the monitoring stack (Prometheus, Grafana, Loki, Alloy, Alertmanager, node_exporter, cAdvisor, postgres_exporter). Only Caddy publishes ports. The admin panel is reachable only from team IPs (Caddy `remote_ip` matcher) and also requires the admin flag on the user (`user.is_admin`, set by SQL; panel login by e-mail code, 30-minute cookie; no JWT claim). Grafana is published through Caddy behind an IP allowlist plus basic auth.
 
 ### 7.2 Cloud provider: Azure (decided)
 
@@ -498,7 +498,7 @@ The team implements authentication; libraries are used only for cryptographic pr
 
 ### 7.11 Security checklist
 
-Input validation at the API boundary (Pydantic v2 strict). Parameterised SQL only. Rate limiting at two layers (Caddy per IP, plus a Valkey token bucket per user and endpoint). CORS limited to the team's own web origins. Dependency scanning in CI. Least-privilege database roles. GDPR basics: privacy notice, data export and account deletion endpoints, documented retention periods.
+Input validation at the API boundary (Pydantic v2 strict). Parameterised SQL only. Rate limiting at two layers (Caddy per IP, plus a Valkey token bucket per user and endpoint). No CORS: the API serves the native app only and sends no CORS headers (W5-5). Dependency scanning in CI. Least-privilege database roles. GDPR basics: privacy notice, data export and account deletion endpoints, documented retention periods.
 
 ---
 
@@ -510,7 +510,7 @@ Input validation at the API boundary (Pydantic v2 strict). Parameterised SQL onl
 - Rate limiting: Caddy per-IP limits; a Valkey token bucket per user (at most 60 segment uploads per hour, and 200 stored rejections per hour); at most 600 verified steps per 10 minutes, counted in the database on both sides of `started_at`.
 - Health-adjacent data: activity data is personal data under GDPR. The privacy notice states purpose. Raw segments are kept for 12 months. Users can export or delete everything. Users under 18 are not accepted.
 - Safety by design: points never reward speed, only verified stair steps with a matching pressure change, with diminishing returns per hour, so the game never encourages running on stairs.
-- Admin panel: team IPs only plus admin role in the JWT.
+- Admin panel: team IPs only plus the admin flag on the user (no JWT claim).
 - Aggregated insights (future B2B): building-level only, published when at least 20 users contribute, never individual data.
 
 ---
@@ -683,10 +683,10 @@ Goal: feature complete and operable.
 - Classifier tuning pass 2. Thresholds move into a structure that the server `config` table can override via `GET /v1/config`.
 
 **Ionut**
-- Admin panel (SQLAdmin, IP-allowlisted through Caddy `remote_ip`, admin JWT role): edit building footprints (GeoJSON), create seasons, assign teams, review and resolve fraud flags, "season paused" switch.
+- Admin panel (SQLAdmin, IP-allowlisted through Caddy `remote_ip`, admin flag on the user, no JWT claim): edit building footprints (GeoJSON), create seasons, assign teams, review and resolve fraud flags, "season paused" switch.
 - Versioned classifier-threshold `config` table and `GET /v1/config`.
 - Battery measurement runs (moved from Cristea): drain per hour over 3 hours, service on vs off, on both devices, using Cristea's build with the service toggle. Record in `/docs/evaluation.md`.
-- Season close transaction with results snapshot. Celery scheduled jobs: season rollover, partition creation, digests.
+- Season close transaction with results snapshot. Celery scheduled jobs: season rollover (closes ended seasons only; an admin creates the next), partition creation. Digests are cut from Week 5.
 - `GET /v1/me/export` and `DELETE /v1/me` (cascade). Retention job that drops partitions older than 12 months and calls `segments.repository.purge_rejected` (rejected `segment_receipt` rows and resolved `fraud_flag` rows older than 30 days, unresolved flags older than 365 days; verified receipts stay).
 - Caddy rate limits. Security review: CORS, validation bounds, secrets, dependency scan, Trivy gate.
 - Monitoring: Prometheus, Grafana, Loki + Alloy, Alertmanager to Discord, the custom metrics in 7.8, and one Grafana dashboard for the demo.
