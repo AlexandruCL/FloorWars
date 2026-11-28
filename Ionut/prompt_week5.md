@@ -130,11 +130,11 @@ Same model as Week 4 (decided 2026-11-28, Q9): this session (`w5-lead`) coordina
 | Agent | Items | Worktree, branch | Model, effort | Owns (one owner per file) |
 |---|---|---|---|---|
 | `w5-lead` (this session) | W5-0, W5-10, W5-11, merges | main checkout; `contract/w5-server`, `docs/w5-ionut-prompt` | Opus, high | `contracts/openapi.yaml`, `app/src/api/schema.ts`, `server/app/api/v1/__init__.py` merge conflicts, migration order |
-| `w5-admin` | W5-1, W5-2 | `<root>-w5/admin`, `feat/w5-admin` | opus, high | `server/app/admin/*`, `server/app/seasons/state.py`, `server/app/config_store.py`, `server/app/api/v1/config.py`, its migration, the `admin` service in compose and the admin block of the Caddyfile, `server/tests/admin/*` |
-| `w5-jobs` | W5-3 | `<root>-w5/jobs`, `feat/w5-jobs` | opus, high | `server/app/seasons/close.py`, `server/app/jobs/*`, `server/app/events/feed.py` (xid8 lines), `server/app/api/v1/seasons.py` (results route), its migration, the `worker` service in compose, `server/tests/jobs/*` |
-| `w5-gdpr` | W5-4 | `<root>-w5/gdpr`, `feat/w5-gdpr` | opus, high | `server/app/me/gdpr.py`, `server/app/api/v1/me.py` (export and delete routes only), `server/tests/me/test_gdpr.py` |
+| `w5-admin` | W5-1, W5-2 | `<root>-w5/admin`, `feat/w5-admin` | opus, high | `server/app/admin/*`, `server/app/seasons/state.py`, `server/app/config_store.py`, `server/app/api/v1/config.py`, migration `0008_w5_admin`, the `admin` service in compose and the admin block of the Caddyfile, `server/tests/admin/*`; the pause-check lines in `segments/rules.py`/`service.py` and `landing/service.py`, and `paused` in the Season serializer |
+| `w5-jobs` | W5-3 | `<root>-w5/jobs`, `feat/w5-jobs` | opus, high | `server/app/seasons/close.py`, `server/app/jobs/*`, `server/app/events/feed.py` (xid8 lines), `server/app/api/v1/seasons.py` (results route), migration `0009_w5_jobs`, the `worker` service in compose, `server/tests/jobs/*` |
+| `w5-gdpr` | W5-4 | `<root>-w5/gdpr`, `feat/w5-gdpr` | opus, high | `server/app/me/gdpr.py`, `server/app/api/v1/me.py` (export and delete routes only), `server/tests/me/test_gdpr.py`; its lines in `server/app/realtime/hub.py` (close a user's sockets) and `server/app/leaderboards.py` (remove a user from the boards) |
 | `w5-ops-sec` | W5-5, W5-7 | `<root>-w5/ops-sec`, `feat/w5-ops-security` | sonnet, high | `infra/caddy/*` (except the admin and Grafana blocks), `infra/postgres/*`, `infra/deploy.sh`, `infra/backup/*`, `.github/workflows/server.yml`, `.github/dependabot.yml`, `server/app/main.py` (middleware lines) |
-| `w5-ops-monitor` | W5-6, W5-8 | `<root>-w5/monitor`, `feat/w5-monitoring` | sonnet, medium | `server/app/metrics.py`, `server/app/main.py` (`/metrics` route only), `infra/monitoring/*`, the monitoring services in compose, the Grafana block of the Caddyfile, `tools/k6/*` |
+| `w5-ops-monitor` | W5-6, W5-8 | `<root>-w5/monitor`, `feat/w5-monitoring` | sonnet, medium | `server/app/metrics.py`, `server/app/main.py` (`/metrics` route only), `infra/monitoring/*`, the monitoring services in compose, the Grafana block of the Caddyfile, `tools/k6/*`; one-line counter calls in `segments/service.py`, `realtime/hub.py`, `api/v1/ws.py` |
 | `w5-docs` | docs for every item | `<root>-w5/docs`, `docs/w5-server-status` | sonnet, low | `README.md`, `server/README.md`, `IMPLEMENTATION_PLAN.md`, `docs/*` (runbook, evaluation, privacy) |
 
 `<root>` is `C:/Users/Ionut/Desktop/sem1_an4/msa/FloorWars`. W5-10 uses the three existing reviewer agents.
@@ -318,6 +318,11 @@ After each item, one line: `W5-n done | verify: <command> → <summary line> | c
   11. Battery runs: does Cristea's build with the service toggle exist, and when are the phones free?
   12. The dependency and image list of section 1, looked up on the day (licence, last release). The approved Python ones go in the lead's dependency commit.
   13. Caddy per-IP limits with the faculty NAT in mind (W5-5). Recommendation: unauthenticated auth paths only, 120 per minute per IP.
+- **Report lines (W5-0, lead, 2026-11-28):**
+  - Baseline on `main` 8a58995: ruff clean, mypy clean (63 files), pytest 771 passed, alembic check clean, tools 19 passed; app `apiContract` 3 passed. App `tsc` fails on `main` with a stale `node_modules` (`@react-navigation/bottom-tabs` from Cristea's redesign missing): `npm ci` in `app/` waits for Ionut's approval.
+  - Contract `d6fec9f` on `contract/w5-server` (PR #97, Cristea reviews): 0.10.0-draft, `Season.paused`, `GET /seasons/{id}/results`, `MyDataExport` (+429, 503), `DELETE /me` scores; openapi-spec-validator OK, app `apiContract` 3 passed, server 771 passed. `ClassifierConfig` names still to add (Blocked on Cristea).
+  - Dependencies `8233778` on the same branch: pytest 771 passed, alembic check clean, API image builds and imports them.
+  - Agent files `w5-admin`, `w5-jobs`, `w5-gdpr`, `w5-ops-sec`, `w5-ops-monitor`, `w5-docs` written; the five `w4-*` files deleted. Migration names: Cristea `0007`, `0008_w5_admin`, `0009_w5_jobs` (agents start from `0006_landing_scan`; the lead re-chains at merge).
 - **Blocked:** one line each, the question and the recommendation. Expect at least: VM reachability and the Week 4 deploy; Cristea's review of contract 0.10.0 and his `ClassifierConfig` names; team IPs for the allowlist; the Discord webhook; the backup storage account; Cristea's phones for the pair check and the battery runs.
 - **Decisions:** Ionut's answers only, one line each, dated, with the reason. You make no entries of your own. Decided 2026-11-28 (launch questions, each the recommendation):
   - Q1: Cristea builds remote check-in (server and app) on `feat/remote-checkin`; Ionut reviews; it merges first, its migration is `0007`.
@@ -340,6 +345,7 @@ After each item, one line: `W5-n done | verify: <command> → <summary line> | c
   - Q12b: monitoring images approved, each pinned to the newest tag at least 14 days old on the install day: Prometheus 3.16, Alertmanager 0.35.x, node-exporter 1.13.x, `ghcr.io/google/cadvisor` 0.61.x, postgres-exporter 0.21.x, Alloy 1.22, Grafana 13.3.x and Loki 3.7.x (AGPL-3.0, used unmodified, not redistributed).
   - Q12c: pgBackRest 2.60.x in our own Postgres image (postgis 18-3.6 plus PGDG `pgbackrest`), built in CI to GHCR.
   - Q12d: custom Caddy (`caddy:2.11.x-builder` plus `mholt/caddy-ratelimit` pinned by commit SHA) built in CI to GHCR; `aquasecurity/trivy-action` v0.36.0 pinned by commit SHA `ed142fd0673e97e23eac54620cfb913e5ce36c25`; k6 1.8.3 as a local tool only.
+  - 2026-11-28 (W5-0): `sqlalchemy[asyncio]` approved, so `greenlet` 3.5.6 (MIT AND PSF-2.0) is locked. Reason: `sqladmin` imports `sqlalchemy.ext.asyncio` and fails without greenlet, which SQLAlchemy 2.1 no longer installs by default.
   - Q13: Caddy per-IP limits only on `/v1/auth/otp`, `/v1/auth/verify`, `/v1/auth/refresh`, 120 per minute per IP.
 - **Pair and phone checks:** the Week 4 pair check and exit, the battery runs, the 9.3 threshold check, the share card from a real session. Not claimed until done.
 - **Surprises from the deploy:** field names, time zones, auth edges, memory.
