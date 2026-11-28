@@ -1,0 +1,29 @@
+# GitHub's built-in dependency updates (plan 7.6, decision Q12/W5-5): no extra tool. One weekly
+# pull request per ecosystem; the server and Trivy gates in server.yml run on each of them.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /server
+    schedule: {interval: weekly}
+    groups:
+      python: {patterns: ["*"]}
+  - package-ecosystem: npm
+    directory: /app
+    schedule: {interval: weekly}
+    groups:
+      npm: {patterns: ["*"]}
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
+    groups:
+      actions: {patterns: ["*"]}
+  # Base images: python and uv (server), caddy builder (infra/caddy), postgis (infra/postgres).
+  - package-ecosystem: docker
+    directory: /server
+    schedule: {interval: weekly}
+  - package-ecosystem: docker
+    directory: /infra/caddy
+    schedule: {interval: weekly}
+  - package-ecosystem: docker
+    directory: /infra/postgres
+    schedule: {interval: weekly}

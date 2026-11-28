@@ -8,6 +8,9 @@ on:
       - "tools/qr/**"
       - "tools/seed/**"
       - "tools/conftest.py"
+      - "infra/caddy/Dockerfile"
+      - "infra/postgres/**"
+      - ".trivyignore"
       - ".github/workflows/server.yml"
   # No path filter on main: deploy.sh pulls the image tagged with the deployed commit, so every
   # commit on main (including infra-only ones) needs its own image.
@@ -142,6 +145,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Trivy gate (plan 7.6): build the amd64 image into the local daemon (cached, so the real
+      # build below reuses its layers), scan it, and only then build and push. A vulnerable image
+      # never reaches GHCR. Fails on HIGH and CRITICAL findings that have a fix; findings without
+      # one go into .trivyignore with a reason and a date.
+      - name: Build amd64 image for the scan
+        uses: docker/build-push-action@v7
+        with:
+          context: server
+          platforms: linux/amd64
+          load: true
+          tags: floorwars-api:scan
+          cache-from: type=gha,scope=floorwars-api
+          cache-to: type=gha,mode=max,scope=floorwars-api
+
+      # v0.36.0 (2026-04-22), pinned by commit; the tag is a movable reference.
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: floorwars-api:scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
+
       # Pull requests build both architectures without pushing; main pushes :<sha> and :main.
       - name: Build (and push on main)
         uses: docker/build-push-action@v7
@@ -154,7 +181,53 @@ jobs:
           cache-from: type=gha,scope=floorwars-api
           cache-to: type=gha,mode=max,scope=floorwars-api
 
-      # TODO(week 5, plan 7.6): Trivy scan of the pushed image, failing on HIGH/CRITICAL CVEs
-      # that have a fix, e.g. aquasecurity/trivy-action with severity: HIGH,CRITICAL,
-      # ignore-unfixed: true, exit-code: "1". Run it before the push (build, load amd64, scan,
-      # then push) so a vulnerable image never reaches GHCR.
+  # Own Caddy (caddy-ratelimit) and Postgres (pgBackRest) images. amd64 only: the VM is amd64, and
+  # xcaddy under qemu for arm64 would take far longer. Pull requests build without pushing; main
+  # pushes :<sha> and :main. Compose runs :main (infra/docker-compose.yml).
+  infra-image:
+    name: build ${{ matrix.name }} image
+    needs: lint-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [caddy, postgres]
+    env:
+      PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Image name
+        id: image
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "name=ghcr.io/${OWNER,,}/floorwars-${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # No labels on purpose: the metadata-action labels change on every commit, and a changed
+      # image id would make `docker compose up` recreate Postgres on every deploy.
+      - name: Build (and push on main)
+        uses: docker/build-push-action@v7
+        with:
+          context: infra/${{ matrix.name }}
+          platforms: linux/amd64
+          push: ${{ env.PUSH == 'true' }}
+          provenance: false
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:main
+          cache-from: type=gha,scope=floorwars-${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=floorwars-${{ matrix.name }}

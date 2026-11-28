@@ -1,0 +1,5 @@
+# Trivy gate (.github/workflows/server.yml): only HIGH and CRITICAL findings that HAVE a fix fail
+# the build, so this file is for the rare case where the fix cannot be taken yet. One line per
+# finding, with the reason and the date it must be looked at again, e.g.:
+#   CVE-2026-0000  # reason; review by 2026-12-31
+# Empty on purpose.
