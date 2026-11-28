@@ -377,3 +377,15 @@ Not run yet. The Week 3 fixes (#69 to #71) are probably not live either (last kn
 
 Deallocate the VM when not working on it during development, delete unused disks, IPs and
 snapshots. Estimates are in `docs/cost.md`.
+
+## 15. Week 5: admin panel (Ionut, on the VM)
+
+Facts from `w5-admin` (branch `feat/w5-admin`); not yet run on the VM. The Week 4 deploy (section 14) comes first.
+
+1. Before the deploy, add `admin_session_key=<output of openssl rand -hex 32>` to a SOPS file in `infra/secrets`. `deploy.sh` reads every top-level compose secret, so it fails without it. `make-local-secrets.sh` writes it locally.
+2. In `infra/.env` on the VM (not committed) set `ADMIN_DOMAIN` and `ADMIN_ALLOWED_IPS` (space-separated CIDRs). The defaults are `admin.invalid` and `192.0.2.1/32`, which lets nobody in (403). Add an A record `admin.<domain>` to the VM IP (a DNS action for Ionut).
+3. Make an admin: the user signs in once in the app, then run `UPDATE "user" SET is_admin = true WHERE email = '<address>';`. Clearing the flag ends access at once.
+4. Rollback of `0008_w5_admin` drops `is_admin`, `paused`, `resolution_note` and `classifier_config` (threshold versions, admin flags and notes are lost).
+5. Local check: `https://admin.localhost:8443` (Caddy internal CA). The local `log` mail backend does not print codes; the exact command to plant one is still to come from `w5-admin`.
+
+Sections for backup, restore and rollback wait for `w5-ops-sec`; monitoring for `w5-ops-monitor`.
