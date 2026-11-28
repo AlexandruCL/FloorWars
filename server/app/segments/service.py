@@ -20,7 +20,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
-from app import leaderboards
+from app import leaderboards, metrics
 from app.api.problems import forbidden, service_unavailable, too_many_requests, unauthorized
 from app.auth.ratelimit import RateLimiter
 from app.segments import claim, repository, rules
@@ -347,6 +347,7 @@ def _reject(
     climbs: _Climbs,
     receipts: dict[uuid.UUID, Receipt],
 ) -> None:
+    metrics.record_rejected(reason)
     if not budget.take():
         result.rejected.append(RejectedSegment(id=item.id, reason=reason))
         return
@@ -357,6 +358,7 @@ def _reject(
             return
     if _is_flagged(climbs, item, device_id, reason):
         repository.add_fraud_flag(db, item.id, item.started_at, user_id, reason)
+        metrics.record_flags([reason])
     _answer(receipts, item, device_id, user_id, STATUS_REJECTED, reason, 0)
     result.rejected.append(RejectedSegment(id=item.id, reason=reason))
 
@@ -380,6 +382,7 @@ def _accept(
         _id_taken(receipts, item, device_id, user_id, result)
         return None
     climbs.add(VerifiedClimb(item.started_at, ends_at, item.steps, device_id))
+    metrics.record_accepted(item.started_at)
     _answer(receipts, item, device_id, user_id, STATUS_VERIFIED, None, item.steps)
     result.accepted.append(AcceptedSegment(id=item.id, steps_scored=item.steps, points=points))
     return ScoredSegment(row.season_id, user_id, row.team_id, row.building_id, points, item.steps)
@@ -538,7 +541,9 @@ def upload_batch(
         if segment is not None:
             scored.append(segment)
             accepted.append((item.id, item.started_at))
-    repository.add_fraud_flags(db, user_id, _anticheat_flags(db, user_id, accepted, device_rules))
+    flags = _anticheat_flags(db, user_id, accepted, device_rules)
+    repository.add_fraud_flags(db, user_id, flags)
+    metrics.record_flags(rule for _, _, rule in flags)
     repository.insert_receipts(db, [r for i, r in receipts.items() if i not in known])
 
     if budget.capped:

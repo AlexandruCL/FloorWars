@@ -25,6 +25,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.concurrency import run_in_threadpool
 
+from app import metrics
 from app.api.problems import problem_response
 from app.auth.tokens import AccessTokens, TokenError
 from app.db.models import User
@@ -137,6 +138,7 @@ async def open_websocket(websocket: WebSocket) -> None:
     hub: Hub = state.hub
     await websocket.accept()
     conn = hub.register(user_id, seasons)  # before the replay: no live event can fall between
+    metrics.WS_CONNECTIONS.inc()
     try:
         replayed = await _replay(websocket, state.sessionmaker, user_id, since)
         tasks = {
@@ -152,4 +154,5 @@ async def open_websocket(websocket: WebSocket) -> None:
     except (WebSocketDisconnect, TimeoutError):
         pass  # the client left, or a send blocked: the socket is dropped
     finally:
+        metrics.WS_CONNECTIONS.dec()
         hub.unregister(conn)
