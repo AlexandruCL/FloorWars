@@ -1,6 +1,6 @@
 # Prompt: Ionut's Week 5 implementation (FloorWars, server and ops side)
 
-**Status (2026-11-28): draft. Facts checked against `main` at `8a58995`. Lines marked `OPEN` wait for Ionut; the launch decisions (section 4, "Launch questions") are asked before any worktree, agent file or code branch exists. Implementation not started.**
+**Status (2026-11-28): draft; all launch questions answered (section 4, Q1 to Q17); Q11 (battery build) is Blocked on Cristea. Facts checked against `main` at `8a58995`. Lines marked `OPEN` wait for Ionut; the launch decisions (section 4, "Launch questions") are asked before any worktree, agent file or code branch exists. Implementation not started.**
 
 You are coordinating Ionut's part of Week 5 in `C:\Users\Ionut\Desktop\sem1_an4\msa\FloorWars`. Work on feature branches from `main`. Follow the checklist in section 3 in order, except where a step says it can run in parallel. Tick each box only after its verification command has run and passed.
 
@@ -41,7 +41,7 @@ Week 4's server code is merged (#82 to #92), but **not deployed**: `api.floorwar
   - "Season paused" banner: `Season` has `id`, `starts_at`, `ends_at` only; the app can learn `paused` only from a `season_state` socket event, so a cold start cannot show the banner.
   - Export and delete: the export shape is undefined; what `DELETE /me` does to team scores is unstated.
   - `ClassifierConfig` field names are inferred; Cristea's tuning pass 2 moves the thresholds into a structure that `GET /config` overrides (plan 9.3, Weeks 5 and 6), so the names must match his.
-- **Cristea's remote check-in (decided 2026-11-25, `cristea/week_5/remote_checkin.md`):** new check-in method `pick`, check-ins last 24 h (`checkin_ttl_s` 86400), 24 h building-switch cooldown (403 `building-locked`), migration widening `ck_checkin_method`, and **removal of `impossible_sequence`** (`rules.py`, `segments/repository.py`, `service.py`, `test_anticheat.py`, `server/README.md`). Branch `feat/remote-checkin`, not created yet. Contract change reviewed by Ionut. It touches files this week's agents also touch (`config.py`, `db/models.py`, the next migration number). OPEN who builds its server half (launch question 1).
+- **Cristea's remote check-in (decided 2026-11-25, `cristea/week_5/remote_checkin.md`):** new check-in method `pick`, check-ins last 24 h (`checkin_ttl_s` 86400), 24 h building-switch cooldown (403 `building-locked`), migration widening `ck_checkin_method`, and **removal of `impossible_sequence`** (`rules.py`, `segments/repository.py`, `service.py`, `test_anticheat.py`, `server/README.md`). Branch `feat/remote-checkin`, not created yet. Contract change reviewed by Ionut. It touches files this week's agents also touch (`config.py`, `db/models.py`, the next migration number). Cristea builds it, Ionut reviews, it merges first (decided 2026-11-28, Q1).
 - **What exists that this week builds on (reuse, do not duplicate):**
   - `server/app/main.py`: `/metrics` is a stub (`METRICS_STUB`), "until Week 5".
   - `server/app/segments/partitions.py`: `ensure_partitions(conn)` and a CLI `main()`, run by hand on deploy today.
@@ -125,7 +125,7 @@ Rules for the seam:
 
 ### 3.1 Subagents and worktrees
 
-Same model as Week 4 (Ionut, 2026-11-19; OPEN for Week 5, launch question 9): this session (`w5-lead`) coordinates, writes the agent files, commits the contract, starts the agents, puts their questions to Ionut, re-runs every check, merges, and does W5-0, W5-9 (steps only), W5-10 and W5-11 itself. Agents may message each other about the seam; file ownership stays exclusive.
+Same model as Week 4 (decided 2026-11-28, Q9): this session (`w5-lead`) coordinates, writes the agent files, commits the contract, starts the agents, puts their questions to Ionut, re-runs every check, merges, and does W5-0, W5-9 (steps only), W5-10 and W5-11 itself. Agents may message each other about the seam; file ownership stays exclusive.
 
 | Agent | Items | Worktree, branch | Model, effort | Owns (one owner per file) |
 |---|---|---|---|---|
@@ -133,7 +133,7 @@ Same model as Week 4 (Ionut, 2026-11-19; OPEN for Week 5, launch question 9): th
 | `w5-admin` | W5-1, W5-2 | `<root>-w5/admin`, `feat/w5-admin` | opus, high | `server/app/admin/*`, `server/app/seasons/state.py`, `server/app/config_store.py`, `server/app/api/v1/config.py`, its migration, the `admin` service in compose and the admin block of the Caddyfile, `server/tests/admin/*` |
 | `w5-jobs` | W5-3 | `<root>-w5/jobs`, `feat/w5-jobs` | opus, high | `server/app/seasons/close.py`, `server/app/jobs/*`, `server/app/events/feed.py` (xid8 lines), `server/app/api/v1/seasons.py` (results route), its migration, the `worker` service in compose, `server/tests/jobs/*` |
 | `w5-gdpr` | W5-4 | `<root>-w5/gdpr`, `feat/w5-gdpr` | opus, high | `server/app/me/gdpr.py`, `server/app/api/v1/me.py` (export and delete routes only), `server/tests/me/test_gdpr.py` |
-| `w5-ops-sec` | W5-5, W5-7 | `<root>-w5/ops-sec`, `feat/w5-ops-security` | sonnet, high | `infra/caddy/*` (except the admin and Grafana blocks), `infra/deploy.sh`, `infra/backup/*`, `.github/workflows/server.yml`, `.github/dependabot.yml`, `server/app/main.py` (middleware lines) |
+| `w5-ops-sec` | W5-5, W5-7 | `<root>-w5/ops-sec`, `feat/w5-ops-security` | sonnet, high | `infra/caddy/*` (except the admin and Grafana blocks), `infra/postgres/*`, `infra/deploy.sh`, `infra/backup/*`, `.github/workflows/server.yml`, `.github/dependabot.yml`, `server/app/main.py` (middleware lines) |
 | `w5-ops-monitor` | W5-6, W5-8 | `<root>-w5/monitor`, `feat/w5-monitoring` | sonnet, medium | `server/app/metrics.py`, `server/app/main.py` (`/metrics` route only), `infra/monitoring/*`, the monitoring services in compose, the Grafana block of the Caddyfile, `tools/k6/*` |
 | `w5-docs` | docs for every item | `<root>-w5/docs`, `docs/w5-server-status` | sonnet, low | `README.md`, `server/README.md`, `IMPLEMENTATION_PLAN.md`, `docs/*` (runbook, evaluation, privacy) |
 
@@ -144,6 +144,7 @@ Shared files (additive edits only, each agent adds its own lines and touches no 
 - `infra/docker-compose.yml`: admin (`admin` service), jobs (`worker`), monitor (monitoring services).
 - `server/app/db/models.py`: admin (`user.is_admin`, `season.paused`, `ClassifierConfig`), jobs (`SeasonResult`, `season.closed_at`, `game_event.txid`), Cristea's remote check-in (`CHECKIN_METHODS` and its constraint).
 - `server/app/config.py`: admin (session secret, team IPs if not Caddy-only), jobs (Celery broker index), Cristea's remote check-in (`checkin_ttl_s`, `building_switch_cooldown_s`).
+- `infra/docker-compose.yml` `postgres` image line and `.github/workflows/server.yml`: `w5-ops-sec` (own Postgres and Caddy images, Trivy).
 - `server/pyproject.toml`, `server/uv.lock`: nobody; the lead's dependency commit in W5-0 holds them all. An agent that finds it needs another dependency lists it under Blocked.
 
 Order:
@@ -153,7 +154,7 @@ Order:
 3. Create the worktrees from `contract/w5-server`, start the agents.
 4. W5-10 after the code branches merge; W5-11 last.
 
-Rules for this session: as in Week 4 (start each agent with its item IDs, worktree path and the absolute path of this prompt; re-run every verify yourself and break each guarded rule once; ask Ionut with `Skill("grilling")` for every Blocked question; each agent uses its own Postgres and Valkey containers on its own ports and stops them when done). Merge order: admin, jobs, gdpr, ops-sec, monitor, docs, and Cristea's `feat/remote-checkin` wherever Ionut places it (launch question 1).
+Rules for this session: as in Week 4 (start each agent with its item IDs, worktree path and the absolute path of this prompt; re-run every verify yourself and break each guarded rule once; ask Ionut with `Skill("grilling")` for every Blocked question; each agent uses its own Postgres and Valkey containers on its own ports and stops them when done). Merge order: Cristea's `feat/remote-checkin` first (decided 2026-11-28, Q1), then admin, jobs, gdpr, ops-sec, monitor, docs.
 
 Commands:
 
@@ -193,7 +194,8 @@ Infra items also run `docker compose -f infra/docker-compose.yml -f infra/compos
   - `Season` gains `paused` (boolean, **optional** in 0.10.0, "missing means false"), so `GET /seasons/active` and `GET /seasons` show it after a cold start. Optional because the column arrives with W5-1 after this commit, and `app/__tests__/contract/samples.ts` types a `Season` sample that a required field would break; it becomes required in a later contract version once deployed.
   - `GET /seasons/{id}/results` (`getSeasonResults`): 200 `SeasonResults` (`season_id`, `closed_at`, `teams`: `team_id`, `code`, `points`, `buildings_owned`, `rank`; `buildings`: `building_id`, `owner_team_id` or null), 404 when the season is unknown or not closed yet, 401.
   - `GET /me/export`: a named schema `MyDataExport` replacing "to be agreed" (sections: `user`, `devices`, `memberships`, `checkins`, `segments`, `landing_scans`, `fraud_flags`, `exported_at`; tokens and OTP hashes never exported).
-  - `DELETE /me`: description of what happens to team scores (launch question 6); 204 and 401 stay.
+  - `DELETE /me`: description of what happens to team scores (Q6: subtracted and owners recomputed); 204 and 401 stay.
+  - `GET /me/export`: 429 with `Retry-After` (Q15).
   - `ClassifierConfig`: field names as Cristea's pass-2 structure names them (asked through Ionut); no longer "Inferred".
   - Version bump coordinated with Cristea's remote check-in PR: whichever merges second takes the next minor.
 - [ ] Dependency commit on `contract/w5-server`, after launch question 12: every approved Python dependency (`sqladmin`, `celery`, `prometheus-client`, …) added to `server/pyproject.toml` and `server/uv.lock` in one commit, before the worktrees exist, so no agent edits the lockfile. `uv` is not installed on this PC: regenerate the lock the way `1c7c3df` (jsonschema) did, and CI's `uv sync --frozen` must pass.
@@ -203,10 +205,10 @@ Infra items also run `docker compose -f infra/docker-compose.yml -f infra/compos
 
 ### W5-1 Admin panel and the pause switch (`w5-admin`)
 
-- [ ] Admin identity. OPEN (launch question 3). Recommendation: a `user.is_admin` boolean (migration, default false, set by Ionut with one SQL line on the VM, never through the API). The panel's SQLAdmin `AuthenticationBackend` signs in with the existing e-mail code flow (e-mail, then code; the same OTP rate limits), accepts only `is_admin` users, and keeps a signed session cookie (`Secure`, `HttpOnly`, `SameSite=Strict`, 30 minutes). The API's access token gains no claim this week, because no API route is admin-only. Plan 7.1/8 "admin role in the JWT" is reworded to "admin flag on the user" if Ionut agrees.
+- [ ] Admin identity (decided 2026-11-28, Q3): a `user.is_admin` boolean (migration, default false, set by Ionut with one SQL line on the VM, never through the API). The panel's SQLAdmin `AuthenticationBackend` signs in with the existing e-mail code flow (e-mail, then code; the same OTP rate limits), accepts only `is_admin` users, and keeps a signed session cookie (`Secure`, `HttpOnly`, `SameSite=Strict`, 30 minutes). The API's access token gains no claim this week, because no API route is admin-only. Plan 7.1/8 "admin role in the JWT" is reworded to "admin flag on the user" if Ionut agrees.
 - [ ] Network: a separate `admin` service (same image, its own ASGI app with only SQLAdmin, `admin:8000` as in the Caddyfile comment), behind Caddy `remote_ip` with the team IPs (Ionut supplies them as a secret or env, not committed). Everything else answers 403. The public API image does not mount `/admin`. A test asserts the public app has no `/admin` route.
 - [ ] Views: buildings (name, footprint as GeoJSON polygon, validated: closed ring, SRID 4326, inside a sane bounding box; a bad polygon is refused with a message, never a 500), seasons (create, edit `starts_at`/`ends_at`; overlapping active seasons refused), teams (create, colour `#RRGGBB`), team memberships (assign or move a user within a season), fraud flags (list unresolved first, filter by rule, resolve with a note; `resolved_at` set once), classifier config (W5-2). Users are read-only (e-mail, created, flags count); no delete from the panel (that is `DELETE /me`).
-- [ ] Pause switch: a season action that calls `set_paused` (seam). OPEN what a pause does to play (launch question 4). Recommendation: while paused, segment uploads are stored as `rejected` with `season_inactive` (an existing reason, no contract change), landing scans answer 403 `season-inactive`, joins and check-ins still work, ownership freezes. A test checks the `season_state` event payload, its publish with `season_id`, and that `/me/events` serialises it.
+- [ ] Pause switch: a season action that calls `set_paused` (seam). What a pause does (decided 2026-11-28, Q4): while paused, segment uploads are stored as `rejected` with `season_inactive` (an existing reason, no contract change), landing scans answer 403 `season-inactive`, joins and check-ins still work, ownership freezes. A test checks the `season_state` event payload, its publish with `season_id`, and that `/me/events` serialises it.
 - [ ] Audit: every write in the panel logs one JSON line (admin e-mail hash as in the auth logs, table, row id, action); no values of personal fields.
 - [ ] Tests: login refused for a non-admin and for a wrong code; cookie flags; each view's validation (bad polygon, overlapping season, bad colour); resolve a flag; pause and unpause write one event each; paused season rejects a segment with `season_inactive` and a scan with 403.
 - Verify: the verify commands, and the local stack once: `/admin` from an allowed IP works, from another IP 403 (simulate with the Caddy matcher on the local stack).
@@ -217,27 +219,27 @@ Infra items also run `docker compose -f infra/docker-compose.yml -f infra/compos
 - [ ] Table `classifier_config` (migration): `version` (text, unique, e.g. `rules-2`), `thresholds` (JSONB), `active` (bool, at most one active row: partial unique index), `created_at`, `created_by_hash`. Seeded with the plan 3.3 values as `rules-1`.
 - [ ] `GET /v1/config` (`getClassifierConfig`): the active row, `ClassifierConfig` shape, 401 without a token. `Cache-Control: max-age=300`. Field names from the W5-0 contract (Cristea's names).
 - [ ] Admin view: create a new version from the active one, edit numbers (each bounded: positive, min below max, within the plan's physical ranges), activate it; the old row stays for rollback ("revert thresholds in seconds without a deploy").
-- [ ] The server's own plausibility checks (`segments/rules.py`) do **not** read this table this week. OPEN (launch question 7). Recommendation: keep server bounds as code constants; the table steers the phone classifier only, because a wrong admin edit would otherwise reject honest climbs server-side.
+- [ ] The server's own plausibility checks (`segments/rules.py`) do **not** read this table this week (decided 2026-11-28, Q7): keep server bounds as code constants; the table steers the phone classifier only, because a wrong admin edit would otherwise reject honest climbs server-side.
 - [ ] Tests: shape against the contract, one active row enforced by the database, activation switches atomically, bounds refused, 401.
 - Verify: the verify commands. Done when: the tests pass and the 9.3 row "new thresholds live through `GET /v1/config` without a deploy" is shown on the local stack (activate a version, the next GET returns it).
 
 ### W5-3 Season close, Celery jobs and retention (`w5-jobs`)
 
-- [ ] Celery (approval, launch question 8): broker and result backend Valkey (database index separate from the boards), one `worker` service running beat in the same process (`-B`, concurrency 1) with a memory limit. Recommendation for the 4 GiB VM; OPEN alternative: no Celery, a cron-style loop container calling the same functions.
-- [ ] Season close (`close_season`, seam): when `ends_at` passes, one transaction under the season and building locks: snapshot each team's points, buildings owned and rank into `season_result` (migration), the final owner of each building, mark the season `closed_at`; idempotent; a `season_state` event is not written on close (the season simply ends; OPEN if Cristea's results screen wants one). Read through `GET /seasons/{id}/results` (contract W5-0). Leaderboard boards of a closed season are frozen (no further writes; the snapshot is the source of truth).
-- [ ] Rollover: OPEN (launch question 8). Recommendation: the job only closes ended seasons; the next season is created by an admin (W5-1) and starts at its own `starts_at`; no automatic new season.
+- [ ] Celery (decided 2026-11-28, Q8; `celery[redis]` approved Q12a, `redis://` URL pointed at Valkey because kombu has no Valkey transport; an open kombu issue reports duplicate tasks on Valkey 8.0.1, so **every task is idempotent** and a test runs each twice): broker and result backend Valkey (database index separate from the boards), one `worker` service running beat in the same process (`-B`, concurrency 1) with a memory limit. Sized for the 4 GiB VM.
+- [ ] Season close (`close_season`, seam): when `ends_at` passes, one transaction under the season and building locks: snapshot each team's points, buildings owned and rank into `season_result` (migration), the final owner of each building, mark the season `closed_at`; idempotent; a `season_state` event is not written on close (the season simply ends; decided 2026-11-28, Q14). Read through `GET /seasons/{id}/results` (contract W5-0). Leaderboard boards of a closed season are frozen (no further writes; the snapshot is the source of truth).
+- [ ] Rollover (decided 2026-11-28, Q8): the job only closes ended seasons; the next season is created by an admin (W5-1) and starts at its own `starts_at`; no automatic new season.
 - [ ] Partitions: a daily job runs `ensure_partitions` (no second copy); the manual CLI stays for deploys.
 - [ ] Retention: a daily job drops `climb_segment` partitions older than 12 months (plan 8), calls `purge_rejected`, and deletes `game_event` rows of seasons that ended more than 30 days ago (Week 4 decision). Each job logs counts only.
 - [ ] Feed fix (Week 4 decision): `game_event.txid xid8 DEFAULT pg_current_xact_id()` (expand-only migration), and `events_after` returns only rows whose `txid < pg_snapshot_xmin(pg_current_snapshot())`, so an id committed after a higher one is never skipped. A test with two overlapping transactions proves it. The socket path is unchanged (it already dedupes on a set).
-- [ ] Digests: OPEN (launch question 8). Recommendation: cut from Week 5 (no consent text for e-mail digests, ACS cost, no unsubscribe flow); the plan line is updated.
+- [ ] Digests (decided 2026-11-28, Q8): cut from Week 5 (no consent text for e-mail digests, ACS cost, no unsubscribe flow); the plan line is updated.
 - [ ] Tests: close is idempotent and correct with ties; results 404 before close; partitions created ahead; retention drops only what is due (boundary days); `purge_rejected` scheduled; the xid8 gap test; jobs run against a real Postgres in tests (no Celery broker needed: call the task functions).
 - Verify: the verify commands, and the worker once on the local stack (beat fires a test schedule).
 - Done when: the tests pass and they fail if the `pg_snapshot_xmin` filter is removed (break once, check, revert).
 
 ### W5-4 GDPR export and delete (`w5-gdpr`)
 
-- [ ] `GET /v1/me/export` (`exportMyData`): the caller's rows from every user-owned table, `MyDataExport` shape (W5-0), including `landing_scan` (Week 4 note) and the caller's `fraud_flag` rows (data about the user). Never exported: token hashes, OTP hashes, other users' data, receipts of other users. Rate limit OPEN; recommendation 3 per user per hour (Valkey limiter, 429 `Retry-After`).
-- [ ] `DELETE /v1/me` (`deleteMe`): deletes the user; the eight `ON DELETE CASCADE` foreign keys remove owned rows. OPEN (launch question 6) what happens to team scores. Recommendation: in one transaction under the user and building locks, subtract the user's points from `team_building_score`, recompute the owners of the affected buildings (publishing any flip like a claim), remove the user from the Valkey individual boards and adjust the team boards, then delete. Reason: `leaderboards.rebuild` sums `climb_segment`, so leaving the aggregates would make a rebuild disagree with the incremental boards (the Week 3 finding 6 pattern). Refresh tokens are revoked by the cascade; an open socket of the user stays until it closes (auth on connect only) — OPEN whether to close it through the hub.
+- [ ] `GET /v1/me/export` (`exportMyData`): the caller's rows from every user-owned table, `MyDataExport` shape (W5-0), including `landing_scan` (Week 4 note) and the caller's `fraud_flag` rows (data about the user). Never exported: token hashes, OTP hashes, other users' data, receipts of other users. Rate limit (decided 2026-11-28, Q15): 3 per user per hour (Valkey limiter, 429 `Retry-After`); contract 0.10.0 lists the 429.
+- [ ] `DELETE /v1/me` (`deleteMe`): deletes the user; the eight `ON DELETE CASCADE` foreign keys remove owned rows. Team scores (decided 2026-11-28, Q6): in one transaction under the user and building locks, subtract the user's points from `team_building_score`, recompute the owners of the affected buildings (publishing any flip like a claim), remove the user from the Valkey individual boards and adjust the team boards, then delete. Reason: `leaderboards.rebuild` sums `climb_segment`, so leaving the aggregates would make a rebuild disagree with the incremental boards (the Week 3 finding 6 pattern). Refresh tokens are revoked by the cascade; the hub closes the user's open sockets with 1008 through one Valkey message (decided 2026-11-28, Q6b; `w5-gdpr` owns those lines in `server/app/realtime/hub.py`).
 - [ ] Check every table with a `user_id` (partitioned `climb_segment` included: a cascade on a partitioned table works per partition in Postgres 18; verify with a test, do not assume).
 - [ ] Logs: one line with the user id hash and row counts; the e-mail never.
 - [ ] Tests: export shape against the contract and nothing of another user; delete removes every row (query each table), boards and aggregates equal a fresh rebuild afterwards, a building the user's team owned only through the user's points flips and publishes; 401; a second delete with the same token answers 401.
@@ -245,10 +247,10 @@ Infra items also run `docker compose -f infra/docker-compose.yml -f infra/compos
 
 ### W5-5 Security pass (`w5-ops-sec`)
 
-- [ ] Caddy per-IP limits: a custom Caddy image built with `xcaddy` and `github.com/mholt/caddy-ratelimit` (approval), pinned, built in CI and pushed to GHCR like the API image. Limits OPEN (launch question 13). Pilot players on the faculty Wi-Fi share one NAT address, so a per-IP limit counts the whole faculty as one client. Recommendation: per-IP limits only on unauthenticated paths (`/v1/auth/otp`, `/v1/auth/verify`, `/v1/auth/refresh`) at 120 per minute per IP, nothing per IP on authenticated paths (the per-user Valkey buckets already cover them); 429.
+- [ ] Caddy per-IP limits: a custom Caddy image built with `xcaddy` and `github.com/mholt/caddy-ratelimit` (approval), pinned, built in CI and pushed to GHCR like the API image. Limits (decided 2026-11-28, Q13). Pilot players on the faculty Wi-Fi share one NAT address, so a per-IP limit counts the whole faculty as one client. Per-IP limits only on unauthenticated paths (`/v1/auth/otp`, `/v1/auth/verify`, `/v1/auth/refresh`) at 120 per minute per IP, nothing per IP on authenticated paths (the per-user Valkey buckets already cover them); 429.
 - [ ] CORS: the app is native and the admin panel is same-origin, so no CORS middleware (browsers get no `Access-Control-Allow-Origin`). A test asserts the header is absent. Recorded in plan 7.11.
 - [ ] Validation bounds: a sweep of every request model for numeric and string bounds (the Week 4 bounds commit is the pattern); add what is missing, contract-additive only.
-- [ ] Secrets: `git log -p` scan for keys with the approved scanner (OPEN tool; recommendation: GitHub secret scanning, already on for public repos, no new tool); the `infra/secrets/*.enc.env` stay encrypted.
+- [ ] Secrets: `git log -p` scan for keys with GitHub secret scanning (decided 2026-11-28, Q16: no new tool; the lead also greps the history once for key patterns); the `infra/secrets/*.enc.env` stay encrypted.
 - [ ] Dependency scan: `.github/dependabot.yml` for `uv`, `npm`, `github-actions`, `docker` (GitHub built-in, no new tool).
 - [ ] Trivy gate: the Trivy GitHub Action (approval, pinned by commit SHA) scans the API image in `server.yml` and fails on `CRITICAL` and `HIGH` with a fix available; findings without a fix go into `.trivyignore` with a reason and a date.
 - Verify: the verify commands, CI green on the branch, and the local stack once: one request over the auth limit in a minute from one IP gets a 429.
@@ -258,16 +260,16 @@ Infra items also run `docker compose -f infra/docker-compose.yml -f infra/compos
 
 - [ ] `/metrics` replaces the stub with `prometheus-client` (approval). Not reachable through Caddy (internal network only; a test or a Caddy check proves `/metrics` from outside is 404). The two replicas are scraped separately.
 - [ ] Custom metrics (plan 7.8): segments accepted vs rejected by reason, detection latency (`started_at` to accept, histogram), fraud flags by rule, open WebSocket connections, active users (distinct users with an upload in the last 15 minutes, computed from Valkey or SQL, not a per-user label), plus request rate, error rate and latency histograms per route template.
-- [ ] Stack (placement OPEN, launch question 5): Prometheus, Alertmanager, Grafana (provisioned datasource and one dashboard JSON for the demo: golden signals per service plus the custom metrics), node_exporter, cAdvisor, postgres_exporter, Loki + Alloy for the JSON logs. Retention 7 days; memory limits on every container. Grafana behind the Caddyfile Grafana block (team IPs plus basic auth).
+- [ ] Stack (placement decided 2026-11-28, Q5: on the VM if at least 1.5 GiB is free, else Grafana and Loki on Ionut's PC): Prometheus, Alertmanager, Grafana (provisioned datasource and one dashboard JSON for the demo: golden signals per service plus the custom metrics), node_exporter, cAdvisor, postgres_exporter, Loki + Alloy for the JSON logs. Retention 7 days; memory limits on every container. Grafana behind the Caddyfile Grafana block (team IPs plus basic auth).
 - [ ] Alerts (plan 7.8): API error rate above 2% for 5 minutes, p95 above 500 ms, disk above 80%, backup older than 26 hours (from W5-7's metric), certificate expiring within 14 days. To a Discord webhook that Ionut creates and stores as a secret.
-- [ ] Uptime check from outside (plan 7.8): OPEN; recommendation: skip Uptime Kuma (no Raspberry Pi), use a free external HTTP monitor on `/healthz` that Ionut signs up for, or accept the gap and write it in the runbook.
+- [ ] Uptime check from outside (plan 7.8, decided 2026-11-28, Q17): skip Uptime Kuma (no Raspberry Pi), use a free external HTTP monitor on `/healthz` that Ionut signs up for, alerting to the same Discord.
 - [ ] Tests: metric names and labels (no user data), counters move on an accepted and a rejected upload, `/metrics` format parses.
 - Verify: the verify commands, and the local stack once: Grafana shows the dashboard with live numbers after `tools/fake_segments` uploads.
 - Done when: the dashboard shows live data on the local stack and one test alert reaches a Discord test channel (Ionut's webhook).
 
 ### W5-7 Backups, restore drill, rollback rehearsal (`w5-ops-sec`, Ionut runs on the VM)
 
-- [ ] pgBackRest (approval) as a sidecar of `postgres`: weekly full, daily differential, WAL archiving (`archive_timeout = 60s`), AES-256, two to four fulls. Target OPEN (launch question 10); recommendation: Azure Blob Storage in a second allowed EU region (pgBackRest `azure` repo type), created by Ionut.
+- [ ] pgBackRest 2.60.x (approved 2026-11-28, Q12c) inside our own Postgres image: `infra/postgres/Dockerfile` `FROM postgis/postgis:18-3.6` plus the PGDG apt `pgbackrest` package, built in CI and pushed to GHCR like the API image (the `archive_command` runs in the Postgres container, so no sidecar): weekly full, daily differential, WAL archiving (`archive_timeout = 60s`), AES-256, two to four fulls. Target (decided 2026-11-28, Q10): Azure Blob Storage in a second allowed EU region (pgBackRest `azure` repo type), created by Ionut.
 - [ ] A metric or textfile for "age of the last good backup" for the W5-6 alert.
 - [ ] Restore drill (Ionut, steps written by the agent): restore the latest backup into a throw-away container, run row-count and checksum queries on `user`, `climb_segment`, `team_building_score`, `game_event`, record the result and the time taken in the runbook ops log. RPO 5 minutes, RTO under one hour (plan 7.7).
 - [ ] `deploy.sh rollback` rehearsal (Ionut): deploy `main`, roll back to the previous image, check `/healthz` and the e2e script, roll forward. Record times.
@@ -276,13 +278,13 @@ Infra items also run `docker compose -f infra/docker-compose.yml -f infra/compos
 
 ### W5-8 Load test (`w5-ops-monitor`)
 
-- [ ] k6 scripts in `tools/k6/`: batched `POST /v1/segments` with fresh `Idempotency-Key`s across many test users, and N WebSockets receiving flips. Target OPEN (launch question 10); recommendation: the local compose stack on Ionut's PC (state the machine), never the production VM while testers use it; one short low-rate smoke against the VM only with Ionut's go.
+- [ ] k6 scripts in `tools/k6/`: batched `POST /v1/segments` with fresh `Idempotency-Key`s across many test users, and N WebSockets receiving flips. Target (decided 2026-11-28, Q10): the local compose stack on Ionut's PC (state the machine), never the production VM while testers use it; one short low-rate smoke against the VM only with Ionut's go.
 - [ ] Record in `docs/evaluation.md`: requests per second, p50/p95/p99, error rate, sockets held, the first resource to saturate (from the W5-6 dashboard), dated, with the commit.
 - Done when: the numbers are recorded.
 
 ### W5-9 Battery runs (Ionut, manual)
 
-- [ ] Needs Cristea's build with the service toggle (OPEN: does it exist? launch question 11). Per plan: drain per hour over 3 hours, service on vs off, both devices (SM-S918B, SM-G985F), same brightness and network, airplane mode off, recorded in `docs/evaluation.md` with the build commit. The lead writes the procedure; Ionut runs it and pastes the numbers.
+- [ ] Needs Cristea's build with the service toggle (Blocked 2026-11-28, Q11: ask Cristea whether it exists). Per plan: drain per hour over 3 hours, service on vs off, both devices (SM-S918B, SM-G985F), same brightness and network, airplane mode off, recorded in `docs/evaluation.md` with the build commit. The lead writes the procedure; Ionut runs it and pastes the numbers.
 
 ### W5-10 Independent review (lead, read-only agents, after the code branches merge)
 
@@ -317,7 +319,28 @@ After each item, one line: `W5-n done | verify: <command> → <summary line> | c
   12. The dependency and image list of section 1, looked up on the day (licence, last release). The approved Python ones go in the lead's dependency commit.
   13. Caddy per-IP limits with the faculty NAT in mind (W5-5). Recommendation: unauthenticated auth paths only, 120 per minute per IP.
 - **Blocked:** one line each, the question and the recommendation. Expect at least: VM reachability and the Week 4 deploy; Cristea's review of contract 0.10.0 and his `ClassifierConfig` names; team IPs for the allowlist; the Discord webhook; the backup storage account; Cristea's phones for the pair check and the battery runs.
-- **Decisions:** Ionut's answers only, one line each, dated, with the reason. You make no entries of your own.
+- **Decisions:** Ionut's answers only, one line each, dated, with the reason. You make no entries of your own. Decided 2026-11-28 (launch questions, each the recommendation):
+  - Q1: Cristea builds remote check-in (server and app) on `feat/remote-checkin`; Ionut reviews; it merges first, its migration is `0007`.
+  - Q2: contract 0.10.0 holds all five (`Season.paused` optional, `GET /seasons/{id}/results`, `MyDataExport`, the `DELETE /me` description, Cristea's `ClassifierConfig` names), one commit, Cristea reviews.
+  - Q3: admins are `user.is_admin` (set by SQL on the VM), panel login with the e-mail code, 30-minute Secure/HttpOnly/Strict cookie, separate `admin` service behind Caddy `remote_ip`, no JWT claim; plan wording becomes "admin flag on the user".
+  - Q4: a pause rejects uploads with `season_inactive`, answers landing scans 403, allows joins and check-ins; ownership freezes.
+  - Q5: monitoring on the VM with memory limits and 7-day retention if at least 1.5 GiB is free; otherwise Prometheus, Alertmanager and exporters on the VM, Grafana and Loki on Ionut's PC for the demo.
+  - Q6: `DELETE /me` subtracts the user's points from team totals, recomputes affected owners (publishing flips), cleans the Valkey boards, then deletes, in one transaction. Reason: a rebuild must equal the live boards.
+  - Q6b: the hub closes a deleted user's open sockets (1008) through one Valkey message.
+  - Q7: `GET /config` steers only the phone; server bounds stay code constants. Reason: a wrong admin edit must not reject honest climbs.
+  - Q8: Celery (one worker with beat, concurrency 1, Valkey broker); rollover only closes ended seasons, an admin creates the next; digests cut from Week 5 (plan line updated).
+  - Q9: lead plus six `w5-*` agents as in Week 4; the five `w4-*` agent files are deleted.
+  - Q10: pgBackRest to Azure Blob in a second allowed EU region (Ionut creates it); k6 on the local stack only, one low-rate VM smoke only with Ionut's go.
+  - Q11: battery runs: ask Cristea whether the toggle build exists; Blocked until he answers.
+  - Q14: no `season_state` event on season close; `season_state` stays pause-only.
+  - Q15: `GET /me/export` limited to 3 per user per hour, 429 with `Retry-After`, listed in contract 0.10.0.
+  - Q16: secrets scan with GitHub secret scanning, no new tool.
+  - Q17: a free external HTTP monitor on `/healthz` that Ionut signs up for, alerting to the same Discord.
+  - Q12a: Python dependencies approved: `sqladmin` 0.32.0, `itsdangerous` 2.2.0, `celery[redis]` 5.7.0, `prometheus-client` 0.26.0; added by the lead in one commit; every Celery task idempotent.
+  - Q12b: monitoring images approved, each pinned to the newest tag at least 14 days old on the install day: Prometheus 3.16, Alertmanager 0.35.x, node-exporter 1.13.x, `ghcr.io/google/cadvisor` 0.61.x, postgres-exporter 0.21.x, Alloy 1.22, Grafana 13.3.x and Loki 3.7.x (AGPL-3.0, used unmodified, not redistributed).
+  - Q12c: pgBackRest 2.60.x in our own Postgres image (postgis 18-3.6 plus PGDG `pgbackrest`), built in CI to GHCR.
+  - Q12d: custom Caddy (`caddy:2.11.x-builder` plus `mholt/caddy-ratelimit` pinned by commit SHA) built in CI to GHCR; `aquasecurity/trivy-action` v0.36.0 pinned by commit SHA `ed142fd0673e97e23eac54620cfb913e5ce36c25`; k6 1.8.3 as a local tool only.
+  - Q13: Caddy per-IP limits only on `/v1/auth/otp`, `/v1/auth/verify`, `/v1/auth/refresh`, 120 per minute per IP.
 - **Pair and phone checks:** the Week 4 pair check and exit, the battery runs, the 9.3 threshold check, the share card from a real session. Not claimed until done.
 - **Surprises from the deploy:** field names, time zones, auth edges, memory.
 
