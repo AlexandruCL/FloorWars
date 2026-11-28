@@ -1,6 +1,7 @@
 """``GET /v1/me/export`` and ``DELETE /v1/me`` (W5-4), on the real upload pipeline."""
 
 import json
+import logging
 import time
 import uuid
 from collections.abc import Callable
@@ -16,8 +17,10 @@ from sqlalchemy import text
 from starlette.websockets import WebSocketDisconnect
 
 from app import leaderboards as lb
+from app.auth.ratelimit import hashed_subject
 from app.config import Settings
 from app.db.models import FraudFlag
+from app.logging_config import build_formatter
 from app.main import create_app
 from app.realtime.hub import CLOSE_POLICY, Hub
 from app.segments import repository
@@ -319,3 +322,16 @@ def test_export_has_the_flag_resolution_note(game: Game) -> None:
         "resolved_at",
         "resolution_note",
     }
+
+
+def test_delete_logs_a_hash_and_counts_only(game: Game, caplog: pytest.LogCaptureFixture) -> None:
+    victim = game.victim
+    email = scalar(game.world.client, 'SELECT email FROM "user" WHERE id = :u', u=victim.user_id)
+    caplog.set_level(logging.INFO, logger="app.me.gdpr")
+    assert game.world.client.delete("/v1/me", headers=victim.headers).status_code == 204
+    (record,) = [r for r in caplog.records if r.getMessage() == "account deleted"]
+    assert cast(Any, record).user == hashed_subject(str(victim.user_id))
+    assert cast(Any, record).rows["climb_segment"] == 3
+    line = build_formatter().format(record)
+    assert json.loads(line)["rows"]["landing_scan"] == 1
+    assert email not in line and str(victim.user_id) not in line
