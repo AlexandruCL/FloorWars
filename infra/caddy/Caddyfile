@@ -120,7 +120,10 @@
 		basic_auth {
 			team {file./run/secrets/grafana_basic_hash}
 		}
-		reverse_proxy grafana:3000
+		# Grafana would read the basic-auth header as its own credentials.
+		reverse_proxy grafana:3000 {
+			header_up -Authorization
+		}
 	}
 	respond 403
 }

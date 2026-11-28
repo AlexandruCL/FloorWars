@@ -2,8 +2,8 @@
 
 Prometheus, Alertmanager, Grafana, Loki, Alloy, node_exporter, cAdvisor and postgres_exporter run
 from `infra/docker-compose.yml` on the `monitoring` network. No port is published. Retention is
-7 days for metrics and logs. Memory limits (sum about 1.3 GiB): prometheus 384m, grafana 256m, loki
-256m, alloy 192m, cadvisor 192m, postgres-exporter 64m, alertmanager 64m, node-exporter 48m.
+7 days for metrics and logs. Memory limits (sum about 1.6 GiB; measured use about 0.8 GiB on the local stack under light load: grafana 250 MiB, cadvisor 190, loki 160, prometheus 56, alloy 58): prometheus 384m, grafana 384m, loki
+256m, alloy 192m, cadvisor 256m, postgres-exporter 64m, alertmanager 64m, node-exporter 48m.
 
 | What | Where |
 |---|---|

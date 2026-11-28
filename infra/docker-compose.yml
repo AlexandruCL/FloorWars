@@ -179,7 +179,7 @@ services:
   # backup:     pgBackRest to Azure Blob (Week 5, plan 7.7).
 
   # ---- Monitoring (plan 7.8, W5-6). Nothing here publishes a port; Grafana is reached through
-  # Caddy (GRAFANA_DOMAIN, team IPs plus basic auth). Memory limits add up to about 1.3 GiB, so
+  # Caddy (GRAFANA_DOMAIN, team IPs plus basic auth). Memory limits add up to about 1.6 GiB (measured use about 0.8 GiB), so
   # check `free -m` before enabling on the 4 GiB VM. To move grafana and loki to another PC see
   # infra/monitoring/README.md. Image tags: the newest at least 14 days old on the install day
   # (decision Q12b); looked up 2026-11-28, see README for the three that are still too new.
@@ -236,7 +236,7 @@ services:
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     networks: [monitoring]
-    deploy: {resources: {limits: {memory: 256m}}}
+    deploy: {resources: {limits: {memory: 384m}}} # measured 250 MiB under light load
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     logging: *logging
@@ -273,7 +273,7 @@ services:
     user: "0:0" # the log files are root-owned
     deploy: {resources: {limits: {memory: 192m}}}
     cap_drop: [ALL]
-    cap_add: [DAC_READ_SEARCH]
+    cap_add: [DAC_OVERRIDE] # root without it cannot write the volume or read the 0640 logs
     security_opt: ["no-new-privileges:true"]
     logging: *logging
 
@@ -306,7 +306,7 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
     networks: [monitoring]
-    deploy: {resources: {limits: {memory: 192m}}}
+    deploy: {resources: {limits: {memory: 256m}}} # measured 190 MiB
     security_opt: ["no-new-privileges:true"]
     logging: *logging
 

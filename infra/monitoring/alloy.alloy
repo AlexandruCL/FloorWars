@@ -8,6 +8,7 @@ local.file_match "containers" {
 
 loki.source.file "containers" {
   targets    = local.file_match.containers.targets
+  tail_from_end = true // old files hold lines older than Loki accepts (7 days)
   forward_to = [loki.process.containers.receiver]
 }
 
