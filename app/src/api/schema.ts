@@ -598,7 +598,7 @@ export interface components {
             segments: Record<string, never>[];
             /** @description Every landing scan with its building, points and scanned_at. */
             landing_scans: Record<string, never>[];
-            /** @description Anti-cheat flags on the user's segments (rule, created_at, resolved_at). */
+            /** @description Anti-cheat flags on the user's segments (rule, created_at, resolved_at, resolution_note, the admin's note or null). */
             fraud_flags: Record<string, never>[];
         };
         JoinRequest: {
