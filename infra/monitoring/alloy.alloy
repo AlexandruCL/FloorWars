@@ -1,0 +1,50 @@
+// Alloy: ships the containers' JSON logs to Loki and probes the public site.
+// Docker's json-file lines carry attrs.tag (the container name, set in docker-compose.yml);
+// that becomes the `container` label. The app's own JSON fields stay in the line (`| json`).
+
+local.file_match "containers" {
+  path_targets = [{"__path__" = "/var/lib/docker/containers/*/*-json.log"}]
+}
+
+loki.source.file "containers" {
+  targets    = local.file_match.containers.targets
+  forward_to = [loki.process.containers.receiver]
+}
+
+loki.process "containers" {
+  stage.json {
+    expressions = {tag = "attrs.tag"}
+  }
+  stage.labels {
+    values = {container = "tag"}
+  }
+  stage.docker {}
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = sys.env("LOKI_URL")
+  }
+}
+
+// Certificate expiry and /healthz of the public name (PROBE_URL), pushed to Prometheus.
+prometheus.exporter.blackbox "site" {
+  config = "{ modules: { https: { prober: http, timeout: 10s, http: { valid_status_codes: [200] } } } }"
+  target {
+    name    = "site"
+    address = sys.env("PROBE_URL")
+    module  = "https"
+  }
+}
+
+prometheus.scrape "site" {
+  targets    = prometheus.exporter.blackbox.site.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+}
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}

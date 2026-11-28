@@ -1,0 +1,630 @@
+{
+ "uid": "floorwars-main",
+ "title": "FloorWars",
+ "tags": [
+  "floorwars"
+ ],
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "version": 1,
+ "refresh": "30s",
+ "time": {
+  "from": "now-3h",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "timeseries",
+   "title": "Requests per second by route",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (route) (rate(floorwars_http_requests_total[1m]))",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "{{route}}"
+    }
+   ],
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 2,
+   "type": "timeseries",
+   "title": "Error rate (5xx share)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(rate(floorwars_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(floorwars_http_requests_total[5m]))",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "5xx"
+    }
+   ],
+   "gridPos": {
+    "x": 8,
+    "y": 0,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 3,
+   "type": "timeseries",
+   "title": "Latency p50 / p95 / p99",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "histogram_quantile(0.5, sum by (le) (rate(floorwars_http_request_duration_seconds_bucket[5m])))",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "p50"
+    },
+    {
+     "refId": "B",
+     "expr": "histogram_quantile(0.95, sum by (le) (rate(floorwars_http_request_duration_seconds_bucket[5m])))",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "p95"
+    },
+    {
+     "refId": "C",
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(floorwars_http_request_duration_seconds_bucket[5m])))",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "p99"
+    }
+   ],
+   "gridPos": {
+    "x": 16,
+    "y": 0,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 4,
+   "type": "timeseries",
+   "title": "Segments accepted vs rejected per minute",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(rate(floorwars_segments_accepted_total[5m]))*60",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "accepted"
+    },
+    {
+     "refId": "B",
+     "expr": "sum(rate(floorwars_segments_rejected_total[5m]))*60",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "rejected"
+    }
+   ],
+   "gridPos": {
+    "x": 0,
+    "y": 8,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "id": 5,
+   "type": "timeseries",
+   "title": "Rejections by reason (per minute)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (reason) (rate(floorwars_segments_rejected_total[5m]))*60",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "{{reason}}"
+    }
+   ],
+   "gridPos": {
+    "x": 8,
+    "y": 8,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "id": 6,
+   "type": "timeseries",
+   "title": "Detection latency p50 / p95",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "histogram_quantile(0.5, sum by (le) (rate(floorwars_detection_latency_seconds_bucket[15m])))",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "p50"
+    },
+    {
+     "refId": "B",
+     "expr": "histogram_quantile(0.95, sum by (le) (rate(floorwars_detection_latency_seconds_bucket[15m])))",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "p95"
+    }
+   ],
+   "gridPos": {
+    "x": 16,
+    "y": 8,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 7,
+   "type": "stat",
+   "title": "WebSocket connections",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(floorwars_websocket_connections)",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "open"
+    }
+   ],
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 6,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "id": 8,
+   "type": "stat",
+   "title": "Active users (15 min)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "max(floorwars_active_users)",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "users"
+    }
+   ],
+   "gridPos": {
+    "x": 6,
+    "y": 16,
+    "w": 6,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "id": 9,
+   "type": "bargauge",
+   "title": "Fraud flags by rule (1 h)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (rule) (increase(floorwars_fraud_flags_total[1h]))",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "{{rule}}"
+    }
+   ],
+   "gridPos": {
+    "x": 12,
+    "y": 16,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "id": 10,
+   "type": "stat",
+   "title": "Replicas up",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(up{job=\"api\"})",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "api"
+    }
+   ],
+   "gridPos": {
+    "x": 20,
+    "y": 16,
+    "w": 4,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "id": 11,
+   "type": "timeseries",
+   "title": "Container CPU (cores)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name!=\"\"}[1m]))",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "{{name}}"
+    }
+   ],
+   "gridPos": {
+    "x": 0,
+    "y": 24,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "id": 12,
+   "type": "timeseries",
+   "title": "Container memory",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (name) (container_memory_working_set_bytes{name!=\"\"})",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "{{name}}"
+    }
+   ],
+   "gridPos": {
+    "x": 8,
+    "y": 24,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 13,
+   "type": "timeseries",
+   "title": "Host memory available / disk used",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "node_memory_MemAvailable_bytes",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "mem available (B)"
+    },
+    {
+     "refId": "B",
+     "expr": "1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|squashfs|overlay|fuse.*\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|squashfs|overlay|fuse.*\"}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "disk used {{mountpoint}}"
+    }
+   ],
+   "gridPos": {
+    "x": 16,
+    "y": 24,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 14,
+   "type": "timeseries",
+   "title": "Postgres connections and commits/s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(pg_stat_activity_count)",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "connections"
+    },
+    {
+     "refId": "B",
+     "expr": "sum(rate(pg_stat_database_xact_commit{datname=\"floorwars\"}[1m]))",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "commits/s"
+    }
+   ],
+   "gridPos": {
+    "x": 0,
+    "y": 32,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "id": 15,
+   "type": "stat",
+   "title": "Backup age (hours)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "(time() - max(floorwars_backup_last_success_timestamp_seconds)) / 3600",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "age"
+    }
+   ],
+   "gridPos": {
+    "x": 8,
+    "y": 32,
+    "w": 6,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "h"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 16,
+   "type": "stat",
+   "title": "Certificate expires in (days)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "(probe_ssl_earliest_cert_expiry - time()) / 86400",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "days"
+    }
+   ],
+   "gridPos": {
+    "x": 14,
+    "y": 32,
+    "w": 5,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "id": 17,
+   "type": "stat",
+   "title": "Site probe",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "probe_success",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "up"
+    }
+   ],
+   "gridPos": {
+    "x": 19,
+    "y": 32,
+    "w": 5,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "id": 18,
+   "type": "logs",
+   "title": "Logs (errors and warnings)",
+   "datasource": {
+    "type": "loki",
+    "uid": "loki"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "{container=~\".+\"} | json | level=~\"ERROR|WARNING\"",
+     "datasource": {
+      "type": "loki",
+      "uid": "loki"
+     }
+    }
+   ],
+   "gridPos": {
+    "x": 0,
+    "y": 40,
+    "w": 24,
+    "h": 10
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  }
+ ],
+ "templating": {
+  "list": []
+ },
+ "annotations": {
+  "list": []
+ }
+}

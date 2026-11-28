@@ -56,5 +56,15 @@ if [[ "$(cat "$out_dir/acs_access_key" 2>/dev/null)" == "local-placeholder-not-a
 fi
 put_missing acs_access_key "$acs_placeholder"
 
+# Monitoring (W5-6). The webhook is a dummy, so alerts go nowhere; paste a real Discord test
+# webhook into infra/local-secrets/discord_webhook_url to see one arrive.
+put_missing discord_webhook_url "https://discord.com/api/webhooks/0/dummy"
+put_missing grafana_admin_password "$(rand_hex)"
+# Caddy basic auth for Grafana locally: user `team`, password `local` (bcrypt, made by Caddy).
+if [[ ! -f "$out_dir/grafana_basic_hash" ]]; then
+  printf '%s' "$(docker run --rm caddy:2 caddy hash-password --plaintext local)" >"$out_dir/grafana_basic_hash"
+  echo "wrote grafana_basic_hash"
+fi
+
 echo "local secrets are in infra/local-secrets/"
 echo "note: --force after a first run also needs 'docker compose ... down -v' (postgres keeps the old password)"

@@ -1,0 +1,45 @@
+# Prometheus (plan 7.8). 30 s scrape; 7 days of data (flag in docker-compose.yml).
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Each api replica is its own target: Docker DNS returns one A record per container.
+  # /metrics is internal only (Caddy answers 404 for it).
+  - job_name: api
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: ["api"]
+        type: A
+        port: 8000
+        refresh_interval: 15s
+
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  # Alloy pushes the certificate and health probe of the public site here (remote write).

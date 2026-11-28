@@ -1,0 +1,61 @@
+# Alert rules (plan 7.8). Routed to Discord by alertmanager.yml.
+groups:
+  - name: floorwars
+    rules:
+      - alert: ApiErrorRateHigh
+        expr: |
+          sum(rate(floorwars_http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(floorwars_http_requests_total[5m])) > 0.02
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "API error rate above 2% for 5 minutes"
+
+      - alert: ApiLatencyP95High
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(floorwars_http_request_duration_seconds_bucket[5m]))) > 0.5
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "API p95 latency above 500 ms"
+
+      - alert: ApiReplicaDown
+        expr: up{job="api"} == 0
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "An API replica is not scraped ({{ $labels.instance }})"
+
+      - alert: DiskAlmostFull
+        expr: |
+          1 - node_filesystem_avail_bytes{fstype!~"tmpfs|squashfs|overlay|fuse.*"}
+                / node_filesystem_size_bytes{fstype!~"tmpfs|squashfs|overlay|fuse.*"} > 0.8
+        for: 10m
+        labels: {severity: warn}
+        annotations:
+          summary: "Disk above 80% on {{ $labels.mountpoint }}"
+
+      # W5-7 writes floorwars_backup_last_success_timestamp_seconds into the node_exporter
+      # textfile directory. The `or vector(0)` makes a missing metric fire the alert too.
+      - alert: BackupTooOld
+        expr: |
+          time() - (max(floorwars_backup_last_success_timestamp_seconds) or vector(0)) > 26 * 3600
+        for: 10m
+        labels: {severity: page}
+        annotations:
+          summary: "No good backup in the last 26 hours"
+
+      - alert: CertificateExpiresSoon
+        expr: (probe_ssl_earliest_cert_expiry - time()) < 14 * 24 * 3600
+        for: 1h
+        labels: {severity: warn}
+        annotations:
+          summary: "TLS certificate expires in under 14 days"
+
+      - alert: SiteProbeFailing
+        expr: probe_success == 0
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "Probe of the public /healthz fails (Alloy on the VM; the external monitor covers a dead VM)"

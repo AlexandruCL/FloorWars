@@ -1,0 +1,13 @@
+# Alertmanager: one Discord channel. The webhook URL is a secret file (never in this repo).
+route:
+  receiver: discord
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: discord
+    discord_configs:
+      - webhook_url_file: /run/secrets/discord_webhook_url
+        send_resolved: true

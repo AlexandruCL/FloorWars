@@ -16,9 +16,14 @@ services:
     ports: !override
       - "127.0.0.1:8080:80"
       - "127.0.0.1:8443:443"
+      - "127.0.0.1:3001:3000" # Grafana site (GRAFANA_DOMAIN ":3000")
     environment:
       DOMAIN: ":80" # any host, HTTP only; set DOMAIN=localhost for Caddy's internal TLS on 8443
       ACME_EMAIL: dev@localhost.invalid
+      GRAFANA_DOMAIN: ":3000" # plain HTTP on 3000, published below as http://localhost:3001
+      TEAM_IPS: "127.0.0.1/32 172.16.0.0/12 192.168.0.0/16 10.0.0.0/8" # Docker Desktop NAT addresses
+
+  # Grafana through Caddy: http://localhost:3001 (basic auth user `team`, password `local`).
 
   api:
     image: floorwars-api:local
@@ -34,6 +39,20 @@ services:
   migrate:
     image: floorwars-api:local
 
+  node-exporter: # Docker Desktop cannot bind / with rslave; locally it reports its own container
+    command: !override
+      - --collector.textfile.directory=/textfile
+    volumes: !override
+      - backup-textfile:/textfile:ro
+
+  alloy:
+    environment:
+      PROBE_URL: http://caddy/healthz # no public name locally; the certificate alert stays silent
+
+  postgres-exporter:
+    environment:
+      DATA_SOURCE_USER: postgres # locally the superuser; the VM uses a pg_monitor role
+
   postgres:
     volumes: !override
       - pgdata-local:/var/lib/postgresql
@@ -42,6 +61,14 @@ volumes:
   pgdata-local: {}
 
 secrets:
+  discord_webhook_url:
+    file: ./local-secrets/discord_webhook_url # dummy; put a real test-channel URL here to try an alert
+  grafana_admin_password:
+    file: ./local-secrets/grafana_admin_password
+  grafana_basic_hash:
+    file: ./local-secrets/grafana_basic_hash
+  exporter_db_password:
+    file: ./local-secrets/postgres_password
   database_url:
     file: ./local-secrets/database_url
   valkey_url:
