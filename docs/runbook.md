@@ -386,6 +386,24 @@ Facts from `w5-admin` (branch `feat/w5-admin`); not yet run on the VM. The Week 
 2. In `infra/.env` on the VM (not committed) set `ADMIN_DOMAIN` and `ADMIN_ALLOWED_IPS` (space-separated CIDRs). The defaults are `admin.invalid` and `192.0.2.1/32`, which lets nobody in (403). Add an A record `admin.<domain>` to the VM IP (a DNS action for Ionut).
 3. Make an admin: the user signs in once in the app, then run `UPDATE "user" SET is_admin = true WHERE email = '<address>';`. Clearing the flag ends access at once.
 4. Rollback of `0008_w5_admin` drops `is_admin`, `paused`, `resolution_note` and `classifier_config` (threshold versions, admin flags and notes are lost).
-5. Local check: `https://admin.localhost:8443` (Caddy internal CA). The local `log` mail backend does not print codes; the exact command to plant one is still to come from `w5-admin`.
+5. The two Caddy values default in compose (`${ADMIN_DOMAIN:-admin.invalid}`, `${ADMIN_ALLOWED_IPS:-192.0.2.1/32}`), because an empty value makes Caddy refuse the whole Caddyfile, API site included. Changing them needs `docker compose up -d caddy` (recreate), not `caddy reload`. Give the admin domain an A record only, no AAAA: `remote_ip` sees the real client only over IPv4 through Docker's port forward, so an IPv6 client would get 403 (fails closed, but looks like a bug).
+6. Local sign-in (local stack only, never on the VM, which uses ACS; checked against a test database, the local stack run is still pending). The `log` mail backend sends no code, so plant one. Sign in once through the app or tools, then from `infra/`:
+   - `docker compose -f docker-compose.yml -f compose.local.yml exec -T postgres psql -U postgres -d floorwars -c "UPDATE \"user\" SET is_admin = true WHERE email = '<email>'"`
+   - `docker compose -f docker-compose.yml -f compose.local.yml exec -T admin python - <email>` with this script on stdin:
+   ```python
+   import sys
+   from datetime import UTC, datetime, timedelta
+   from app.auth import otp, repository
+   from app.config import get_settings
+   from app.db.session import make_engine, make_sessionmaker
+   email, now = sys.argv[1], datetime.now(UTC)
+   with make_sessionmaker(make_engine(get_settings().database_url.get_secret_value()))() as db:
+       salt = otp.new_salt()
+       cid = repository.add_pending_challenge(db, email, otp.hash_code(salt, "123456"), salt, now + timedelta(minutes=10), now)
+       repository.activate_challenge(db, email, cid, now)
+       db.commit()
+   print("code 123456 planted")
+   ```
+   - Open `https://admin.localhost:8443/admin/` (accept Caddy's internal CA), enter the e-mail and code `123456`.
 
 Sections for backup, restore and rollback wait for `w5-ops-sec`; monitoring for `w5-ops-monitor`.
